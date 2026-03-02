@@ -110,6 +110,9 @@ const uid = () => Math.random().toString(36).substr(2,9);
 const f$  = n => new Intl.NumberFormat("ro",{maximumFractionDigits:0}).format(n||0)+" €";
 const fD  = d => { if(!d) return "—"; return new Date(d+"T00:00:00").toLocaleDateString("ro",{day:"numeric",month:"short",year:"numeric"}); };
 
+// ─── AI CONFIG ───
+const CLAUDE_API_KEY = "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";
+
 // ─── GOOGLE CALENDAR CONFIG ───
 const GCAL_CLIENT_ID = "166600809896-bkch0s9678ahv7l9fofe0ti47btc4pum.apps.googleusercontent.com";
 const GCAL_SCOPE     = "https://www.googleapis.com/auth/calendar.events";
@@ -2045,7 +2048,7 @@ function AIChatWidget(props) {
     var history=msgs.concat([userMsg]);
     setMsgs(history);setInput("");setLoading(true);
     try{
-      var key=model==="claude"?apiKeys.claude:apiKeys.openai;
+      var key=model==="claude"?(apiKeys.claude||CLAUDE_API_KEY):apiKeys.openai;
       if(!key){setMsgs(function(m){return m.concat([{role:"assistant",content:"⚠️ API key lipsa. Apasa ⚙️"}]);});setLoading(false);return;}
       var sys=buildAIContext(evs,tasks);
       var reply;
