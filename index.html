@@ -600,6 +600,8 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange }
   const active = [...base].sort((a,b)=>{
     if(sortBy==="date") return new Date(a.date||0)-new Date(b.date||0);
     if(sortBy==="dateDesc") return new Date(b.date||0)-new Date(a.date||0);
+    if(sortBy==="cr") return new Date(b.cr||0)-new Date(a.cr||0);
+    if(sortBy==="crAsc") return new Date(a.cr||0)-new Date(b.cr||0);
     if(sortBy==="fee") return (b.fee||0)-(a.fee||0);
     if(sortBy==="feeAsc") return (a.fee||0)-(b.fee||0);
     if(sortBy==="client") return (a.cn||"").localeCompare(b.cn||"");
@@ -633,12 +635,14 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange }
           <option value="public">Public</option>
         </select>
         <select value={sortBy} onChange={e=>setSortBy(e.target.value)} className="modernSel" style={{padding:"8px 32px 8px 12px",minWidth:140,borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:13,cursor:"pointer"}}>
-          <option value="date">Sort: Data ↑</option>
-          <option value="dateDesc">Sort: Data ↓</option>
-          <option value="fee">Sort: Onorariu ↓</option>
-          <option value="feeAsc">Sort: Onorariu ↑</option>
-          <option value="client">Sort: Client</option>
-          <option value="status">Sort: Status</option>
+          <option value="date">Data eveniment ↑</option>
+          <option value="dateDesc">Data eveniment ↓</option>
+          <option value="cr">Data adăugării (nou)</option>
+          <option value="crAsc">Data adăugării (vechi)</option>
+          <option value="fee">Onorariu ↓</option>
+          <option value="feeAsc">Onorariu ↑</option>
+          <option value="client">Client A-Z</option>
+          <option value="status">Status</option>
         </select>
       </div>
       {viewMode==="kanban" ? (
