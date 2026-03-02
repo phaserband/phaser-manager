@@ -675,7 +675,7 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange }
       <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
-            {["Nr","Ofertă","Tip","Locație","Data","Onorariu","Status"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
+            {["Nr","Ofertă","Tip","Locație","Data eveniment","Adăugată","Onorariu","Status"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
           </tr></thead>
           <tbody>{active.map((ev,i)=>(
             <tr key={ev.id} onClick={()=>onSelect(ev)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer"}} onMouseOver={e=>e.currentTarget.style.background=th.ab} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
@@ -684,6 +684,7 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange }
               <td style={{padding:"10px 12px",fontSize:11}}>{ev.type} · {ev.cat==="private"?"Privat":"Public"}</td>
               <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</td>
               <td style={{padding:"10px 12px",fontSize:11}}>{fD(ev.date)}</td>
+              <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{fD(ev.cr)}</td>
               <td style={{padding:"10px 12px",fontSize:13,fontWeight:700}}>{f$(ev.fee)}</td>
               <td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}><BadgeStatusSelect s={ev.st} th={th} evId={ev.id} onStatusChange={onStatusChange}/></td>
             </tr>
@@ -966,14 +967,18 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <button onClick={()=>{
               const offerEl = document.getElementById("offer-print-content");
-              const text = offerEl ? offerEl.innerText : "";
-              if(navigator.share){
-                navigator.share({title:"Ofertă PHASER · "+(ev.type||""), text}).catch(()=>{});
-              } else {
-                navigator.clipboard.writeText(text).then(()=>alert("Ofertă copiată!")).catch(()=>{});
-              }
+              if(!offerEl) return;
+              const printWin = window.open("","_blank","width=820,height=1000");
+              if(!printWin) return;
+              printWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ofertă PHASER · ${ev.type||""}</title><style>
+                *{box-sizing:border-box;margin:0;padding:0}
+                body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f4f4;padding:32px}
+                @media print{body{padding:0;background:#f4f4f4}@page{margin:0.5cm}}
+                img{max-width:100%;height:auto}
+              </style></head><body>${offerEl.innerHTML}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+              printWin.document.close();
             }} style={{padding:"8px 20px",borderRadius:8,border:"none",background:"#fbbf24",color:"#111",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-              ↑ Trimite
+              ↑ Trimite PDF
             </button>
             <button onClick={onClose} style={{padding:4,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer"}}><IcX s={18}/></button>
           </div>
