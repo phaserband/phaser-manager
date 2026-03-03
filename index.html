@@ -254,46 +254,45 @@ const loadGenExp = () => { try { const s = localStorage.getItem(LS_KEYS.genExp);
 const loadCreative = () => { try { const s=localStorage.getItem(LS_KEYS.creative); if(s) { const d=JSON.parse(s); return d&&typeof d==="object"?d:{}; } } catch(e){} return {ideas:[],songs:[],setlists:[]}; };
 // Assets press kit — poze din folder assets
 const PK_IMG_PUBLIC_HEAD = "assets/Poza Presskit Public Head.jpg";
-const PK_IMG_PRIVAT = "assets/Poza Presskit Privat.jpg";
+const PK_IMG_PRIVAT_HEAD = "assets/Poza Presskit Privat.jpg";
 
 // Press Kit Public — structură editabilă pentru oferta publică (festivaluri, concerte)
 const DEFAULT_PRESS_KIT_PUBLIC = {
   heroImage: PK_IMG_PUBLIC_HEAD,
+  heroImagePos: "center 30%", // object-position: centru vertical 30% (arată persoanele)
   gallery: [],
   introText: "Phaser înseamnă atitudine, dinamică și multă energie. Trebuie doar să ne vezi live și vei înțelege că un show Phaser este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
-  tagline: "FROM ROCKING THE STAGE TO ROCKING YOUR PARTY",
+  tagline: "FROM ROCKING THE STAGE TO ROCKING YOUR EVENT",
   links: [
-    { id: "l1", l: "🎵 Instagram", url: "https://www.instagram.com/phasermusic" },
-    { id: "l2", l: "🎵 TikTok", url: "https://www.tiktok.com/@phasermusic" },
-    { id: "l3", l: "▶ YouTube", url: "https://www.youtube.com/@phasermusic" },
-    { id: "l4", l: "👥 Facebook", url: "https://www.facebook.com/phasermusic" }
+    { id: "l1", l: "Instagram", url: "https://www.instagram.com/phasermusic" },
+    { id: "l2", l: "TikTok", url: "https://www.tiktok.com/@phasermusic" },
+    { id: "l3", l: "YouTube", url: "https://www.youtube.com/@phasermusic" },
+    { id: "l4", l: "Facebook", url: "https://www.facebook.com/phasermusic" },
+    { id: "l5", l: "Site", url: "https://phaser.ro" }
   ],
   members: JSON.parse(JSON.stringify(MEMBERS)),
   showReelUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-  showReelDesc: "Vibe-ul nostru live, așa cum e el! Nu e nimic regizat, nimic editat — doar energie pură!",
-  highlights: [
-    { id: "h1", icon: "🏆", label: "Eurovision 2013" },
-    { id: "h2", icon: "🎵", label: "MediaPro Music & Universal Music România (2017)" },
-    { id: "h3", icon: "💿", label: "Album: Început de Univers (2021)" },
-    { id: "h4", icon: "📺", label: "X Factor — Carina Dumitru" },
-    { id: "h5", icon: "🎤", label: "Sute de evenimente private & publice" },
-    { id: "h6", icon: "🌍", label: "Timișoara, România" }
-  ],
+  musicSpotify: "",
+  videoOficiale: [],
+  videoLive: [],
   contact: { name: "Radu Racz", phone: "0744 771 488", email: "contact@phaser.ro", website: "www.phaser.ro" }
 };
 const normPressKitPublic = (v) => {
   if (!v || typeof v === "string") return JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC));
   const def = DEFAULT_PRESS_KIT_PUBLIC;
+  const vid = (arr) => Array.isArray(arr) ? arr.map(x => ({ id: x.id || uid(), url: x.url ?? "", title: x.title ?? "", desc: x.desc ?? "" })) : [];
   return {
     heroImage: v.heroImage ?? def.heroImage,
+    heroImagePos: v.heroImagePos ?? def.heroImagePos,
     gallery: Array.isArray(v.gallery) ? v.gallery : (def.gallery || []),
     introText: v.introText ?? def.introText,
     tagline: v.tagline ?? def.tagline,
     links: Array.isArray(v.links) && v.links.length ? v.links.map(x => ({ id: x.id || uid(), l: x.l ?? "", url: x.url ?? "" })) : JSON.parse(JSON.stringify(def.links)),
     members: Array.isArray(v.members) && v.members.length ? v.members.map(x => ({ id: x.id || uid(), n: x.n ?? "", r: x.r ?? "" })) : JSON.parse(JSON.stringify(def.members)),
     showReelUrl: v.showReelUrl ?? def.showReelUrl,
-    showReelDesc: v.showReelDesc ?? def.showReelDesc,
-    highlights: Array.isArray(v.highlights) && v.highlights.length ? v.highlights.map(x => ({ id: x.id || uid(), icon: x.icon ?? "", label: x.label ?? "" })) : JSON.parse(JSON.stringify(def.highlights)),
+    musicSpotify: v.musicSpotify ?? def.musicSpotify,
+    videoOficiale: vid(v.videoOficiale).length ? vid(v.videoOficiale) : JSON.parse(JSON.stringify(def.videoOficiale)),
+    videoLive: vid(v.videoLive).length ? vid(v.videoLive) : JSON.parse(JSON.stringify(def.videoLive)),
     contact: v.contact && typeof v.contact === "object" ? { name: v.contact.name ?? "", phone: v.contact.phone ?? "", email: v.contact.email ?? "", website: v.contact.website ?? "" } : { ...def.contact }
   };
 };
@@ -306,8 +305,6 @@ const loadTemplates = () => {
       const d = JSON.parse(s);
       if (d && typeof d === "object") {
         d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
-        if (typeof d.pressKitPrivat === "string") d.pressKitPrivat = { heroImage: PK_IMG_PRIVAT, text: d.pressKitPrivat };
-        if (!d.pressKitPrivat || typeof d.pressKitPrivat !== "object") d.pressKitPrivat = { heroImage: PK_IMG_PRIVAT, text: "" };
         return d;
       }
     }
@@ -317,7 +314,6 @@ const loadTemplates = () => {
     riderContent: {},
     riderCustom: [],
     riderStagePlot: { image: null, notes: "" },
-    pressKitPrivat: { heroImage: PK_IMG_PRIVAT, text: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
     poveste: "Phaser înseamnă atitudine, dinamică și multă energie. Un show Phaser este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor — a celor ce iubesc sau a celor îndrăgostiți de viață."
   };
@@ -1077,8 +1073,12 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
           {/* Ofertă stilizată — de trimis la client / PDF */}
           <div id="offer-print-content" style={{maxWidth:560,margin:"0 auto",padding:mob?"16px":"24px 16px"}}>
 
+            {/* Imagine header automată la oferta privată — incadrare faină */}
+            {isPriv&&<div style={{borderRadius:"16px 16px 0 0",overflow:"hidden",marginBottom:0}}>
+              <img src={PK_IMG_PRIVAT_HEAD} alt="" style={{width:"100%",height:200,objectFit:"cover",objectPosition:"center 30%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+            </div>}
             {/* Header card — culori calde, logo mare */}
-            <div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 50%,#1a1510 100%)",borderRadius:16,padding:"28px 28px 24px",marginBottom:12,position:"relative",overflow:"hidden",border:"1px solid rgba(245,158,11,.15)"}}>
+            <div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 50%,#1a1510 100%)",borderRadius:isPriv?"0 0 16px 16px":"16px",padding:"28px 28px 24px",marginBottom:12,position:"relative",overflow:"hidden",border:"1px solid rgba(245,158,11,.15)",borderTop:isPriv?"none":"1px solid rgba(245,158,11,.15)"}}>
               <div style={{position:"absolute",top:0,right:0,width:240,height:240,background:"radial-gradient(circle,rgba(245,158,11,.08) 0%,transparent 70%)",pointerEvents:"none"}}/>
               <img src={LOGO_URL} alt="PHASER" style={{height:64,display:"block",marginBottom:24,objectFit:"contain",objectPosition:"left",filter:"brightness(1.1)"}}/>
               <div style={{fontSize:10,color:"rgba(251,191,36,.6)",letterSpacing:3,textTransform:"uppercase",marginBottom:8}}>Ofertă de colaborare</div>
@@ -3044,9 +3044,9 @@ function App() {
               </div>
             </div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {["rider","playlist","pressKitPrivat","pressKitPublic","poveste"].map(s=>(
+              {["rider","playlist","pressKitPublic","poveste"].map(s=>(
                 <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:sectTab===s?700:400,cursor:"pointer",background:sectTab===s?th.ab:"transparent",color:sectTab===s?th.t:th.tm}}>
-                  {{rider:"Rider",playlist:"Playlist",pressKitPrivat:"Press Kit Privat",pressKitPublic:"Press Kit Public",poveste:"Poveste"}[s]}
+                  {{rider:"Rider",playlist:"Playlist",pressKitPublic:"Press Kit Public",poveste:"Poveste"}[s]}
                 </button>
               ))}
             </div>
@@ -3123,53 +3123,33 @@ function App() {
                   ))}
                 </div>
               </div>}
-              {sectTab==="pressKitPrivat"&&<div>
-                <label style={sty.l}>Press Kit Privat — conținut pentru nunți, botezuri</label>
-                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Imagine header + text. Poza din assets: Poza Presskit Privat.jpg</p>
-                {(()=>{
-                  const pk = templates.pressKitPrivat && typeof templates.pressKitPrivat==="object" ? templates.pressKitPrivat : { heroImage: PK_IMG_PRIVAT, text: "" };
-                  const img = pk.heroImage || PK_IMG_PRIVAT;
-                  return (
-                    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                      <div style={{...sty.cd,padding:16}}>
-                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Imagine header</div>
-                        <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
-                          <img src={img} alt="Press Kit Privat" style={{maxWidth:280,maxHeight:160,objectFit:"cover",borderRadius:10,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
-                          <div style={{flex:1,minWidth:200}}>
-                            <input value={pk.heroImage||""} onChange={e=>saveTemplates({pressKitPrivat:{...pk,heroImage:e.target.value}})} placeholder="assets/Poza Presskit Privat.jpg" style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
-                            <label style={{display:"block",marginTop:8,fontSize:11,color:th.tm}}><input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>saveTemplates({pressKitPrivat:{...pk,heroImage:r.result}});r.readAsDataURL(f);}}} style={{fontSize:11}}/> Încarcă altă imagine</label>
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{...sty.cd,padding:16}}><label style={{...sty.l,fontSize:11}}>Text / descriere</label><textarea value={pk.text||""} onChange={e=>saveTemplates({pressKitPrivat:{...pk,text:e.target.value}})} style={{...sty.i,minHeight:100,resize:"vertical"}} placeholder="Text, link-uri, descriere..."/></div>
-                      {/* Preview vizual EPK */}
-                      <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
-                        <div style={{fontSize:11,fontWeight:700,color:th.tm,padding:"12px 16px",borderBottom:`1px solid ${th.b}`}}>Preview EPK</div>
-                        <div style={{background:"#111",padding:0,minHeight:200}}>
-                          <img src={img} alt="" style={{width:"100%",height:180,objectFit:"cover",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
-                          <div style={{padding:"20px 24px"}}><Logo height={32} dark/><p style={{fontSize:13,color:"rgba(255,255,255,.8)",lineHeight:1.6,marginTop:12,fontStyle:"italic"}}>{(pk.text||"").slice(0,200)}{(pk.text||"").length>200?"...":""}</p></div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>}
               {sectTab==="pressKitPublic"&&<div>
                 <label style={sty.l}>Press Kit Public — conținut pentru festivaluri, concerte</label>
-                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>EPK editabil — imagine header, galerie, link-uri, membri, show reel, highlights, contact. Preview vizual mai jos.</p>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>EPK editabil — imagine header, Music, Video oficiale, Videouri live, contact. Download pentru HTML.</p>
                 {(()=>{
                   const pk = normPressKitPublic(templates.pressKitPublic);
                   const up = (key, val) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:val}}));
                   const upArr = (key, arr) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:arr}}));
+                  const imgPos = pk.heroImagePos || "center 30%";
                   return (
                     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                      {/* Hero image */}
+                      {/* Hero image + framing */}
                       <div style={{...sty.cd,padding:16}}>
-                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Imagine header (Poza Presskit Public Head.jpg)</div>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Imagine header — incadrare (object-position)</div>
+                        <p style={{fontSize:10,color:th.tm,marginBottom:8}}>Alege cum se decupează imaginea ca să se vadă toate persoanele</p>
                         <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
-                          <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="Header" style={{maxWidth:320,maxHeight:180,objectFit:"cover",borderRadius:10,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
+                          <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="Header" style={{maxWidth:320,maxHeight:200,objectFit:"cover",objectPosition:imgPos,borderRadius:10,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
                           <div style={{flex:1,minWidth:200}}>
-                            <input value={pk.heroImage||""} onChange={e=>up("heroImage",e.target.value)} placeholder={PK_IMG_PUBLIC_HEAD} style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
+                            <label style={{...sty.l,fontSize:10}}>Poziție incadrare</label>
+                            <select value={imgPos} onChange={e=>up("heroImagePos",e.target.value)} style={{...sty.i,padding:"8px 12px",fontSize:12,marginBottom:8}}>
+                              <option value="center top">Sus (top)</option>
+                              <option value="center 20%">Centru-sus (20%)</option>
+                              <option value="center 30%">Centru (30%)</option>
+                              <option value="center center">Centru</option>
+                              <option value="center 70%">Centru-jos (70%)</option>
+                              <option value="center bottom">Jos (bottom)</option>
+                            </select>
+                            <input value={pk.heroImage||""} onChange={e=>up("heroImage",e.target.value)} placeholder={PK_IMG_PUBLIC_HEAD} style={{...sty.i,padding:"8px 12px",fontSize:12,width:"100%"}}/>
                             <label style={{display:"block",marginTop:8,fontSize:11,color:th.tm}}><input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>up("heroImage",r.result);r.readAsDataURL(f);}}} style={{fontSize:11}}/> Încarcă altă imagine</label>
                           </div>
                         </div>
@@ -3228,23 +3208,44 @@ function App() {
                       <div style={{...sty.cd,padding:16}}>
                         <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Show Reel (YouTube embed URL)</div>
                         <input value={pk.showReelUrl} onChange={e=>up("showReelUrl",e.target.value)} placeholder="https://www.youtube.com/embed/..." style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
-                        <div style={{marginTop:8}}>
-                          <label style={{...sty.l,fontSize:10}}>Descriere</label>
-                          <input value={pk.showReelDesc} onChange={e=>up("showReelDesc",e.target.value)} placeholder="Vibe-ul nostru live..." style={{...sty.i,padding:"8px 12px",fontSize:12,width:"100%"}}/>
-                        </div>
                       </div>
-                      {/* Highlights */}
+                      {/* Music — Spotify */}
                       <div style={{...sty.cd,padding:16}}>
-                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Highlights</div>
-                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                          {(pk.highlights||[]).map(h=>(
-                            <div key={h.id} style={{display:"flex",gap:8,alignItems:"center"}}>
-                              <input value={h.icon} onChange={e=>upArr("highlights",pk.highlights.map(x=>x.id===h.id?{...x,icon:e.target.value}:x))} placeholder="🏆" style={{...sty.i,width:50,textAlign:"center",padding:"6px",fontSize:14}}/>
-                              <input value={h.label} onChange={e=>upArr("highlights",pk.highlights.map(x=>x.id===h.id?{...x,label:e.target.value}:x))} placeholder="Eurovision 2013" style={{...sty.i,flex:1,padding:"6px 10px",fontSize:12}}/>
-                              <button onClick={()=>upArr("highlights",pk.highlights.filter(x=>x.id!==h.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={14}/></button>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Music — Spotify</div>
+                        <input value={pk.musicSpotify||""} onChange={e=>up("musicSpotify",e.target.value)} placeholder="https://open.spotify.com/artist/..." style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
+                      </div>
+                      {/* Video oficiale */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Video oficiale — playlist videoclipuri</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {(pk.videoOficiale||[]).map(v=>(
+                            <div key={v.id} style={{display:"flex",flexDirection:"column",gap:6,padding:12,borderRadius:8,border:`1px solid ${th.b}`,background:th.h}}>
+                              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                                <input value={v.title} onChange={e=>upArr("videoOficiale",pk.videoOficiale.map(x=>x.id===v.id?{...x,title:e.target.value}:x))} placeholder="Titlu" style={{...sty.i,flex:1,minWidth:180,padding:"6px 10px",fontSize:12}}/>
+                                <input value={v.url} onChange={e=>upArr("videoOficiale",pk.videoOficiale.map(x=>x.id===v.id?{...x,url:e.target.value}:x))} placeholder="https://www.youtube.com/embed/..." style={{...sty.i,flex:1,minWidth:180,padding:"6px 10px",fontSize:12}}/>
+                                <button onClick={()=>upArr("videoOficiale",pk.videoOficiale.filter(x=>x.id!==v.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={14}/></button>
+                              </div>
+                              <input value={v.desc||""} onChange={e=>upArr("videoOficiale",pk.videoOficiale.map(x=>x.id===v.id?{...x,desc:e.target.value}:x))} placeholder="Descriere (opțional)" style={{...sty.i,padding:"6px 10px",fontSize:11}}/>
                             </div>
                           ))}
-                          <button onClick={()=>upArr("highlights",[...(pk.highlights||[]),{id:uid(),icon:"",label:""}])} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcPlus s={12}/> Adaugă highlight</button>
+                          <button onClick={()=>upArr("videoOficiale",[...(pk.videoOficiale||[]),{id:uid(),url:"",title:"",desc:""}])} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcPlus s={12}/> Adaugă video oficial</button>
+                        </div>
+                      </div>
+                      {/* Videouri live */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Videouri live — înregistrări de la concerte</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {(pk.videoLive||[]).map(v=>(
+                            <div key={v.id} style={{display:"flex",flexDirection:"column",gap:6,padding:12,borderRadius:8,border:`1px solid ${th.b}`,background:th.h}}>
+                              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                                <input value={v.title} onChange={e=>upArr("videoLive",pk.videoLive.map(x=>x.id===v.id?{...x,title:e.target.value}:x))} placeholder="Titlu" style={{...sty.i,flex:1,minWidth:180,padding:"6px 10px",fontSize:12}}/>
+                                <input value={v.url} onChange={e=>upArr("videoLive",pk.videoLive.map(x=>x.id===v.id?{...x,url:e.target.value}:x))} placeholder="https://www.youtube.com/embed/..." style={{...sty.i,flex:1,minWidth:180,padding:"6px 10px",fontSize:12}}/>
+                                <button onClick={()=>upArr("videoLive",pk.videoLive.filter(x=>x.id!==v.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={14}/></button>
+                              </div>
+                              <input value={v.desc||""} onChange={e=>upArr("videoLive",pk.videoLive.map(x=>x.id===v.id?{...x,desc:e.target.value}:x))} placeholder="Descriere (opțional)" style={{...sty.i,padding:"6px 10px",fontSize:11}}/>
+                            </div>
+                          ))}
+                          <button onClick={()=>upArr("videoLive",[...(pk.videoLive||[]),{id:uid(),url:"",title:"",desc:""}])} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcPlus s={12}/> Adaugă video live</button>
                         </div>
                       </div>
                       {/* Contact */}
@@ -3259,11 +3260,19 @@ function App() {
                       </div>
                       {/* Preview vizual EPK — design ca Behance/epkbuilder */}
                       <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
-                        <div style={{fontSize:11,fontWeight:700,color:th.tm,padding:"12px 16px",borderBottom:`1px solid ${th.b}`}}>Preview EPK</div>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,padding:"12px 16px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span>Preview EPK</span>
+                          <button onClick={()=>{
+                            const html=`<!DOCTYPE html><html lang="ro"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PHASER — Press Kit</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#fff;line-height:1.5}a{color:#fff}.hero img{width:100%;height:280px;object-fit:cover;object-position:${(pk.heroImagePos||"center 30%").replace(/ /g," ")}}.hero{position:relative;overflow:hidden}.hero .grad{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.9),transparent 50%);display:flex;flex-direction:column;justify-content:flex-end;padding:24px}.tagline{font-size:10px;color:rgba(255,255,255,.6);letter-spacing:3px;text-transform:uppercase;margin-top:8px}.sect{max-width:640px;margin:0 auto;padding:24px}.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.links a{padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.9);font-size:11px;font-weight:600;text-decoration:none}.intro{font-size:14px;color:rgba(255,255,255,.8);font-style:italic;margin-bottom:20px}.hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.4);margin-bottom:12px}.members{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.memb{padding:10px;border-radius:8px;background:rgba(255,255,255,.06);text-align:center;border:1px solid rgba(255,255,255,.08)}.vid-wrap{position:relative;padding-bottom:56.25%;height:0;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-top:8px}.vid-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}.contact{background:#111;text-align:center;padding:24px;border-top:1px solid rgba(255,255,255,.08)}.spotify{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;background:#1DB954;color:#fff;font-size:12px;font-weight:600;text-decoration:none}</style></head><body><div class="hero"><img src="${(()=>{const u=(pk.heroImage||"").replace(/"/g,"&quot;");return (u.startsWith("data:")||u.startsWith("http"))?u:"https://placehold.co/800x400/1a1a1a/fff?text=PHASER";})()}" alt=""/><div class="grad"><img src="https://phaser.ro/logo.svg" alt="PHASER" height="36" onerror="this.style.display='none'"/><div class="tagline">${(pk.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR EVENT").replace(/</g,"&lt;")}</div></div></div><div class="sect"><p class="intro">${(pk.introText||"").replace(/</g,"&lt;").slice(0,400)}</p><div class="links">${(pk.links||[]).filter(l=>l.url).map(l=>`<a href="${l.url.replace(/"/g,"&quot;")}" target="_blank" rel="noreferrer">${(l.l||"Link").replace(/</g,"&lt;")}</a>`).join("")}</div></div><div class="sect"><div class="hdr">Componență trupă</div><div class="members">${(pk.members||[]).slice(0,5).map(m=>`<div class="memb"><div style="font-weight:700;font-size:12px">${(m.n||"").split(" ")[0]}</div><div style="font-size:10px;color:rgba(255,255,255,.5)">${(m.r||"").replace(/</g,"&lt;")}</div></div>`).join("")}</div></div>${pk.showReelUrl?`<div class="sect"><div class="hdr">Show Reel</div><div class="vid-wrap"><iframe src="${pk.showReelUrl}" allowfullscreen></iframe></div></div>`:""}${(pk.musicSpotify||"").trim()?`<div class="sect"><div class="hdr">Music</div><a href="${pk.musicSpotify}" target="_blank" rel="noreferrer" class="spotify">▶ Ascultă pe Spotify</a></div>`:""}${(pk.videoOficiale||[]).filter(v=>v.url).length?`<div class="sect"><div class="hdr">Video oficiale</div>${(pk.videoOficiale||[]).filter(v=>v.url).map(v=>`<div style="margin-bottom:16px">${v.title?`<div style="font-weight:600;margin-bottom:4px">${v.title.replace(/</g,"&lt;")}</div>`:""}${v.desc?`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">${v.desc.replace(/</g,"&lt;")}</div>`:""}<div class="vid-wrap"><iframe src="${v.url}" allowfullscreen></iframe></div></div>`).join("")}</div>`:""}${(pk.videoLive||[]).filter(v=>v.url).length?`<div class="sect"><div class="hdr">Videouri live</div>${(pk.videoLive||[]).filter(v=>v.url).map(v=>`<div style="margin-bottom:16px">${v.title?`<div style="font-weight:600;margin-bottom:4px">${v.title.replace(/</g,"&lt;")}</div>`:""}${v.desc?`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">${v.desc.replace(/</g,"&lt;")}</div>`:""}<div class="vid-wrap"><iframe src="${v.url}" allowfullscreen></iframe></div></div>`).join("")}</div>`:""}${(pk.gallery||[]).length?`<div class="sect"><div class="hdr">Galerie</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8">${(pk.gallery||[]).slice(0,8).map(g=>`<img src="${(typeof g==="string"?g:g.url||"").replace(/"/g,"&quot;")}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8;border:1px solid rgba(255,255,255,.1)"/>`).join("")}</div></div>`:""}<div class="contact"><div class="hdr">Contact booking</div><div style="font-size:16px;font-weight:700">${(pk.contact?.name||"Radu Racz").replace(/</g,"&lt;")} — ${(pk.contact?.phone||"0744 771 488").replace(/</g,"&lt;")}</div><div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:6px">${(pk.contact?.email||"contact@phaser.ro").replace(/</g,"&lt;")} · ${(pk.contact?.website||"www.phaser.ro").replace(/</g,"&lt;")}</div></div></body></html>`;
+                            const blob=new Blob([html],{type:"text/html;charset=utf-8"});
+                            const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="phaser-press-kit.html";a.click();URL.revokeObjectURL(a.href);
+                            if(typeof showToast==="function")showToast("Press kit descărcat");
+                          }} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcFile s={12}/> Download Press Kit</button>
+                        </div>
                         <div style={{maxWidth:560,margin:"0 auto",background:"#0a0a0a"}}>
                           {/* Hero */}
                           <div style={{position:"relative",overflow:"hidden"}}>
-                            <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:220,objectFit:"cover",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+                            <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:220,objectFit:"cover",objectPosition:pk.heroImagePos||"center 30%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
                             <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 50%)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:24}}>
                               <Logo height={36}/>
                               <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:3,textTransform:"uppercase",marginTop:8}}>{pk.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR PARTY"}</div>
@@ -3295,13 +3304,41 @@ function App() {
                               <iframe src={pk.showReelUrl} title="Show Reel" style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/>
                             </div>
                           </div>}
-                          {/* Highlights */}
-                          <div style={{padding:"0 24px 20px"}}>
-                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Highlights</div>
-                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
-                              {(pk.highlights||[]).slice(0,6).map((h,i)=><div key={i} style={{padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:6,border:"1px solid rgba(255,255,255,.08)"}}><span style={{fontSize:14}}>{h.icon||"•"}</span><span style={{fontSize:10,color:"rgba(255,255,255,.8)",lineHeight:1.3}}>{h.label||""}</span></div>)}
+                          {/* Music — Spotify */}
+                          {(pk.musicSpotify||"").trim()&&<div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Music</div>
+                            <a href={pk.musicSpotify} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",borderRadius:10,background:"#1DB954",color:"#fff",fontSize:12,fontWeight:600,textDecoration:"none"}}>▶ Ascultă pe Spotify</a>
+                          </div>}
+                          {/* Video oficiale */}
+                          {(pk.videoOficiale||[]).filter(v=>v.url).length>0&&<div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Video oficiale</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                              {(pk.videoOficiale||[]).filter(v=>v.url).map(v=>(
+                                <div key={v.id}>
+                                  {v.title&&<div style={{fontSize:11,fontWeight:600,color:"#fff",marginBottom:4}}>{v.title}</div>}
+                                  {v.desc&&<div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginBottom:6}}>{v.desc}</div>}
+                                  <div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}>
+                                    <iframe src={v.url} title={v.title||"Video"} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          </div>
+                          </div>}
+                          {/* Videouri live */}
+                          {(pk.videoLive||[]).filter(v=>v.url).length>0&&<div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Videouri live</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                              {(pk.videoLive||[]).filter(v=>v.url).map(v=>(
+                                <div key={v.id}>
+                                  {v.title&&<div style={{fontSize:11,fontWeight:600,color:"#fff",marginBottom:4}}>{v.title}</div>}
+                                  {v.desc&&<div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginBottom:6}}>{v.desc}</div>}
+                                  <div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}>
+                                    <iframe src={v.url} title={v.title||"Video"} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>}
                           {/* Galerie preview */}
                           {(pk.gallery||[]).length>0&&<div style={{padding:"0 24px 20px"}}>
                             <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Galerie</div>
