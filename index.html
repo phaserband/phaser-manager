@@ -252,11 +252,55 @@ const loadEvs = () => { try { const s = localStorage.getItem(LS_KEYS.evs); if (s
 const loadTasks = () => { try { const s = localStorage.getItem(LS_KEYS.tasks); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadGenExp = () => { try { const s = localStorage.getItem(LS_KEYS.genExp); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadCreative = () => { try { const s=localStorage.getItem(LS_KEYS.creative); if(s) { const d=JSON.parse(s); return d&&typeof d==="object"?d:{}; } } catch(e){} return {ideas:[],songs:[],setlists:[]}; };
+// Press Kit Public — structură editabilă pentru oferta publică (festivaluri, concerte)
+const DEFAULT_PRESS_KIT_PUBLIC = {
+  introText: "Phaser înseamnă atitudine, dinamică și multă energie. Trebuie doar să ne vezi live și vei înțelege că un show Phaser este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
+  tagline: "FROM ROCKING THE STAGE TO ROCKING YOUR PARTY",
+  links: [
+    { id: "l1", l: "🎵 Instagram", url: "https://www.instagram.com/phasermusic" },
+    { id: "l2", l: "🎵 TikTok", url: "https://www.tiktok.com/@phasermusic" },
+    { id: "l3", l: "▶ YouTube", url: "https://www.youtube.com/@phasermusic" },
+    { id: "l4", l: "👥 Facebook", url: "https://www.facebook.com/phasermusic" }
+  ],
+  members: JSON.parse(JSON.stringify(MEMBERS)),
+  showReelUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+  showReelDesc: "Vibe-ul nostru live, așa cum e el! Nu e nimic regizat, nimic editat — doar energie pură!",
+  highlights: [
+    { id: "h1", icon: "🏆", label: "Eurovision 2013" },
+    { id: "h2", icon: "🎵", label: "MediaPro Music & Universal Music România (2017)" },
+    { id: "h3", icon: "💿", label: "Album: Început de Univers (2021)" },
+    { id: "h4", icon: "📺", label: "X Factor — Carina Dumitru" },
+    { id: "h5", icon: "🎤", label: "Sute de evenimente private & publice" },
+    { id: "h6", icon: "🌍", label: "Timișoara, România" }
+  ],
+  contact: { name: "Radu Racz", phone: "0744 771 488", email: "contact@phaser.ro", website: "www.phaser.ro" }
+};
+const normPressKitPublic = (v) => {
+  if (!v || typeof v === "string") return JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC));
+  const def = DEFAULT_PRESS_KIT_PUBLIC;
+  return {
+    introText: v.introText ?? def.introText,
+    tagline: v.tagline ?? def.tagline,
+    links: Array.isArray(v.links) && v.links.length ? v.links.map(x => ({ id: x.id || uid(), l: x.l ?? "", url: x.url ?? "" })) : JSON.parse(JSON.stringify(def.links)),
+    members: Array.isArray(v.members) && v.members.length ? v.members.map(x => ({ id: x.id || uid(), n: x.n ?? "", r: x.r ?? "" })) : JSON.parse(JSON.stringify(def.members)),
+    showReelUrl: v.showReelUrl ?? def.showReelUrl,
+    showReelDesc: v.showReelDesc ?? def.showReelDesc,
+    highlights: Array.isArray(v.highlights) && v.highlights.length ? v.highlights.map(x => ({ id: x.id || uid(), icon: x.icon ?? "", label: x.label ?? "" })) : JSON.parse(JSON.stringify(def.highlights)),
+    contact: v.contact && typeof v.contact === "object" ? { name: v.contact.name ?? "", phone: v.contact.phone ?? "", email: v.contact.email ?? "", website: v.contact.website ?? "" } : { ...def.contact }
+  };
+};
+
 // Templates — stocate în localStorage, folosite ca bază pentru oferte
 const loadTemplates = () => {
   try {
     const s = localStorage.getItem(LS_KEYS.templates);
-    if (s) return JSON.parse(s);
+    if (s) {
+      const d = JSON.parse(s);
+      if (d && typeof d === "object") {
+        d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
+        return d;
+      }
+    }
   } catch(e) {}
   return {
     playlist: JSON.parse(JSON.stringify(DEFAULT_COVERS)),
@@ -264,7 +308,7 @@ const loadTemplates = () => {
     riderCustom: [],
     riderStagePlot: { image: null, notes: "" },
     pressKitPrivat: "",
-    pressKitPublic: "",
+    pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
     poveste: "Phaser înseamnă atitudine, dinamică și multă energie. Un show Phaser este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor — a celor ce iubesc sau a celor îndrăgostiți de viață."
   };
 };
@@ -1097,15 +1141,15 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                 <div style={{flex:1,background:"#f9f9f9",borderRadius:8,padding:"12px 14px",border:"1px solid #f0f0f0"}}>
                   <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:1}}>Avans</div>
                   <div style={{fontSize:18,fontWeight:800,color:"#111",marginTop:4}}>{f$(ev.dep||0)}</div>
-                  <div style={{fontSize:10,color:"#bbb",marginTop:2}}>în 10 zile de la încheierea contractului</div>
+                  <div style={{fontSize:11,color:"#555",marginTop:2}}>în 10 zile de la încheierea contractului</div>
                 </div>
                 <div style={{flex:1,background:"#f9f9f9",borderRadius:8,padding:"12px 14px",border:"1px solid #f0f0f0"}}>
                   <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:1}}>Rest</div>
                   <div style={{fontSize:18,fontWeight:800,color:"#111",marginTop:4}}>{f$(tot-(ev.dep||0))}</div>
-                  <div style={{fontSize:10,color:"#bbb",marginTop:2}}>în {(ev.zileRest??5)} zile de la eveniment</div>
+                  <div style={{fontSize:11,color:"#555",marginTop:2}}>în {(ev.zileRest??5)} zile de la eveniment</div>
                 </div>
               </div>
-              <div style={{fontSize:11,color:"#bbb",textAlign:"center"}}>Oferta este valabilă 30 de zile · Prețurile vor fi calculate în RON la data facturării și includ toate taxele aferente</div>
+              <div style={{fontSize:11,color:"#666",textAlign:"center"}}>Oferta este valabilă 30 de zile · Prețurile vor fi calculate în RON la data facturării și includ toate taxele aferente</div>
             </div>
 
             {/* Media / PHASER Live — după plată, cu video-uri selectate (doar afișare, fără input în PDF) */}
@@ -3028,7 +3072,86 @@ function App() {
               </div>}
               {sectTab==="pressKitPublic"&&<div>
                 <label style={sty.l}>Press Kit Public — conținut pentru festivaluri, concerte</label>
-                <textarea value={templates.pressKitPublic||""} onChange={e=>saveTemplates({pressKitPublic:e.target.value})} style={{...sty.i,minHeight:150,resize:"vertical"}} placeholder="Text, link-uri, descriere..."/>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Layout vertical editabil — link-uri sociale, membri, show reel, highlights, contact.</p>
+                {(()=>{
+                  const pk = normPressKitPublic(templates.pressKitPublic);
+                  const up = (key, val) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:val}}));
+                  const upArr = (key, arr) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:arr}}));
+                  return (
+                    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                      {/* Intro + tagline */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Intro (poveste)</div>
+                        <textarea value={pk.introText} onChange={e=>up("introText",e.target.value)} style={{...sty.i,minHeight:80,resize:"vertical",fontSize:12}} placeholder="Povestea PHASER..."/>
+                        <div style={{marginTop:12}}>
+                          <label style={{...sty.l,fontSize:10}}>Tagline</label>
+                          <input value={pk.tagline} onChange={e=>up("tagline",e.target.value)} style={{...sty.i,padding:"8px 12px",fontSize:12}} placeholder="Ex: FROM ROCKING THE STAGE..."/>
+                        </div>
+                      </div>
+                      {/* Link-uri sociale */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Link-uri sociale</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {(pk.links||[]).map(ln=>(
+                            <div key={ln.id} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                              <input value={ln.l} onChange={e=>upArr("links",pk.links.map(x=>x.id===ln.id?{...x,l:e.target.value}:x))} placeholder="Label (ex: 🎵 Instagram)" style={{...sty.i,width:160,padding:"6px 10px",fontSize:12}}/>
+                              <input value={ln.url} onChange={e=>upArr("links",pk.links.map(x=>x.id===ln.id?{...x,url:e.target.value}:x))} placeholder="URL" style={{...sty.i,flex:1,minWidth:180,padding:"6px 10px",fontSize:12}}/>
+                              <button onClick={()=>upArr("links",pk.links.filter(x=>x.id!==ln.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={14}/></button>
+                            </div>
+                          ))}
+                          <button onClick={()=>upArr("links",[...(pk.links||[]),{id:uid(),l:"",url:""}])} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcPlus s={12}/> Adaugă link</button>
+                        </div>
+                      </div>
+                      {/* Membri */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Componență trupă</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {(pk.members||[]).map(m=>(
+                            <div key={m.id} style={{display:"flex",gap:8,alignItems:"center"}}>
+                              <input value={m.n} onChange={e=>upArr("members",pk.members.map(x=>x.id===m.id?{...x,n:e.target.value}:x))} placeholder="Nume" style={{...sty.i,flex:1,padding:"6px 10px",fontSize:12}}/>
+                              <input value={m.r} onChange={e=>upArr("members",pk.members.map(x=>x.id===m.id?{...x,r:e.target.value}:x))} placeholder="Rol" style={{...sty.i,width:120,padding:"6px 10px",fontSize:12}}/>
+                              <button onClick={()=>upArr("members",pk.members.filter(x=>x.id!==m.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={14}/></button>
+                            </div>
+                          ))}
+                          <button onClick={()=>upArr("members",[...(pk.members||[]),{id:uid(),n:"",r:""}])} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcPlus s={12}/> Adaugă membru</button>
+                        </div>
+                      </div>
+                      {/* Show Reel */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Show Reel (YouTube embed URL)</div>
+                        <input value={pk.showReelUrl} onChange={e=>up("showReelUrl",e.target.value)} placeholder="https://www.youtube.com/embed/..." style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
+                        <div style={{marginTop:8}}>
+                          <label style={{...sty.l,fontSize:10}}>Descriere</label>
+                          <input value={pk.showReelDesc} onChange={e=>up("showReelDesc",e.target.value)} placeholder="Vibe-ul nostru live..." style={{...sty.i,padding:"8px 12px",fontSize:12,width:"100%"}}/>
+                        </div>
+                      </div>
+                      {/* Highlights */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Highlights</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {(pk.highlights||[]).map(h=>(
+                            <div key={h.id} style={{display:"flex",gap:8,alignItems:"center"}}>
+                              <input value={h.icon} onChange={e=>upArr("highlights",pk.highlights.map(x=>x.id===h.id?{...x,icon:e.target.value}:x))} placeholder="🏆" style={{...sty.i,width:50,textAlign:"center",padding:"6px",fontSize:14}}/>
+                              <input value={h.label} onChange={e=>upArr("highlights",pk.highlights.map(x=>x.id===h.id?{...x,label:e.target.value}:x))} placeholder="Eurovision 2013" style={{...sty.i,flex:1,padding:"6px 10px",fontSize:12}}/>
+                              <button onClick={()=>upArr("highlights",pk.highlights.filter(x=>x.id!==h.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={14}/></button>
+                            </div>
+                          ))}
+                          <button onClick={()=>upArr("highlights",[...(pk.highlights||[]),{id:uid(),icon:"",label:""}])} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcPlus s={12}/> Adaugă highlight</button>
+                        </div>
+                      </div>
+                      {/* Contact */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Contact booking</div>
+                        <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10}}>
+                          <div><label style={{...sty.l,fontSize:10}}>Nume</label><input value={pk.contact?.name||""} onChange={e=>up("contact",{...pk.contact,name:e.target.value})} style={{...sty.i,padding:"8px 12px",fontSize:12}}/></div>
+                          <div><label style={{...sty.l,fontSize:10}}>Telefon</label><input value={pk.contact?.phone||""} onChange={e=>up("contact",{...pk.contact,phone:e.target.value})} style={{...sty.i,padding:"8px 12px",fontSize:12}}/></div>
+                          <div><label style={{...sty.l,fontSize:10}}>Email</label><input value={pk.contact?.email||""} onChange={e=>up("contact",{...pk.contact,email:e.target.value})} style={{...sty.i,padding:"8px 12px",fontSize:12}}/></div>
+                          <div><label style={{...sty.l,fontSize:10}}>Website</label><input value={pk.contact?.website||""} onChange={e=>up("contact",{...pk.contact,website:e.target.value})} style={{...sty.i,padding:"8px 12px",fontSize:12}}/></div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>}
               {sectTab==="poveste"&&<div>
                 <label style={sty.l}>Poveste — text în oferta privată</label>
