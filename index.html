@@ -252,8 +252,14 @@ const loadEvs = () => { try { const s = localStorage.getItem(LS_KEYS.evs); if (s
 const loadTasks = () => { try { const s = localStorage.getItem(LS_KEYS.tasks); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadGenExp = () => { try { const s = localStorage.getItem(LS_KEYS.genExp); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadCreative = () => { try { const s=localStorage.getItem(LS_KEYS.creative); if(s) { const d=JSON.parse(s); return d&&typeof d==="object"?d:{}; } } catch(e){} return {ideas:[],songs:[],setlists:[]}; };
+// Assets press kit — poze din folder assets
+const PK_IMG_PUBLIC_HEAD = "assets/Poza Presskit Public Head.jpg";
+const PK_IMG_PRIVAT = "assets/Poza Presskit Privat.jpg";
+
 // Press Kit Public — structură editabilă pentru oferta publică (festivaluri, concerte)
 const DEFAULT_PRESS_KIT_PUBLIC = {
+  heroImage: PK_IMG_PUBLIC_HEAD,
+  gallery: [],
   introText: "Phaser înseamnă atitudine, dinamică și multă energie. Trebuie doar să ne vezi live și vei înțelege că un show Phaser este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
   tagline: "FROM ROCKING THE STAGE TO ROCKING YOUR PARTY",
   links: [
@@ -279,6 +285,8 @@ const normPressKitPublic = (v) => {
   if (!v || typeof v === "string") return JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC));
   const def = DEFAULT_PRESS_KIT_PUBLIC;
   return {
+    heroImage: v.heroImage ?? def.heroImage,
+    gallery: Array.isArray(v.gallery) ? v.gallery : (def.gallery || []),
     introText: v.introText ?? def.introText,
     tagline: v.tagline ?? def.tagline,
     links: Array.isArray(v.links) && v.links.length ? v.links.map(x => ({ id: x.id || uid(), l: x.l ?? "", url: x.url ?? "" })) : JSON.parse(JSON.stringify(def.links)),
@@ -298,6 +306,8 @@ const loadTemplates = () => {
       const d = JSON.parse(s);
       if (d && typeof d === "object") {
         d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
+        if (typeof d.pressKitPrivat === "string") d.pressKitPrivat = { heroImage: PK_IMG_PRIVAT, text: d.pressKitPrivat };
+        if (!d.pressKitPrivat || typeof d.pressKitPrivat !== "object") d.pressKitPrivat = { heroImage: PK_IMG_PRIVAT, text: "" };
         return d;
       }
     }
@@ -307,7 +317,7 @@ const loadTemplates = () => {
     riderContent: {},
     riderCustom: [],
     riderStagePlot: { image: null, notes: "" },
-    pressKitPrivat: "",
+    pressKitPrivat: { heroImage: PK_IMG_PRIVAT, text: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
     poveste: "Phaser înseamnă atitudine, dinamică și multă energie. Un show Phaser este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor — a celor ce iubesc sau a celor îndrăgostiți de viață."
   };
@@ -3068,17 +3078,68 @@ function App() {
               </div>}
               {sectTab==="pressKitPrivat"&&<div>
                 <label style={sty.l}>Press Kit Privat — conținut pentru nunți, botezuri</label>
-                <textarea value={templates.pressKitPrivat||""} onChange={e=>saveTemplates({pressKitPrivat:e.target.value})} style={{...sty.i,minHeight:150,resize:"vertical"}} placeholder="Text, link-uri, descriere..."/>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Imagine header + text. Poza din assets: Poza Presskit Privat.jpg</p>
+                {(()=>{
+                  const pk = templates.pressKitPrivat && typeof templates.pressKitPrivat==="object" ? templates.pressKitPrivat : { heroImage: PK_IMG_PRIVAT, text: "" };
+                  const img = pk.heroImage || PK_IMG_PRIVAT;
+                  return (
+                    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Imagine header</div>
+                        <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                          <img src={img} alt="Press Kit Privat" style={{maxWidth:280,maxHeight:160,objectFit:"cover",borderRadius:10,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
+                          <div style={{flex:1,minWidth:200}}>
+                            <input value={pk.heroImage||""} onChange={e=>saveTemplates({pressKitPrivat:{...pk,heroImage:e.target.value}})} placeholder="assets/Poza Presskit Privat.jpg" style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
+                            <label style={{display:"block",marginTop:8,fontSize:11,color:th.tm}}><input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>saveTemplates({pressKitPrivat:{...pk,heroImage:r.result}});r.readAsDataURL(f);}}} style={{fontSize:11}}/> Încarcă altă imagine</label>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{...sty.cd,padding:16}}><label style={{...sty.l,fontSize:11}}>Text / descriere</label><textarea value={pk.text||""} onChange={e=>saveTemplates({pressKitPrivat:{...pk,text:e.target.value}})} style={{...sty.i,minHeight:100,resize:"vertical"}} placeholder="Text, link-uri, descriere..."/></div>
+                      {/* Preview vizual EPK */}
+                      <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,padding:"12px 16px",borderBottom:`1px solid ${th.b}`}}>Preview EPK</div>
+                        <div style={{background:"#111",padding:0,minHeight:200}}>
+                          <img src={img} alt="" style={{width:"100%",height:180,objectFit:"cover",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+                          <div style={{padding:"20px 24px"}}><Logo height={32} dark/><p style={{fontSize:13,color:"rgba(255,255,255,.8)",lineHeight:1.6,marginTop:12,fontStyle:"italic"}}>{(pk.text||"").slice(0,200)}{(pk.text||"").length>200?"...":""}</p></div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>}
               {sectTab==="pressKitPublic"&&<div>
                 <label style={sty.l}>Press Kit Public — conținut pentru festivaluri, concerte</label>
-                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Layout vertical editabil — link-uri sociale, membri, show reel, highlights, contact.</p>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>EPK editabil — imagine header, galerie, link-uri, membri, show reel, highlights, contact. Preview vizual mai jos.</p>
                 {(()=>{
                   const pk = normPressKitPublic(templates.pressKitPublic);
                   const up = (key, val) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:val}}));
                   const upArr = (key, arr) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:arr}}));
                   return (
                     <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                      {/* Hero image */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Imagine header (Poza Presskit Public Head.jpg)</div>
+                        <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                          <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="Header" style={{maxWidth:320,maxHeight:180,objectFit:"cover",borderRadius:10,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
+                          <div style={{flex:1,minWidth:200}}>
+                            <input value={pk.heroImage||""} onChange={e=>up("heroImage",e.target.value)} placeholder={PK_IMG_PUBLIC_HEAD} style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
+                            <label style={{display:"block",marginTop:8,fontSize:11,color:th.tm}}><input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>up("heroImage",r.result);r.readAsDataURL(f);}}} style={{fontSize:11}}/> Încarcă altă imagine</label>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Galerie */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Galerie (poze suplimentare)</div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                          {(pk.gallery||[]).map((g,i)=>(
+                            <div key={i} style={{position:"relative"}}>
+                              <img src={typeof g==="string"?g:g.url} alt="" style={{width:80,height:60,objectFit:"cover",borderRadius:8,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
+                              <button onClick={()=>upArr("gallery",(pk.gallery||[]).filter((_,j)=>j!==i))} style={{position:"absolute",top:2,right:2,padding:2,borderRadius:4,background:"rgba(0,0,0,.7)",color:"#fff",border:"none",cursor:"pointer",fontSize:10}}>×</button>
+                            </div>
+                          ))}
+                          <label style={{width:80,height:60,borderRadius:8,border:`2px dashed ${th.b}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:11,color:th.tm}}><input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>upArr("gallery",[...(pk.gallery||[]),r.result]);r.readAsDataURL(f);}}} />+</label>
+                        </div>
+                      </div>
                       {/* Intro + tagline */}
                       <div style={{...sty.cd,padding:16}}>
                         <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Intro (poveste)</div>
@@ -3147,6 +3208,66 @@ function App() {
                           <div><label style={{...sty.l,fontSize:10}}>Telefon</label><input value={pk.contact?.phone||""} onChange={e=>up("contact",{...pk.contact,phone:e.target.value})} style={{...sty.i,padding:"8px 12px",fontSize:12}}/></div>
                           <div><label style={{...sty.l,fontSize:10}}>Email</label><input value={pk.contact?.email||""} onChange={e=>up("contact",{...pk.contact,email:e.target.value})} style={{...sty.i,padding:"8px 12px",fontSize:12}}/></div>
                           <div><label style={{...sty.l,fontSize:10}}>Website</label><input value={pk.contact?.website||""} onChange={e=>up("contact",{...pk.contact,website:e.target.value})} style={{...sty.i,padding:"8px 12px",fontSize:12}}/></div>
+                        </div>
+                      </div>
+                      {/* Preview vizual EPK — design ca Behance/epkbuilder */}
+                      <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,padding:"12px 16px",borderBottom:`1px solid ${th.b}`}}>Preview EPK</div>
+                        <div style={{maxWidth:560,margin:"0 auto",background:"#0a0a0a"}}>
+                          {/* Hero */}
+                          <div style={{position:"relative",overflow:"hidden"}}>
+                            <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:220,objectFit:"cover",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+                            <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 50%)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:24}}>
+                              <Logo height={36}/>
+                              <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:3,textTransform:"uppercase",marginTop:8}}>{pk.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR PARTY"}</div>
+                            </div>
+                          </div>
+                          {/* Intro + links */}
+                          <div style={{padding:"24px 24px 16px"}}>
+                            <p style={{fontSize:13,color:"rgba(255,255,255,.8)",lineHeight:1.7,fontStyle:"italic",marginBottom:16}}>{(pk.introText||"").slice(0,280)}{(pk.introText||"").length>280?"...":""}</p>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                              {(pk.links||[]).filter(l=>l.url).map((s,i)=><a key={i} href={s.url} target="_blank" rel="noreferrer" style={{padding:"5px 12px",borderRadius:20,background:"rgba(255,255,255,.12)",color:"rgba(255,255,255,.85)",fontSize:10,fontWeight:600,textDecoration:"none"}}>{s.l||"Link"}</a>)}
+                            </div>
+                          </div>
+                          {/* Membri */}
+                          <div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Componență trupă</div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}}>
+                              {(pk.members||[]).slice(0,5).map(m=>(
+                                <div key={m.id} style={{padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,.06)",textAlign:"center",border:"1px solid rgba(255,255,255,.08)"}}>
+                                  <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{m.n?m.n.split(" ")[0]:""}</div>
+                                  <div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:2}}>{m.r||""}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          {/* Show Reel */}
+                          {pk.showReelUrl&&<div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Show Reel</div>
+                            <div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}>
+                              <iframe src={pk.showReelUrl} title="Show Reel" style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/>
+                            </div>
+                          </div>}
+                          {/* Highlights */}
+                          <div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Highlights</div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                              {(pk.highlights||[]).slice(0,6).map((h,i)=><div key={i} style={{padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:6,border:"1px solid rgba(255,255,255,.08)"}}><span style={{fontSize:14}}>{h.icon||"•"}</span><span style={{fontSize:10,color:"rgba(255,255,255,.8)",lineHeight:1.3}}>{h.label||""}</span></div>)}
+                            </div>
+                          </div>
+                          {/* Galerie preview */}
+                          {(pk.gallery||[]).length>0&&<div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Galerie</div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                              {(pk.gallery||[]).slice(0,4).map((g,i)=><img key={i} src={typeof g==="string"?g:g.url} alt="" style={{width:"100%",aspectRatio:"1",objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,.1)"}} onError={e=>{e.target.style.display="none";}}/>)}
+                            </div>
+                          </div>}
+                          {/* Contact */}
+                          <div style={{padding:"24px",background:"#111",textAlign:"center",borderTop:"1px solid rgba(255,255,255,.08)"}}>
+                            <div style={{fontSize:9,color:"rgba(255,255,255,.4)",marginBottom:6,letterSpacing:1,textTransform:"uppercase"}}>Contact booking</div>
+                            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>{pk.contact?.name||"Radu Racz"} — {pk.contact?.phone||"0744 771 488"}</div>
+                            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>{pk.contact?.email||"contact@phaser.ro"} · {pk.contact?.website||"www.phaser.ro"}</div>
+                          </div>
                         </div>
                       </div>
                     </div>
