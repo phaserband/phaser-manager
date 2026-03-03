@@ -259,8 +259,13 @@ const PK_IMG_PRIVAT_HEAD = "assets/Poza Presskit Privat.jpg";
 // Press Kit Public — structură editabilă pentru oferta publică (festivaluri, concerte)
 const DEFAULT_PRESS_KIT_PUBLIC = {
   heroImage: PK_IMG_PUBLIC_HEAD,
-  heroImagePos: "center 30%", // object-position: centru vertical 30% (arată persoanele)
+  heroImagePos: "center 20%", // object-position: arată toate cele 5 persoane (rândul din spate)
   gallery: [],
+  highlights: [
+    { id: "h1", icon: "★", label: "Eurovision 2013" },
+    { id: "h2", icon: "★", label: "X Factor România" },
+    { id: "h3", icon: "★", label: "Concerte naționale" }
+  ],
   introText: "Phaser înseamnă atitudine, dinamică și multă energie. Trebuie doar să ne vezi live și vei înțelege că un show Phaser este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
   tagline: "FROM ROCKING THE STAGE TO ROCKING YOUR EVENT",
   links: [
@@ -285,6 +290,7 @@ const normPressKitPublic = (v) => {
     heroImage: v.heroImage ?? def.heroImage,
     heroImagePos: v.heroImagePos ?? def.heroImagePos,
     gallery: Array.isArray(v.gallery) ? v.gallery : (def.gallery || []),
+    highlights: Array.isArray(v.highlights) && v.highlights.length ? v.highlights.map(x => ({ id: x.id || uid(), icon: x.icon ?? "★", label: x.label ?? "" })) : JSON.parse(JSON.stringify(def.highlights || [])),
     introText: v.introText ?? def.introText,
     tagline: v.tagline ?? def.tagline,
     links: Array.isArray(v.links) && v.links.length ? v.links.map(x => ({ id: x.id || uid(), l: x.l ?? "", url: x.url ?? "" })) : JSON.parse(JSON.stringify(def.links)),
@@ -1084,7 +1090,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
 
             {/* Imagine header — privat: poza fixă; public: din Press Kit Public (salvat în Docs) */}
             {(isPriv||pkPublic)&&<div style={{borderRadius:"16px 16px 0 0",overflow:"hidden",marginBottom:0}}>
-              <img src={isPriv?PK_IMG_PRIVAT_HEAD:(pkPublic?.heroImage||PK_IMG_PUBLIC_HEAD)} alt="" style={{width:"100%",height:200,objectFit:"cover",objectPosition:isPriv?"center 30%":(pkPublic?.heroImagePos||"center 30%"),display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+              <img src={isPriv?PK_IMG_PRIVAT_HEAD:(pkPublic?.heroImage||PK_IMG_PUBLIC_HEAD)} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:isPriv?"center 20%":(pkPublic?.heroImagePos||"center 20%"),display:"block"}} onError={e=>{e.target.style.display="none";}}/>
             </div>}
             {/* Header card — culori calde, logo mare */}
             <div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 50%,#1a1510 100%)",borderRadius:(isPriv||pkPublic)?"0 0 16px 16px":"16px",padding:"28px 28px 24px",marginBottom:12,position:"relative",overflow:"hidden",border:"1px solid rgba(245,158,11,.15)",borderTop:(isPriv||pkPublic)?"none":"1px solid rgba(245,158,11,.15)"}}>
@@ -1326,7 +1332,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         {!isPriv&&pkPublic&&<div id="presskit-print-content" style={{flex:1,overflow:"auto",background:"#0a0a0a",display:tab==="pressKit"?"block":"none"}}>
           <div style={{maxWidth:560,margin:"0 auto"}}>
             <div style={{position:"relative",overflow:"hidden"}}>
-              <img src={pkPublic.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:220,objectFit:"cover",objectPosition:pkPublic.heroImagePos||"center 30%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+              <img src={pkPublic.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:pkPublic.heroImagePos||"center 20%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
               <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 50%)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:24}}>
                 <Logo height={36}/>
                 <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:3,textTransform:"uppercase",marginTop:8}}>{pkPublic.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR EVENT"}</div>
@@ -1344,6 +1350,12 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                 {(pkPublic.members||[]).slice(0,5).map(m=><div key={m.id} style={{padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,.06)",textAlign:"center",border:"1px solid rgba(255,255,255,.08)"}}><div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{m.n?m.n.split(" ")[0]:""}</div><div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:2}}>{m.r||""}</div></div>)}
               </div>
             </div>
+            {(pkPublic.highlights||[]).length>0&&<div style={{padding:"0 24px 20px"}}>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Highlights</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                {(pkPublic.highlights||[]).slice(0,6).map((h,i)=><div key={i} style={{padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:6,border:"1px solid rgba(255,255,255,.08)"}}><span style={{fontSize:14}}>{h.icon||"★"}</span><span style={{fontSize:10,color:"rgba(255,255,255,.8)"}}>{h.label||""}</span></div>)}
+              </div>
+            </div>}
             {pkPublic.showReelUrl&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Show Reel</div><div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}><iframe src={pkPublic.showReelUrl} title="Show Reel" style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/></div></div>}
             {(pkPublic.musicSpotify||"").trim()&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Music</div><a href={pkPublic.musicSpotify} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",borderRadius:10,background:"#1DB954",color:"#fff",fontSize:12,fontWeight:600,textDecoration:"none"}}>▶ Ascultă pe Spotify</a></div>}
             {(pkPublic.videoOficiale||[]).filter(v=>v.url).length>0&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Video oficiale</div><div style={{display:"flex",flexDirection:"column",gap:12}}>{(pkPublic.videoOficiale||[]).filter(v=>v.url).map(v=><div key={v.id}>{v.title&&<div style={{fontSize:11,fontWeight:600,color:"#fff",marginBottom:4}}>{v.title}</div>}{v.desc&&<div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginBottom:6}}>{v.desc}</div>}<div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}><iframe src={v.url} title={v.title||"Video"} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/></div></div>)}</div></div>}
@@ -3053,7 +3065,7 @@ function App() {
             <div style={sty.cd}>
               {sectTab==="rider"&&<div>
                 <label style={sty.l}>Rider Tehnic și Ospitalitate — conținut editabil</label>
-                <p style={{fontSize:11,color:th.tm,marginBottom:10}}>Acest conținut este preluat în oferte când rider-ul e inclus.</p>
+                <p style={{fontSize:11,color:th.tm,marginBottom:10}}>Conținut preluat în ofertele publice. <strong>Salvează rider</strong> = actualizează. <strong>Salvează ca versiune nouă</strong> = creează backup. <strong>Versiuni anterioare</strong> = încarcă o versiune salvată.</p>
                 {/* Subsecțiune Stage Plot */}
                 <div style={{marginBottom:20,padding:16,borderRadius:10,border:`1px solid ${th.b}`,background:th.h}}>
                   <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
@@ -3125,12 +3137,12 @@ function App() {
               </div>}
               {sectTab==="pressKitPublic"&&<div>
                 <label style={sty.l}>Press Kit Public — conținut pentru festivaluri, concerte</label>
-                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>EPK editabil — imagine header, Music, Video oficiale, Videouri live, contact. Salvezi aici și se aplică automat la ofertele publice. Download pentru HTML.</p>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>EPK editabil — imagine header, Music, Video oficiale, Videouri live, contact. <strong>Salvează automat</strong> la fiecare modificare — se aplică imediat la ofertele publice. Download pentru HTML.</p>
                 {(()=>{
                   const pk = normPressKitPublic(templates.pressKitPublic);
                   const up = (key, val) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:val}}));
                   const upArr = (key, arr) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:arr}}));
-                  const imgPos = pk.heroImagePos || "center 30%";
+                  const imgPos = pk.heroImagePos || "center 20%";
                   return (
                     <div style={{display:"flex",flexDirection:"column",gap:16}}>
                       {/* Hero image + framing */}
@@ -3138,12 +3150,13 @@ function App() {
                         <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Imagine header — incadrare (object-position)</div>
                         <p style={{fontSize:10,color:th.tm,marginBottom:8}}>Alege cum se decupează imaginea ca să se vadă toate persoanele</p>
                         <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
-                          <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="Header" style={{maxWidth:320,maxHeight:200,objectFit:"cover",objectPosition:imgPos,borderRadius:10,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
+                          <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="Header" style={{maxWidth:320,maxHeight:260,objectFit:"cover",objectPosition:imgPos,borderRadius:10,border:`1px solid ${th.b}`}} onError={e=>{e.target.style.display="none";}}/>
                           <div style={{flex:1,minWidth:200}}>
                             <label style={{...sty.l,fontSize:10}}>Poziție incadrare</label>
                             <select value={imgPos} onChange={e=>up("heroImagePos",e.target.value)} style={{...sty.i,padding:"8px 12px",fontSize:12,marginBottom:8}}>
-                              <option value="center top">Sus (top)</option>
-                              <option value="center 20%">Centru-sus (20%)</option>
+                              <option value="center top">Sus (top) — toate capetele</option>
+                              <option value="center 15%">Centru-sus (15%)</option>
+                              <option value="center 20%">Centru-sus (20%) — recomandat</option>
                               <option value="center 30%">Centru (30%)</option>
                               <option value="center center">Centru</option>
                               <option value="center 70%">Centru-jos (70%)</option>
@@ -3209,6 +3222,20 @@ function App() {
                         <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Show Reel (YouTube embed URL)</div>
                         <input value={pk.showReelUrl} onChange={e=>up("showReelUrl",e.target.value)} placeholder="https://www.youtube.com/embed/..." style={{...sty.i,padding:"8px 12px",fontSize:12}}/>
                       </div>
+                      {/* Highlights */}
+                      <div style={{...sty.cd,padding:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:10}}>Highlights</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {(pk.highlights||[]).map(h=>(
+                            <div key={h.id} style={{display:"flex",gap:8,alignItems:"center"}}>
+                              <input value={h.icon} onChange={e=>upArr("highlights",pk.highlights.map(x=>x.id===h.id?{...x,icon:e.target.value}:x))} placeholder="★" style={{...sty.i,width:50,textAlign:"center",padding:"6px",fontSize:14}}/>
+                              <input value={h.label} onChange={e=>upArr("highlights",pk.highlights.map(x=>x.id===h.id?{...x,label:e.target.value}:x))} placeholder="Eurovision 2013" style={{...sty.i,flex:1,padding:"6px 10px",fontSize:12}}/>
+                              <button onClick={()=>upArr("highlights",pk.highlights.filter(x=>x.id!==h.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={14}/></button>
+                            </div>
+                          ))}
+                          <button onClick={()=>upArr("highlights",[...(pk.highlights||[]),{id:uid(),icon:"★",label:""}])} style={{...sty.bg,padding:"6px 12px",fontSize:11}}><IcPlus s={12}/> Adaugă highlight</button>
+                        </div>
+                      </div>
                       {/* Music — Spotify */}
                       <div style={{...sty.cd,padding:16}}>
                         <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Music — Spotify</div>
@@ -3263,7 +3290,7 @@ function App() {
                         <div style={{fontSize:11,fontWeight:700,color:th.tm,padding:"12px 16px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                           <span>Preview EPK</span>
                           <button onClick={()=>{
-                            const html=`<!DOCTYPE html><html lang="ro"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PHASER — Press Kit</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#fff;line-height:1.5}a{color:#fff}.hero img{width:100%;height:280px;object-fit:cover;object-position:${(pk.heroImagePos||"center 30%").replace(/ /g," ")}}.hero{position:relative;overflow:hidden}.hero .grad{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.9),transparent 50%);display:flex;flex-direction:column;justify-content:flex-end;padding:24px}.tagline{font-size:10px;color:rgba(255,255,255,.6);letter-spacing:3px;text-transform:uppercase;margin-top:8px}.sect{max-width:640px;margin:0 auto;padding:24px}.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.links a{padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.9);font-size:11px;font-weight:600;text-decoration:none}.intro{font-size:14px;color:rgba(255,255,255,.8);font-style:italic;margin-bottom:20px}.hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.4);margin-bottom:12px}.members{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.memb{padding:10px;border-radius:8px;background:rgba(255,255,255,.06);text-align:center;border:1px solid rgba(255,255,255,.08)}.vid-wrap{position:relative;padding-bottom:56.25%;height:0;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-top:8px}.vid-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}.contact{background:#111;text-align:center;padding:24px;border-top:1px solid rgba(255,255,255,.08)}.spotify{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;background:#1DB954;color:#fff;font-size:12px;font-weight:600;text-decoration:none}</style></head><body><div class="hero"><img src="${(()=>{const u=(pk.heroImage||"").replace(/"/g,"&quot;");return (u.startsWith("data:")||u.startsWith("http"))?u:"https://placehold.co/800x400/1a1a1a/fff?text=PHASER";})()}" alt=""/><div class="grad"><img src="https://phaser.ro/logo.svg" alt="PHASER" height="36" onerror="this.style.display='none'"/><div class="tagline">${(pk.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR EVENT").replace(/</g,"&lt;")}</div></div></div><div class="sect"><p class="intro">${(pk.introText||"").replace(/</g,"&lt;").slice(0,400)}</p><div class="links">${(pk.links||[]).filter(l=>l.url).map(l=>`<a href="${l.url.replace(/"/g,"&quot;")}" target="_blank" rel="noreferrer">${(l.l||"Link").replace(/</g,"&lt;")}</a>`).join("")}</div></div><div class="sect"><div class="hdr">Componență trupă</div><div class="members">${(pk.members||[]).slice(0,5).map(m=>`<div class="memb"><div style="font-weight:700;font-size:12px">${(m.n||"").split(" ")[0]}</div><div style="font-size:10px;color:rgba(255,255,255,.5)">${(m.r||"").replace(/</g,"&lt;")}</div></div>`).join("")}</div></div>${pk.showReelUrl?`<div class="sect"><div class="hdr">Show Reel</div><div class="vid-wrap"><iframe src="${pk.showReelUrl}" allowfullscreen></iframe></div></div>`:""}${(pk.musicSpotify||"").trim()?`<div class="sect"><div class="hdr">Music</div><a href="${pk.musicSpotify}" target="_blank" rel="noreferrer" class="spotify">▶ Ascultă pe Spotify</a></div>`:""}${(pk.videoOficiale||[]).filter(v=>v.url).length?`<div class="sect"><div class="hdr">Video oficiale</div>${(pk.videoOficiale||[]).filter(v=>v.url).map(v=>`<div style="margin-bottom:16px">${v.title?`<div style="font-weight:600;margin-bottom:4px">${v.title.replace(/</g,"&lt;")}</div>`:""}${v.desc?`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">${v.desc.replace(/</g,"&lt;")}</div>`:""}<div class="vid-wrap"><iframe src="${v.url}" allowfullscreen></iframe></div></div>`).join("")}</div>`:""}${(pk.videoLive||[]).filter(v=>v.url).length?`<div class="sect"><div class="hdr">Videouri live</div>${(pk.videoLive||[]).filter(v=>v.url).map(v=>`<div style="margin-bottom:16px">${v.title?`<div style="font-weight:600;margin-bottom:4px">${v.title.replace(/</g,"&lt;")}</div>`:""}${v.desc?`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">${v.desc.replace(/</g,"&lt;")}</div>`:""}<div class="vid-wrap"><iframe src="${v.url}" allowfullscreen></iframe></div></div>`).join("")}</div>`:""}${(pk.gallery||[]).length?`<div class="sect"><div class="hdr">Galerie</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8">${(pk.gallery||[]).slice(0,8).map(g=>`<img src="${(typeof g==="string"?g:g.url||"").replace(/"/g,"&quot;")}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8;border:1px solid rgba(255,255,255,.1)"/>`).join("")}</div></div>`:""}<div class="contact"><div class="hdr">Contact booking</div><div style="font-size:16px;font-weight:700">${(pk.contact?.name||"Radu Racz").replace(/</g,"&lt;")} — ${(pk.contact?.phone||"0744 771 488").replace(/</g,"&lt;")}</div><div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:6px">${(pk.contact?.email||"contact@phaser.ro").replace(/</g,"&lt;")} · ${(pk.contact?.website||"www.phaser.ro").replace(/</g,"&lt;")}</div></div></body></html>`;
+                            const html=`<!DOCTYPE html><html lang="ro"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PHASER — Press Kit</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#fff;line-height:1.5}a{color:#fff}.hero img{width:100%;height:300px;object-fit:cover;object-position:${(pk.heroImagePos||"center 20%").replace(/ /g," ")}}.hero{position:relative;overflow:hidden}.hero .grad{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.9),transparent 50%);display:flex;flex-direction:column;justify-content:flex-end;padding:24px}.tagline{font-size:10px;color:rgba(255,255,255,.6);letter-spacing:3px;text-transform:uppercase;margin-top:8px}.sect{max-width:640px;margin:0 auto;padding:24px}.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.links a{padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.9);font-size:11px;font-weight:600;text-decoration:none}.intro{font-size:14px;color:rgba(255,255,255,.8);font-style:italic;margin-bottom:20px}.hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.4);margin-bottom:12px}.members{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.memb{padding:10px;border-radius:8px;background:rgba(255,255,255,.06);text-align:center;border:1px solid rgba(255,255,255,.08)}.vid-wrap{position:relative;padding-bottom:56.25%;height:0;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-top:8px}.vid-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}.contact{background:#111;text-align:center;padding:24px;border-top:1px solid rgba(255,255,255,.08)}.spotify{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;background:#1DB954;color:#fff;font-size:12px;font-weight:600;text-decoration:none}</style></head><body><div class="hero"><img src="${(()=>{const u=(pk.heroImage||"").replace(/"/g,"&quot;");return (u.startsWith("data:")||u.startsWith("http"))?u:"https://placehold.co/800x400/1a1a1a/fff?text=PHASER";})()}" alt=""/><div class="grad"><img src="https://phaser.ro/logo.svg" alt="PHASER" height="36" onerror="this.style.display='none'"/><div class="tagline">${(pk.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR EVENT").replace(/</g,"&lt;")}</div></div></div><div class="sect"><p class="intro">${(pk.introText||"").replace(/</g,"&lt;").slice(0,400)}</p><div class="links">${(pk.links||[]).filter(l=>l.url).map(l=>`<a href="${l.url.replace(/"/g,"&quot;")}" target="_blank" rel="noreferrer">${(l.l||"Link").replace(/</g,"&lt;")}</a>`).join("")}</div></div><div class="sect"><div class="hdr">Componență trupă</div><div class="members">${(pk.members||[]).slice(0,5).map(m=>`<div class="memb"><div style="font-weight:700;font-size:12px">${(m.n||"").split(" ")[0]}</div><div style="font-size:10px;color:rgba(255,255,255,.5)">${(m.r||"").replace(/</g,"&lt;")}</div></div>`).join("")}</div></div>${(pk.highlights||[]).length?`<div class="sect"><div class="hdr">Highlights</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8">${(pk.highlights||[]).slice(0,6).map(h=>`<div class="memb" style="display:flex;align-items:center;gap:6"><span>${(h.icon||"★").replace(/</g,"&lt;")}</span><span>${(h.label||"").replace(/</g,"&lt;")}</span></div>`).join("")}</div></div>`:""}${pk.showReelUrl?`<div class="sect"><div class="hdr">Show Reel</div><div class="vid-wrap"><iframe src="${pk.showReelUrl}" allowfullscreen></iframe></div></div>`:""}${(pk.musicSpotify||"").trim()?`<div class="sect"><div class="hdr">Music</div><a href="${pk.musicSpotify}" target="_blank" rel="noreferrer" class="spotify">▶ Ascultă pe Spotify</a></div>`:""}${(pk.videoOficiale||[]).filter(v=>v.url).length?`<div class="sect"><div class="hdr">Video oficiale</div>${(pk.videoOficiale||[]).filter(v=>v.url).map(v=>`<div style="margin-bottom:16px">${v.title?`<div style="font-weight:600;margin-bottom:4px">${v.title.replace(/</g,"&lt;")}</div>`:""}${v.desc?`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">${v.desc.replace(/</g,"&lt;")}</div>`:""}<div class="vid-wrap"><iframe src="${v.url}" allowfullscreen></iframe></div></div>`).join("")}</div>`:""}${(pk.videoLive||[]).filter(v=>v.url).length?`<div class="sect"><div class="hdr">Videouri live</div>${(pk.videoLive||[]).filter(v=>v.url).map(v=>`<div style="margin-bottom:16px">${v.title?`<div style="font-weight:600;margin-bottom:4px">${v.title.replace(/</g,"&lt;")}</div>`:""}${v.desc?`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">${v.desc.replace(/</g,"&lt;")}</div>`:""}<div class="vid-wrap"><iframe src="${v.url}" allowfullscreen></iframe></div></div>`).join("")}</div>`:""}${(pk.gallery||[]).length?`<div class="sect"><div class="hdr">Galerie</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8">${(pk.gallery||[]).slice(0,8).map(g=>`<img src="${(typeof g==="string"?g:g.url||"").replace(/"/g,"&quot;")}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8;border:1px solid rgba(255,255,255,.1)"/>`).join("")}</div></div>`:""}<div class="contact"><div class="hdr">Contact booking</div><div style="font-size:16px;font-weight:700">${(pk.contact?.name||"Radu Racz").replace(/</g,"&lt;")} — ${(pk.contact?.phone||"0744 771 488").replace(/</g,"&lt;")}</div><div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:6px">${(pk.contact?.email||"contact@phaser.ro").replace(/</g,"&lt;")} · ${(pk.contact?.website||"www.phaser.ro").replace(/</g,"&lt;")}</div></div></body></html>`;
                             const blob=new Blob([html],{type:"text/html;charset=utf-8"});
                             const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="phaser-press-kit.html";a.click();URL.revokeObjectURL(a.href);
                             if(typeof showToast==="function")showToast("Press kit descărcat");
@@ -3272,7 +3299,7 @@ function App() {
                         <div style={{maxWidth:560,margin:"0 auto",background:"#0a0a0a"}}>
                           {/* Hero */}
                           <div style={{position:"relative",overflow:"hidden"}}>
-                            <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:220,objectFit:"cover",objectPosition:pk.heroImagePos||"center 30%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+                            <img src={pk.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:pk.heroImagePos||"center 20%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
                             <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 50%)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:24}}>
                               <Logo height={36}/>
                               <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:3,textTransform:"uppercase",marginTop:8}}>{pk.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR PARTY"}</div>
@@ -3297,6 +3324,13 @@ function App() {
                               ))}
                             </div>
                           </div>
+                          {/* Highlights */}
+                          {(pk.highlights||[]).length>0&&<div style={{padding:"0 24px 20px"}}>
+                            <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Highlights</div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                              {(pk.highlights||[]).slice(0,6).map((h,i)=><div key={i} style={{padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:6,border:"1px solid rgba(255,255,255,.08)"}}><span style={{fontSize:14}}>{h.icon||"★"}</span><span style={{fontSize:10,color:"rgba(255,255,255,.8)",lineHeight:1.3}}>{h.label||""}</span></div>)}
+                            </div>
+                          </div>}
                           {/* Show Reel */}
                           {pk.showReelUrl&&<div style={{padding:"0 24px 20px"}}>
                             <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Show Reel</div>
