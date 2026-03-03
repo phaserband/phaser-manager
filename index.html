@@ -998,6 +998,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     dataFinal:""
   });
   const isPriv = ev.cat==="private";
+  const pkPublic = !isPriv ? normPressKitPublic(templates?.pressKitPublic) : null;
   const svcTot = isPriv ? Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0) : 0;
   const tot = (ev.fee||0)+svcTot;
   const dk = th.bg==="#09090b";
@@ -1030,7 +1031,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   const baseTabs = isPriv
     ? (showRiderTab ? [{id:"oferta",l:"📄 Ofertă"},{id:"rider",l:"📋 Rider"}]
                     : [{id:"oferta",l:"📄 Ofertă"}])
-    : [{id:"oferta",l:"📄 Ofertă"},{id:"rider",l:"📋 Rider"}];
+    : [{id:"oferta",l:"📄 Ofertă"},{id:"rider",l:"📋 Rider"},{id:"pressKit",l:"📷 Press Kit"}];
   const allTabs = ["asteptare","plata_avans","confirmat"].includes(localSt)
     ? [...baseTabs,{id:"contract",l:"📝 Contract"}]
     : baseTabs;
@@ -1046,15 +1047,23 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             <button onClick={()=>{
               const offerEl = document.getElementById("offer-print-content");
               if(!offerEl) return;
+              const iframeRepl=(html)=>{return html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi,function(m){var s=(m.match(/src="([^"]*)"/)||[])[1]||'';var vid=(s.match(/embed\/([^"?&\/]+)/)||[])[1]||'';if(!vid)return '';return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';});};
+              let pHtml=iframeRepl(offerEl.innerHTML);
+              if(!isPriv){
+                const riderEl=document.getElementById("rider-print-content");
+                const pkEl=document.getElementById("presskit-print-content");
+                if(riderEl){pHtml+='<div class="print-break"></div>'+iframeRepl(riderEl.innerHTML);}
+                if(pkEl){pHtml+='<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);}
+              }
               const printWin = window.open("","_blank","width=820,height=1000");
               if(!printWin) return;
-              let pHtml = offerEl.innerHTML.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi,function(m){var s=(m.match(/src="([^"]*)"/)||[])[1]||'';var vid=(s.match(/embed\/([^"?&\/]+)/)||[])[1]||'';if(!vid)return '';return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';});
               printWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${window.location.href}"><title>O${ev.offerNr||"?"} (Event ${ev.date?ev.date.split('-').reverse().join('-'):""})</title><style>
                 *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
                 body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f4f4;padding:32px}
                 @media print{body{padding:0;background:#f4f4f4}@page{margin:0.5cm}}
                 img{max-width:100%;height:auto}
-                              </style></head><body>${pHtml}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+                .print-break{break-before:page!important;page-break-before:always!important}
+              </style></head><body>${pHtml}<script>window.onload=function(){window.print();}<\/script></body></html>`);
               printWin.document.close();
             }} style={{padding:"8px 20px",borderRadius:8,border:"none",background:"#fbbf24",color:"#111",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
               ↑ Trimite PDF
@@ -1069,16 +1078,16 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         </div>
 
         {/* OFERTĂ */}
-                {tab==="oferta"&&<div style={{flex:1,overflow:"auto",background:"#f4f4f4"}}>
+                <div style={{flex:1,overflow:"auto",background:"#f4f4f4",display:tab==="oferta"?"block":"none"}}>
           {/* Ofertă stilizată — de trimis la client / PDF */}
           <div id="offer-print-content" style={{maxWidth:560,margin:"0 auto",padding:mob?"16px":"24px 16px"}}>
 
-            {/* Imagine header automată la oferta privată — incadrare faină */}
-            {isPriv&&<div style={{borderRadius:"16px 16px 0 0",overflow:"hidden",marginBottom:0}}>
-              <img src={PK_IMG_PRIVAT_HEAD} alt="" style={{width:"100%",height:200,objectFit:"cover",objectPosition:"center 30%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+            {/* Imagine header — privat: poza fixă; public: din Press Kit Public (salvat în Docs) */}
+            {(isPriv||pkPublic)&&<div style={{borderRadius:"16px 16px 0 0",overflow:"hidden",marginBottom:0}}>
+              <img src={isPriv?PK_IMG_PRIVAT_HEAD:(pkPublic?.heroImage||PK_IMG_PUBLIC_HEAD)} alt="" style={{width:"100%",height:200,objectFit:"cover",objectPosition:isPriv?"center 30%":(pkPublic?.heroImagePos||"center 30%"),display:"block"}} onError={e=>{e.target.style.display="none";}}/>
             </div>}
             {/* Header card — culori calde, logo mare */}
-            <div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 50%,#1a1510 100%)",borderRadius:isPriv?"0 0 16px 16px":"16px",padding:"28px 28px 24px",marginBottom:12,position:"relative",overflow:"hidden",border:"1px solid rgba(245,158,11,.15)",borderTop:isPriv?"none":"1px solid rgba(245,158,11,.15)"}}>
+            <div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 50%,#1a1510 100%)",borderRadius:(isPriv||pkPublic)?"0 0 16px 16px":"16px",padding:"28px 28px 24px",marginBottom:12,position:"relative",overflow:"hidden",border:"1px solid rgba(245,158,11,.15)",borderTop:(isPriv||pkPublic)?"none":"1px solid rgba(245,158,11,.15)"}}>
               <div style={{position:"absolute",top:0,right:0,width:240,height:240,background:"radial-gradient(circle,rgba(245,158,11,.08) 0%,transparent 70%)",pointerEvents:"none"}}/>
               <img src={LOGO_URL} alt="PHASER" style={{height:64,display:"block",marginBottom:24,objectFit:"contain",objectPosition:"left",filter:"brightness(1.1)"}}/>
               <div style={{fontSize:10,color:"rgba(251,191,36,.6)",letterSpacing:3,textTransform:"uppercase",marginBottom:8}}>Ofertă de colaborare</div>
@@ -1234,122 +1243,113 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               PHASER MUSIC SRL · CUI 37199434 · contact@phaser.ro · 0744 771 488
             </div>
           </div>
+        </div>
+
+{/* RIDER — conținut din Docs */}
+        {!isPriv&&<div id="rider-print-content" style={{flex:1,overflow:"auto",background:"#fff",display:tab==="rider"?"block":"none"}}>
+          {(()=>{
+            const rc=templates?.riderContent||{};
+            const rsp=templates?.riderStagePlot||{};
+            const rcu=templates?.riderCustom||[];
+            const get=(k,def)=>{const v=rc[k];return (v&&String(v).trim())?v:def;}
+            const backstageTxt=get("backstage",RIDER_TEHNIC.backstage.join("\n"));
+            const onStageTxt=get("onStage",RIDER_TEHNIC.onStage.join("\n"));
+            const backstageArr=backstageTxt.split(/\n/).filter(Boolean);
+            const onStageArr=onStageTxt.split(/\n/).filter(Boolean);
+            const stageImg=rsp.image||"StagePlot.png";
+            return (
+              <>
+                <div style={{padding:"20px 28px",background:"#111",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+                  <Logo height={40}/>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:9,color:"rgba(255,255,255,.3)",letterSpacing:2,textTransform:"uppercase"}}>Document oficial</div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#fff",letterSpacing:1}}>RIDER TEHNIC ȘI DE OSPITALITATE</div>
+                  </div>
+                </div>
+                <div style={{padding:mob?"16px":"24px 32px",fontFamily:"Georgia,serif",color:"#222"}}>
+                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12,marginBottom:24,padding:16,background:"#f8f8f8",borderRadius:10,border:"1px solid #e5e5e5"}}>
+                    <div><div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"#666",marginBottom:8}}>TRUPA</div>
+                      {["Radu Racz  +40 744 771 488","Carina Dumitru","Arnold Birta","Sebastian Bârzeianu","Lucian Oprișan","contact@phaser.ro"].map((m,i)=><div key={i} style={{fontSize:12,color:i===5?"#0066cc":"#333",marginBottom:2}}>{m}</div>)}
+                    </div>
+                    <div><div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"#666",marginBottom:8}}>FOH</div>
+                      <div style={{fontSize:12,color:"#333"}}>Bogdan Racz  +40 745 602 161</div>
+                      <div style={{fontSize:12,color:"#0066cc"}}>contact@aiciprezent.ro</div>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"center",fontSize:16,fontWeight:700,textTransform:"uppercase",letterSpacing:2,marginBottom:20,borderBottom:"2px solid #111",paddingBottom:12}}>RIDER TEHNIC</div>
+                  {["sunet","scena","probe","lumini","video"].map(k=>{
+                    const r=RIDER_TEHNIC[k];const def=r?(typeof r==="object"?(r.text||"")+(r.req?"\n"+r.req:""):""):"";
+                    const txt=get(k,def);if(!txt.trim())return null;
+                    const lines=txt.split("\n");const first=lines[0];const rest=lines.slice(1);
+                    return <div key={k} style={{marginBottom:16}}>
+                      <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{r?.titlu||k}</div>
+                      <p style={{fontSize:12,color:"#444",lineHeight:1.7,marginBottom:4}}>{first}</p>
+                      {rest.filter(Boolean).map((p,i)=><p key={i} style={{fontSize:12,color:"#333",fontWeight:600}}>{p}</p>)}
+                    </div>;
+                  })}
+                  <div style={{marginBottom:20,padding:14,borderRadius:10,border:"1px solid #e5e5e5",background:"#fafafa"}}>
+                    <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:12}}>PLAN AMPLASAMENT / STAGE PLOT</div>
+                    {rsp.notes&&<p style={{fontSize:11,color:"#555",marginBottom:10,whiteSpace:"pre-line"}}>{rsp.notes}</p>}
+                    <img src={stageImg} alt="Stage plot" style={{width:"100%",maxWidth:600,height:"auto",borderRadius:8,display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:10,marginBottom:24}}>
+                    {["instalare","parcare","securitate"].map(k=>{const txt=get(k,RIDER_TEHNIC[k]);if(!txt.trim())return null;return <div key={k} style={{padding:12,borderRadius:8,border:"1px solid #e8e8e8",background:"#fafafa"}}><div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{k}</div><div style={{fontSize:11,color:"#555",lineHeight:1.6,whiteSpace:"pre-line"}}>{txt}</div></div>;})}
+                  </div>
+                  <div style={{textAlign:"center",marginBottom:20,fontSize:12,color:"#555",fontStyle:"italic"}}>Pentru a confirma aspectele tehnice necesare vă rugăm să ne contactați:<br/><strong style={{color:"#111"}}>{get("contact",RIDER_TEHNIC.contact)}</strong></div>
+                  {rcu.filter(c=>(c.titlu||"").trim()||(c.text||"").trim()).map(cf=>(
+                    <div key={cf.id} style={{marginBottom:16}}>
+                      <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{cf.titlu||""}</div>
+                      <div style={{fontSize:12,color:"#444",lineHeight:1.7,whiteSpace:"pre-line"}}>{cf.text||""}</div>
+                    </div>
+                  ))}
+                  <div style={{textAlign:"center",fontSize:16,fontWeight:700,textTransform:"uppercase",letterSpacing:2,marginBottom:20,borderBottom:"2px solid #111",paddingBottom:12}}>RIDER DE OSPITALITATE</div>
+                  <div style={{marginBottom:16}}>
+                    <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>BACKSTAGE ROOM</div>
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"1fr 1fr 1fr",gap:6}}>
+                      {backstageArr.map((item,i)=><div key={i} style={{display:"flex",alignItems:"flex-start",gap:6,padding:"6px 10px",borderRadius:6,background:"#f5f5f5",border:"1px solid #ebebeb"}}><span style={{color:"#22c55e",flexShrink:0,marginTop:1}}>●</span><span style={{fontSize:11,color:"#444",lineHeight:1.4}}>{item}</span></div>)}
+                    </div>
+                    <div style={{marginTop:10,padding:10,borderRadius:6,background:"#fffef0",border:"1px solid #f0e68c",fontSize:11,color:"#555",fontStyle:"italic"}}>*În cazul evenimentelor corporate unde servirea se face pe baza unor cartele sau bonuri, dorim servirea directă în backstage pentru a evita eventualele întârzieri care pot afecta programul.</div>
+                  </div>
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>ON STAGE</div>
+                    {onStageArr.map((item,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:6,background:"#f5f5f5",border:"1px solid #ebebeb",marginBottom:4}}><span style={{color:"#22c55e"}}>●</span><span style={{fontSize:11,color:"#444"}}>{item}</span></div>)}
+                  </div>
+                  <div style={{textAlign:"center",fontWeight:700,fontSize:14,letterSpacing:1,marginBottom:16}}>VĂ MULȚUMIM!</div>
+                  <div style={{textAlign:"center",fontSize:11,color:"#aaa"}}>www.phaser.ro</div>
+                </div>
+              </>
+            );
+          })()}
         </div>}
 
-{/* RIDER */}
-        {tab==="rider"&&!isPriv&&<div style={{flex:1,overflow:"auto",background:"#fff"}}>
-          {/* Header Rider */}
-          <div style={{padding:"20px 28px",background:"#111",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
-            <Logo height={40}/>
-            <div style={{textAlign:"right"}}>
-              <div style={{fontSize:9,color:"rgba(255,255,255,.3)",letterSpacing:2,textTransform:"uppercase"}}>Document oficial</div>
-              <div style={{fontSize:13,fontWeight:700,color:"#fff",letterSpacing:1}}>RIDER TEHNIC ȘI DE OSPITALITATE</div>
-            </div>
-          </div>
-
-          <div style={{padding:mob?"16px":"24px 32px",fontFamily:"Georgia,serif",color:"#222"}}>
-            {/* Trupa / FOH */}
-            <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12,marginBottom:24,padding:16,background:"#f8f8f8",borderRadius:10,border:"1px solid #e5e5e5"}}>
-              <div>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"#666",marginBottom:8}}>TRUPA</div>
-                {["Radu Racz  +40 744 771 488","Carina Dumitru","Arnold Birta","Sebastian Bârzeianu","Lucian Oprișan","contact@phaser.ro"].map((m,i)=>
-                  <div key={i} style={{fontSize:12,color:i===5?"#0066cc":"#333",marginBottom:2}}>{m}</div>
-                )}
-              </div>
-              <div>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"#666",marginBottom:8}}>FOH</div>
-                <div style={{fontSize:12,color:"#333"}}>Bogdan Racz  +40 745 602 161</div>
-                <div style={{fontSize:12,color:"#0066cc"}}>contact@aiciprezent.ro</div>
+        {/* PRESS KIT — conținut din Docs */}
+        {!isPriv&&pkPublic&&<div id="presskit-print-content" style={{flex:1,overflow:"auto",background:"#0a0a0a",display:tab==="pressKit"?"block":"none"}}>
+          <div style={{maxWidth:560,margin:"0 auto"}}>
+            <div style={{position:"relative",overflow:"hidden"}}>
+              <img src={pkPublic.heroImage||PK_IMG_PUBLIC_HEAD} alt="" style={{width:"100%",height:220,objectFit:"cover",objectPosition:pkPublic.heroImagePos||"center 30%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+              <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 50%)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:24}}>
+                <Logo height={36}/>
+                <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:3,textTransform:"uppercase",marginTop:8}}>{pkPublic.tagline||"FROM ROCKING THE STAGE TO ROCKING YOUR EVENT"}</div>
               </div>
             </div>
-
-            {/* RIDER TEHNIC */}
-            <div style={{textAlign:"center",fontSize:16,fontWeight:700,textTransform:"uppercase",letterSpacing:2,marginBottom:20,borderBottom:"2px solid #111",paddingBottom:12}}>RIDER TEHNIC</div>
-
-            {/* Sectiuni principale */}
-            {[RIDER_TEHNIC.sunet, RIDER_TEHNIC.scena, RIDER_TEHNIC.probe, RIDER_TEHNIC.lumini, RIDER_TEHNIC.video].map((sec,i)=>(
-              <div key={i} style={{marginBottom:16}}>
-                <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{sec.titlu}</div>
-                <p style={{fontSize:12,color:"#444",lineHeight:1.7,marginBottom:4}}>{sec.text}</p>
-                {sec.req&&<p style={{fontSize:12,color:"#333",fontWeight:600}}>{sec.req}</p>}
-              </div>
-            ))}
-
-            {/* Necesar scenă */}
-            <div style={{marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>NECESAR SCENĂ / ECHIPAMENTE / CONECTICĂ</div>
-              <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10}}>
-                {[
-                  {titlu:"Risere", items:RIDER_TEHNIC.risere},
-                  {titlu:"Monitoare", items:RIDER_TEHNIC.monitoare},
-                  {titlu:"Stative", items:RIDER_TEHNIC.stative},
-                  {titlu:"Cabluri / Curent", items:RIDER_TEHNIC.cabluri},
-                  {titlu:"Conectică", items:RIDER_TEHNIC.conectica},
-                ].map((gr,i)=>(
-                  <div key={i} style={{padding:12,borderRadius:8,border:"1px solid #e8e8e8",background:"#fafafa"}}>
-                    <div style={{fontWeight:700,fontSize:11,marginBottom:6}}>{gr.titlu}</div>
-                    {gr.items.map((item,j)=><div key={j} style={{fontSize:11,color:"#555",paddingLeft:8,marginBottom:2}}>– {item}</div>)}
-                  </div>
-                ))}
+            <div style={{padding:"24px 24px 16px"}}>
+              <p style={{fontSize:13,color:"rgba(255,255,255,.8)",lineHeight:1.7,fontStyle:"italic",marginBottom:16}}>{(pkPublic.introText||"").slice(0,400)}{(pkPublic.introText||"").length>400?"...":""}</p>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {(pkPublic.links||[]).filter(l=>l.url).map((s,i)=><a key={i} href={s.url} target="_blank" rel="noreferrer" style={{padding:"5px 12px",borderRadius:20,background:"rgba(255,255,255,.12)",color:"rgba(255,255,255,.85)",fontSize:10,fontWeight:600,textDecoration:"none"}}>{s.l||"Link"}</a>)}
               </div>
             </div>
-
-            {/* Plan amplasament / Stage plot — imagine din document */}
-            <div style={{marginBottom:20,padding:14,borderRadius:10,border:"1px solid #e5e5e5",background:"#fafafa"}}>
-              <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:12}}>PLAN AMPLASAMENT / STAGE PLOT</div>
-              <img src="StagePlot.png" alt="Stage plot PHASER" style={{width:"100%",maxWidth:600,height:"auto",borderRadius:8,display:"block"}} />
-            </div>
-
-            {/* Instalare, Parcare, Securitate */}
-            <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:10,marginBottom:24}}>
-              {[
-                {titlu:"INSTALARE", text:RIDER_TEHNIC.instalare},
-                {titlu:"PARCARE", text:RIDER_TEHNIC.parcare},
-                {titlu:"SECURITATE", text:RIDER_TEHNIC.securitate},
-              ].map((x,i)=>(
-                <div key={i} style={{padding:12,borderRadius:8,border:"1px solid #e8e8e8",background:"#fafafa"}}>
-                  <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{x.titlu}</div>
-                  <div style={{fontSize:11,color:"#555",lineHeight:1.6}}>{x.text}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Contact tehnic */}
-            <div style={{textAlign:"center",marginBottom:20,fontSize:12,color:"#555",fontStyle:"italic"}}>
-              Pentru a confirma aspectele tehnice necesare vă rugăm să ne contactați:<br/>
-              <strong style={{color:"#111"}}>{RIDER_TEHNIC.contact}</strong>
-            </div>
-
-            {/* RIDER OSPITALITATE */}
-            <div style={{textAlign:"center",fontSize:16,fontWeight:700,textTransform:"uppercase",letterSpacing:2,marginBottom:20,borderBottom:"2px solid #111",paddingBottom:12}}>RIDER DE OSPITALITATE</div>
-
-            <div style={{marginBottom:16}}>
-              <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>BACKSTAGE ROOM</div>
-              <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"1fr 1fr 1fr",gap:6}}>
-                {RIDER_TEHNIC.backstage.map((item,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:6,padding:"6px 10px",borderRadius:6,background:"#f5f5f5",border:"1px solid #ebebeb"}}>
-                    <span style={{color:"#22c55e",flexShrink:0,marginTop:1}}>●</span>
-                    <span style={{fontSize:11,color:"#444",lineHeight:1.4}}>{item}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{marginTop:10,padding:10,borderRadius:6,background:"#fffef0",border:"1px solid #f0e68c",fontSize:11,color:"#555",fontStyle:"italic"}}>
-                *În cazul evenimentelor corporate unde servirea se face pe baza unor cartele sau bonuri, dorim servirea directă în backstage pentru a evita eventualele întârzieri care pot afecta programul.
+            <div style={{padding:"0 24px 20px"}}>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Componență trupă</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}}>
+                {(pkPublic.members||[]).slice(0,5).map(m=><div key={m.id} style={{padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,.06)",textAlign:"center",border:"1px solid rgba(255,255,255,.08)"}}><div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{m.n?m.n.split(" ")[0]:""}</div><div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:2}}>{m.r||""}</div></div>)}
               </div>
             </div>
-
-            <div style={{marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>ON STAGE</div>
-              {RIDER_TEHNIC.onStage.map((item,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:6,background:"#f5f5f5",border:"1px solid #ebebeb",marginBottom:4}}>
-                  <span style={{color:"#22c55e"}}>●</span>
-                  <span style={{fontSize:11,color:"#444"}}>{item}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{textAlign:"center",fontWeight:700,fontSize:14,letterSpacing:1,marginBottom:16}}>VĂ MULȚUMIM!</div>
-            <div style={{textAlign:"center",fontSize:11,color:"#aaa"}}>www.phaser.ro</div>
+            {pkPublic.showReelUrl&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Show Reel</div><div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}><iframe src={pkPublic.showReelUrl} title="Show Reel" style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/></div></div>}
+            {(pkPublic.musicSpotify||"").trim()&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Music</div><a href={pkPublic.musicSpotify} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",borderRadius:10,background:"#1DB954",color:"#fff",fontSize:12,fontWeight:600,textDecoration:"none"}}>▶ Ascultă pe Spotify</a></div>}
+            {(pkPublic.videoOficiale||[]).filter(v=>v.url).length>0&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Video oficiale</div><div style={{display:"flex",flexDirection:"column",gap:12}}>{(pkPublic.videoOficiale||[]).filter(v=>v.url).map(v=><div key={v.id}>{v.title&&<div style={{fontSize:11,fontWeight:600,color:"#fff",marginBottom:4}}>{v.title}</div>}{v.desc&&<div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginBottom:6}}>{v.desc}</div>}<div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}><iframe src={v.url} title={v.title||"Video"} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/></div></div>)}</div></div>}
+            {(pkPublic.videoLive||[]).filter(v=>v.url).length>0&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Videouri live</div><div style={{display:"flex",flexDirection:"column",gap:12}}>{(pkPublic.videoLive||[]).filter(v=>v.url).map(v=><div key={v.id}>{v.title&&<div style={{fontSize:11,fontWeight:600,color:"#fff",marginBottom:4}}>{v.title}</div>}{v.desc&&<div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginBottom:6}}>{v.desc}</div>}<div style={{position:"relative",paddingBottom:"56.25%",height:0,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,.1)"}}><iframe src={v.url} title={v.title||"Video"} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/></div></div>)}</div></div>}
+            {(pkPublic.gallery||[]).length>0&&<div style={{padding:"0 24px 20px"}}><div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"rgba(255,255,255,.4)",marginBottom:10}}>Galerie</div><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>{(pkPublic.gallery||[]).slice(0,8).map((g,i)=><img key={i} src={typeof g==="string"?g:g.url} alt="" style={{width:"100%",aspectRatio:"1",objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,.1)"}} onError={e=>{e.target.style.display="none";}}/>)}</div></div>}
+            <div style={{padding:"24px",background:"#111",textAlign:"center",borderTop:"1px solid rgba(255,255,255,.08)"}}><div style={{fontSize:9,color:"rgba(255,255,255,.4)",marginBottom:6,letterSpacing:1,textTransform:"uppercase"}}>Contact booking</div><div style={{fontSize:15,fontWeight:700,color:"#fff"}}>{pkPublic.contact?.name||"Radu Racz"} — {pkPublic.contact?.phone||"0744 771 488"}</div><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>{pkPublic.contact?.email||"contact@phaser.ro"} · {pkPublic.contact?.website||"www.phaser.ro"}</div></div>
           </div>
         </div>}
 
@@ -1610,9 +1610,9 @@ function EventForm({ th, sty, isE, isP, mData, onSave, onClose, mob, templates }
   const iStyle = {...sty.i, fontSize: mob?"16px":"14px"};
 
   const showTehnicTab = !isP || ["Corporate","Private Party","Altele"].includes(fm.type);
-  const baseTabs = isP ? (showTehnicTab ? ["detalii","client","servicii","ospitalitate","tehnic","media","playlist","note"] : ["detalii","client","servicii","ospitalitate","media","playlist","note"]) : ["detalii","client","tehnic","media","note"];
+  const baseTabs = isP ? (showTehnicTab ? ["detalii","client","servicii","ospitalitate","tehnic","media","playlist","note"] : ["detalii","client","servicii","ospitalitate","media","playlist","note"]) : ["detalii","client","note"];
   const editTabs = isP ? ["detalii","client","servicii","ospitalitate","tehnic","timing","cheltuieli","membri","furnizori","media","playlist","note"]
-                       : ["detalii","client","tehnic","timing","cheltuieli","membri","furnizori","media","note"];
+                       : ["detalii","client","timing","cheltuieli","membri","furnizori","note"];
   const tabs = isE ? editTabs : baseTabs;
 
   return (
@@ -3125,7 +3125,7 @@ function App() {
               </div>}
               {sectTab==="pressKitPublic"&&<div>
                 <label style={sty.l}>Press Kit Public — conținut pentru festivaluri, concerte</label>
-                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>EPK editabil — imagine header, Music, Video oficiale, Videouri live, contact. Download pentru HTML.</p>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>EPK editabil — imagine header, Music, Video oficiale, Videouri live, contact. Salvezi aici și se aplică automat la ofertele publice. Download pentru HTML.</p>
                 {(()=>{
                   const pk = normPressKitPublic(templates.pressKitPublic);
                   const up = (key, val) => saveTemplates(tpl=>({...tpl,pressKitPublic:{...normPressKitPublic(tpl.pressKitPublic),[key]:val}}));
