@@ -410,14 +410,14 @@ function BadgeStatusSelect({s, th, evId, onStatusChange}) {
   const dk = th.bg==="#09090b";
   if(!onStatusChange) return <Badge s={s} th={th}/>;
   const handleSelect = (k) => {
-    if (evId && onStatusChange) onStatusChange(evId, k);
     setOpen(false);
+    setTimeout(()=>{ try { if(evId&&onStatusChange) onStatusChange(evId,k); } catch(err){ console.error("BadgeStatusSelect:",err); } },0);
   };
   const opts = Object.entries(ST).map(([k,v])=><div key={k} onClick={e=>{e.preventDefault();e.stopPropagation();handleSelect(k);}} style={{padding:"6px 12px",fontSize:11,cursor:"pointer",borderRadius:6,background:k===s?th.ab:"transparent",color:th.t}} onMouseOver={e=>{e.currentTarget.style.background=th.ab;}} onMouseOut={e=>{e.currentTarget.style.background=k===s?th.ab:"transparent";}}>{v.l}</div>);
   const dropdown = open ? <div style={{position:"absolute",top:"100%",left:0,marginTop:4,zIndex:1001,background:th.c,border:`1px solid ${th.b}`,borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,.2)",minWidth:140,padding:4}} onClick={e=>{e.preventDefault();e.stopPropagation();}}>{opts}</div> : null;
   const overlay = open ? <div style={{position:"fixed",inset:0,zIndex:1000,cursor:"default"}} onClick={e=>{e.preventDefault();e.stopPropagation();setOpen(false);}}/> : null;
   return <div style={{position:"relative",display:"inline-block"}}>
-    <span onClick={e=>{e.stopPropagation();setOpen(o=>!o);}} style={{display:"inline-block",padding:"2px 10px",borderRadius:20,fontSize:10,fontWeight:700,background:dk?c.bd:c.bg,color:c.c,whiteSpace:"nowrap",cursor:"pointer",border:"1px solid transparent"}}>{c.l}</span>
+    <span onClick={e=>{e.stopPropagation();setOpen(o=>!o);}} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 12px",borderRadius:20,fontSize:10,fontWeight:700,background:dk?c.bd:c.bg,color:c.c,whiteSpace:"nowrap",cursor:"pointer",border:`1px solid ${c.c}33`,boxShadow:open?"0 2px 8px rgba(0,0,0,.15)":"none"}} title="Click pentru a schimba statusul">{c.l}<span style={{fontSize:8,opacity:0.8}}>▾</span></span>
     {overlay}
     {dropdown}
   </div>;
@@ -715,9 +715,9 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
           <div style={{display:"flex",gap:2,padding:4,background:th.h,borderRadius:8,border:`1px solid ${th.b}`}}>
-            <button onClick={()=>setViewMode("list")} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",background:viewMode==="list"?th.ab:"transparent",color:viewMode==="list"?th.t:th.tm}}>Listă</button>
-            <button onClick={()=>setViewMode("grid")} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",background:viewMode==="grid"?th.ab:"transparent",color:viewMode==="grid"?th.t:th.tm}}>Grid</button>
-            <button onClick={()=>setViewMode("kanban")} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",background:viewMode==="kanban"?th.ab:"transparent",color:viewMode==="kanban"?th.t:th.tm}}>Kanban</button>
+            <button onClick={()=>setViewMode("list")} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",background:viewMode==="list"?th.ab:"transparent",color:viewMode==="list"?th.t:th.ts}}>Listă</button>
+            <button onClick={()=>setViewMode("grid")} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",background:viewMode==="grid"?th.ab:"transparent",color:viewMode==="grid"?th.t:th.ts}}>Grid</button>
+            <button onClick={()=>setViewMode("kanban")} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",background:viewMode==="kanban"?th.ab:"transparent",color:viewMode==="kanban"?th.t:th.ts}}>Kanban</button>
           </div>
           {onAddOffer&&<button onClick={onAddOffer} style={sty.b}><IcPlus s={14}/> Ofertă nouă</button>}
         </div>
@@ -3707,7 +3707,7 @@ function App() {
                   </div>
                   <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${th.b}`}}>
                     <div style={{fontSize:9,color:th.tm,textTransform:"uppercase",marginBottom:2}}>Tip · Onorariu</div>
-                    <div style={{fontSize:15,fontWeight:800}}>{ev.type||"—"} · {f$(ev.fee+svc)}</div>
+                    <div style={{fontSize:15,fontWeight:800}}>{ev.type||"—"} · {f$((ev.fee??0)+svc)}</div>
                   </div>
                 </div>
                 {/* 2. Fișa de evenimente */}
@@ -3756,10 +3756,10 @@ function App() {
                   <div style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
                     <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Finanțe</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                      <div><div style={{fontSize:10,color:th.tm}}>Suma totală</div><div style={{fontSize:16,fontWeight:800}}>{f$(ev.fee+svc)}</div></div>
+                      <div><div style={{fontSize:10,color:th.tm}}>Suma totală</div><div style={{fontSize:16,fontWeight:800}}>{f$((ev.fee??0)+svc)}</div></div>
                       <div><div style={{fontSize:10,color:th.tm}}>Avans</div><div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{f$(ev.dep)} {ev.dp?"✓":"✗"}</div></div>
                     </div>
-                    {(()=>{const tot=ev.fee+svc;const {fond,net}=getProfitWithFond(tot,exp,ev);return <><div style={{marginTop:8,fontSize:14,fontWeight:700,color:net>=0?"#22c55e":"#ef4444"}}>Profit net: {f$(net)}</div>{ev.cuFond!==false&&fond>0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Fond {(ev.fondPct??10)}%: {f$(fond)}</div>}</>;})()}
+                    {(()=>{const tot=(ev.fee??0)+svc;const {fond,net}=getProfitWithFond(tot,exp,ev);return <><div style={{marginTop:8,fontSize:14,fontWeight:700,color:net>=0?"#22c55e":"#ef4444"}}>Profit net: {f$(net)}</div>{ev.cuFond!==false&&fond>0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Fond {(ev.fondPct??10)}%: {f$(fond)}</div>}</>;})()}
                     {Object.keys(ev.sp||{}).length>0&&<div style={{marginTop:8,fontSize:10,color:th.tm}}>Split: {MEMBERS.filter(m=>ev.sp[m.id]).map(m=>`${m.n.split(" ")[0]} ${f$(ev.sp[m.id])}`).join(" · ")}</div>}
                   </div>
                 </div>
@@ -3818,7 +3818,7 @@ function App() {
       {/* FINANCE POPUP — Fișa financiară detaliată */}
       {modal==="finance"&&(()=>{
         if(!mData) return null;
-        const ev=mData; const svc=getSvcTotal(ev); const exp=getExpTotal(ev); const tot=ev.fee+svc;
+        const ev=mData; const svc=getSvcTotal(ev); const exp=getExpTotal(ev); const tot=(ev.fee??0)+svc;
         const upd=(patch)=>setEvs(p=>p.map(e=>e.id===ev.id?{...e,...patch}:e));
         return <div style={{position:"fixed",inset:0,background:th.ov,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100}} onClick={closeModal}>
           <div style={{background:th.c,border:`1px solid ${th.b}`,borderRadius:14,width:mob?"95%":480,maxHeight:"90vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
