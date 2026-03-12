@@ -261,9 +261,25 @@ const getPasswords = ()=> { try { const s=localStorage.getItem(LS_KEYS.passwords
 const setPasswordFor = (userId, hash)=> { const p=getPasswords(); p[userId]=hash; try { localStorage.setItem(LS_KEYS.passwords, JSON.stringify(p)); } catch(e){} };
 const clearPasswordFor = (userId)=> { const p=getPasswords(); delete p[userId]; try { localStorage.setItem(LS_KEYS.passwords, JSON.stringify(p)); } catch(e){} };
 const LS_TRUSTED = "phaser_trusted_user";
-const getTrustedUser = ()=> { try { const s=localStorage.getItem(LS_TRUSTED); return s?JSON.parse(s):null; } catch(e){ return null; } };
-const setTrustedUser = (u)=> { try { localStorage.setItem(LS_TRUSTED, JSON.stringify(u)); } catch(e){} };
-const clearTrustedUser = ()=> { try { localStorage.removeItem(LS_TRUSTED); } catch(e){} };
+const CK_TRUSTED = "phaser_trusted";
+const getTrustedUser = ()=> {
+  try {
+    let s = localStorage.getItem(LS_TRUSTED);
+    if(!s && typeof document!=="undefined" && document.cookie){
+      const m = document.cookie.match(new RegExp("(^| )"+CK_TRUSTED+"=([^;]+)"));
+      if(m) s = decodeURIComponent(m[2]);
+    }
+    return s?JSON.parse(s):null;
+  } catch(e){ return null; }
+};
+const setTrustedUser = (u)=> {
+  try {
+    const j = JSON.stringify(u);
+    localStorage.setItem(LS_TRUSTED, j);
+    document.cookie = CK_TRUSTED+"="+encodeURIComponent(j)+";path=/;max-age=31536000;SameSite=Lax"+(location.protocol==="https:"?";Secure":"");
+  } catch(e){}
+};
+const clearTrustedUser = ()=> { try { localStorage.removeItem(LS_TRUSTED); document.cookie = CK_TRUSTED+"=;path=/;max-age=0"; } catch(e){} };
 const migrate = (data, key) => { if (!data) return data; if (Array.isArray(data)) return data; if (data._v === PHASER_V) return data; if (typeof data._v !== "number") data._v = 1; while (data._v < PHASER_V) { data._v++; } return data; };
 const loadEvs = () => { try { const s = localStorage.getItem(LS_KEYS.evs); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadTasks = () => { try { const s = localStorage.getItem(LS_KEYS.tasks); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
@@ -2652,6 +2668,11 @@ function App() {
     return (t && exp > Date.now()) ? t : null;
   });
   const tokenClientRef = useRef(null);
+
+  useEffect(() => {
+    const trusted = getTrustedUser();
+    if (!user && trusted) setUser(trusted);
+  }, []);
 
   useEffect(() => {
     const tryInit = () => {
