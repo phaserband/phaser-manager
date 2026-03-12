@@ -2970,13 +2970,13 @@ function App() {
             if(hasPw){
               const h=await hashPw(pwInput);
               if(getPasswords()[uid]!==h){ setPwError("Parolă greșită"); return; }
-              if(rememberDevice) setTrustedUser(pendingUser);
+              setTrustedUser(pendingUser);
               setUser(pendingUser); setPendingUser(null); setPwInput("");
             } else {
               if(pwInput!==pwConfirm){ setPwError("Parolele nu coincid"); return; }
               if(pwInput.length<4){ setPwError("Minim 4 caractere"); return; }
               setPasswordFor(uid, await hashPw(pwInput));
-              if(rememberDevice) setTrustedUser(pendingUser);
+              setTrustedUser(pendingUser);
               setUser(pendingUser); setPendingUser(null); setPwInput(""); setPwConfirm("");
             }
           };
@@ -3059,7 +3059,7 @@ function App() {
         </div>
         <div style={{padding:"8px 12px 14px",display:"flex",flexDirection:"column",gap:4}}>
           {sbMode==="full"&&<button onClick={()=>setShowChangePw(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 14px",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:10,cursor:"pointer",width:"100%",opacity:.8}}>🔐 Schimbă parola</button>}
-          <button onClick={()=>{clearTrustedUser();setUser(null);}} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
+          <button onClick={()=>setUser(null)} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
             <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · <span style={{textTransform:"uppercase",fontSize:9,letterSpacing:1}}>{user.rl}</span></span>}
           </button>
         </div>
