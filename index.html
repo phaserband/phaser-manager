@@ -1695,8 +1695,8 @@ function EventForm({ th, sty, isE, isP, mData, onSave, onClose, mob, templates }
     desc: mData?.desc||"",
     poveste: mData?.poveste||"",
     customSvc: mData?.customSvc||[],
-    hosp: (mData?.hosp && !Array.isArray(mData.hosp)) ? {camere:4,meniuri:6,micDejun:false,pranz:false,extra:[],protocolOverride:"",...mData.hosp,extra:mData.hosp.extra||[],protocolOverride:mData.hosp.protocolOverride||""} : {
-      camere: 4, meniuri: 6, micDejun: false, pranz: false, extra: [], protocolOverride: "",
+    hosp: (mData?.hosp && !Array.isArray(mData.hosp)) ? {camere:0,meniuri:6,micDejun:false,pranz:false,extra:[],protocolOverride:"",...mData.hosp,extra:mData.hosp.extra||[],protocolOverride:mData.hosp.protocolOverride||""} : {
+      camere: 0, meniuri: 6, micDejun: false, pranz: false, extra: [], protocolOverride: "",
     },
     includeTehnicAnnex: mData?.includeTehnicAnnex||false,
     tehnic: mData?.tehnic||[
