@@ -1117,12 +1117,9 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   };
 
   const getPdfFilename = () => `Oferta-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`;
-  const generateOfferPdf = () => {
+  const generateOfferPdf = async () => {
     const el = document.getElementById("offer-print-content");
     if(!el || typeof html2pdf==="undefined") return Promise.reject(new Error("html2pdf indisponibil"));
-
-    // Modificăm direct elementul din DOM (clona off-screen dă PDF alb),
-    // salvăm tot ce schimbăm și restaurăm după generare.
 
     // 1. Fix textarea → div
     const taRestores = [];
@@ -1160,15 +1157,37 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       btn.style.display = "none";
     });
 
-    // 4. Fix page breaks — injectăm CSS care previne tăierea pozelor și a cardurilor
+    // 4. Fix CSS filter pe imagini — html2canvas nu aplică filter:brightness/invert
+    //    Aplicăm efectul manual prin canvas (ex: logo ZGV alb)
+    const filterRestores = [];
+    await Promise.all(Array.from(el.querySelectorAll("img")).map(img => new Promise(resolve => {
+      const f = img.style.filter || img.style.webkitFilter || "";
+      if (!f || (!f.includes("invert") && !f.includes("brightness"))) return resolve();
+      if (!img.complete || !img.naturalWidth) return resolve();
+      try {
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const ctx = c.getContext("2d");
+        ctx.filter = f;
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const dataUrl = c.toDataURL("image/png");
+        const origSrc = img.src, origFilter = f;
+        img.src = dataUrl;
+        img.style.filter = "none";
+        img.style.webkitFilter = "none";
+        filterRestores.push({ img, origSrc, origFilter });
+      } catch(e) {}
+      resolve();
+    })));
+
+    // 5. Page breaks — CSS injectat temporar
+    //    Pozele nu se taie. Playlist forțat pe o coloană (html2canvas nu redă CSS columns bine).
+    //    Logo header (primul div) nu se desparte de poza hero care urmează.
     const styleTag = document.createElement("style");
-    styleTag.id = "__pdf_break_styles";
     styleTag.textContent = [
-      // Fiecare secțiune (card direct child) nu se taie între pagini
-      "#offer-print-content > div { break-inside: avoid; page-break-inside: avoid; }",
-      // Pozele nu se taie niciodată
-      "#offer-print-content img { break-inside: avoid; page-break-inside: avoid; display: block; }",
-      // Fix columns playlist — forțăm single column ca html2canvas să nu rupă itemii ciudat
+      "#offer-print-content img { page-break-inside: avoid; break-inside: avoid; display: block; }",
+      "#offer-print-content > div:has(> img) { page-break-inside: avoid; break-inside: avoid; }",
+      "#offer-print-content > div:first-child { page-break-after: avoid; break-after: avoid; }",
       "#offer-print-content [style*='columns'] { columns: 1 !important; column-count: 1 !important; }",
     ].join("\n");
     document.head.appendChild(styleTag);
@@ -1177,6 +1196,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       taRestores.forEach(({ div, ta }) => { try { div.parentNode.replaceChild(ta, div); } catch(e){} });
       iframeRestores.forEach(({ div, container, parent }) => { try { parent.replaceChild(container, div); } catch(e){} });
       btnRestores.forEach(({ btn, was }) => { btn.style.display = was; });
+      filterRestores.forEach(({ img, origSrc, origFilter }) => { img.src = origSrc; img.style.filter = origFilter; img.style.webkitFilter = origFilter; });
       try { document.head.removeChild(styleTag); } catch(e) {}
     };
 
@@ -1185,7 +1205,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       image: {type:"jpeg", quality:0.95},
       html2canvas: {scale:2, useCORS:true, allowTaint:true, logging:false},
       jsPDF: {unit:"mm", format:"a4", orientation:"portrait"},
-      pagebreak: { mode: ["css", "legacy"], avoid: ["img", "div"] }
+      pagebreak: { mode: ["css", "legacy"] }
     }).from(el).outputPdf("blob").then(blob => { restore(); return blob; }, err => { restore(); return Promise.reject(err); });
   };
   const handleDownloadPdf = async () => {
