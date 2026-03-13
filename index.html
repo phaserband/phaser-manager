@@ -18,6 +18,7 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function check() {
@@ -262,6 +263,21 @@ const setPasswordFor = (userId, hash)=> { const p=getPasswords(); p[userId]=hash
 const clearPasswordFor = (userId)=> { const p=getPasswords(); delete p[userId]; try { localStorage.setItem(LS_KEYS.passwords, JSON.stringify(p)); } catch(e){} };
 const LS_TRUSTED = "phaser_trusted_user";
 const CK_TRUSTED = "phaser_trusted";
+const IDB_TRUSTED = "phaser_idb_trusted";
+const SUPABASE_URL = "https://qtiosqtcrqgmlkwcrnpu.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aW9zcXRjcnFnbWxrd2NybnB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNTY2MzEsImV4cCI6MjA4ODkzMjYzMX0.VR4MZArOnsc-DuLF3H3ZH-0PyfnBANyMiv8i31vxBnA";
+const SUPABASE_CFG = (()=>{ try { const s=localStorage.getItem("phaser_supabase_cfg"); const fromLs=s?JSON.parse(s):{}; return { url: fromLs.url||SUPABASE_URL, key: fromLs.key||SUPABASE_ANON_KEY }; } catch(e){ return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY }; } })();
+const idbGetTrusted = ()=> new Promise((res)=>{ try { const r=indexedDB.open("phaser_db",1); r.onerror=()=>res(null); r.onupgradeneeded=(e)=>{ if(!e.target.result.objectStoreNames.contains("trusted")) e.target.result.createObjectStore("trusted",{keyPath:"k"}); }; r.onsuccess=()=>{ const db=r.result; if(!db.objectStoreNames.contains("trusted")){ res(null); db.close(); return; } const g=db.transaction("trusted","readonly").objectStore("trusted").get("user"); g.onsuccess=()=>{ res(g.result?.v||null); db.close(); }; g.onerror=()=>{ res(null); db.close(); }; }; } catch(e){ res(null); } });
+const idbSetTrusted = (u)=> { try { const r=indexedDB.open("phaser_db",1); r.onupgradeneeded=(e)=>{ if(!e.target.result.objectStoreNames.contains("trusted")) e.target.result.createObjectStore("trusted",{keyPath:"k"}); }; r.onsuccess=()=>{ const db=r.result; if(db.objectStoreNames.contains("trusted")){ db.transaction("trusted","readwrite").objectStore("trusted").put({k:"user",v:u}); } db.close(); }; r.onerror=()=>{}; } catch(e){} };
+const idbClearTrusted = ()=> { try { const r=indexedDB.open("phaser_db",1); r.onsuccess=()=>{ const db=r.result; if(db.objectStoreNames.contains("trusted")) db.transaction("trusted","readwrite").objectStore("trusted").delete("user"); db.close(); }; } catch(e){} };
+const getDeviceFingerprint = ()=> {
+  try {
+    const n=navigator,s=screen;
+    const str=[n.userAgent,n.language,s.width,s.height,s.colorDepth,(new Date()).getTimezoneOffset(),n.hardwareConcurrency||0].join("|");
+    let h=0; for(let i=0;i<str.length;i++) h=((h<<5)-h)+str.charCodeAt(i)|0;
+    return "fp_"+Math.abs(h).toString(36);
+  } catch(e){ return "fp_unknown"; }
+};
 const getTrustedUser = ()=> {
   try {
     let s = localStorage.getItem(LS_TRUSTED);
@@ -277,9 +293,22 @@ const setTrustedUser = (u)=> {
     const j = JSON.stringify(u);
     localStorage.setItem(LS_TRUSTED, j);
     document.cookie = CK_TRUSTED+"="+encodeURIComponent(j)+";path=/;max-age=31536000;SameSite=Lax"+(location.protocol==="https:"?";Secure":"");
+    idbSetTrusted(u);
+    if(SUPABASE_CFG.url&&SUPABASE_CFG.key){
+      try{ const fn=typeof createClient!=="undefined"?createClient:(window.supabase?.createClient); if(fn){ const c=fn(SUPABASE_CFG.url,SUPABASE_CFG.key); c.from("phaser_trusted").upsert({device_id:getDeviceFingerprint(),user_data:u,updated_at:new Date().toISOString()},{onConflict:"device_id"}).then(()=>{}).catch(()=>{}); } }catch(e){}
+    }
   } catch(e){}
 };
-const clearTrustedUser = ()=> { try { localStorage.removeItem(LS_TRUSTED); document.cookie = CK_TRUSTED+"=;path=/;max-age=0"; } catch(e){} };
+const clearTrustedUser = ()=> { try { localStorage.removeItem(LS_TRUSTED); document.cookie = CK_TRUSTED+"=;path=/;max-age=0"; idbClearTrusted(); if(SUPABASE_CFG.url&&SUPABASE_CFG.key){ const fn=typeof createClient!=="undefined"?createClient:(window.supabase?.createClient); if(fn){ const c=fn(SUPABASE_CFG.url,SUPABASE_CFG.key); c.from("phaser_trusted").delete().eq("device_id",getDeviceFingerprint()).then(()=>{}).catch(()=>{}); } } } catch(e){} };
+const fetchTrustedFromSupabase = ()=> {
+  if(!SUPABASE_CFG.url||!SUPABASE_CFG.key) return Promise.resolve(null);
+  try {
+    const fn=typeof createClient!=="undefined"?createClient:(window.supabase?.createClient);
+    if(!fn) return Promise.resolve(null);
+    const client=fn(SUPABASE_CFG.url,SUPABASE_CFG.key);
+    return client.from("phaser_trusted").select("user_data").eq("device_id",getDeviceFingerprint()).single().then(r=>r.data?.user_data||null).catch(()=>null);
+  } catch(e){ return Promise.resolve(null); }
+};
 const migrate = (data, key) => { if (!data) return data; if (Array.isArray(data)) return data; if (data._v === PHASER_V) return data; if (typeof data._v !== "number") data._v = 1; while (data._v < PHASER_V) { data._v++; } return data; };
 const loadEvs = () => { try { const s = localStorage.getItem(LS_KEYS.evs); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadTasks = () => { try { const s = localStorage.getItem(LS_KEYS.tasks); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
@@ -2671,7 +2700,9 @@ function App() {
 
   useEffect(() => {
     const trusted = getTrustedUser();
-    if (!user && trusted) setUser(trusted);
+    if (trusted) { if (!user) setUser(trusted); return; }
+    const restore = (u)=>{ if(u){ setTrustedUser(u); setUser(u); } };
+    fetchTrustedFromSupabase().then(u=>{ if(u) return restore(u); return idbGetTrusted(); }).then(u=>{ if(u) restore(u); });
   }, []);
 
   useEffect(() => {
