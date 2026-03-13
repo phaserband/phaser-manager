@@ -1129,7 +1129,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     clone.style.position = "absolute";
     clone.style.left = "-9999px";
     clone.style.top = "0";
-    clone.style.width = el.offsetWidth + "px";
+    clone.style.width = (el.offsetWidth || 560) + "px";
     document.body.appendChild(clone);
 
     // 1. Fix textarea → div (html2canvas nu redă corect conținutul din textarea)
@@ -1160,13 +1160,13 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     // 3. Ascundem butoanele din PDF (ex: "Ascunde" din playlist)
     Array.from(clone.querySelectorAll("button")).forEach(btn => { btn.style.display = "none"; });
 
+    const removeClone = () => { try { document.body.removeChild(clone); } catch(e) {} };
     return html2pdf().set({
       margin:12, filename:getPdfFilename(),
-      image:{type:"jpeg",quality:0.95}, html2canvas:{scale:2,useCORS:true,allowTaint:true,logging:false},
+      image:{type:"jpeg",quality:0.95},
+      html2canvas:{scale:2,useCORS:true,allowTaint:true,logging:false,scrollX:0,scrollY:0},
       jsPDF:{unit:"mm",format:"a4",orientation:"portrait"}
-    }).from(clone).outputPdf("blob").finally(() => {
-      try { document.body.removeChild(clone); } catch(e) {}
-    });
+    }).from(clone).outputPdf("blob").then(blob => { removeClone(); return blob; }, err => { removeClone(); return Promise.reject(err); });
   };
   const handleDownloadPdf = async () => {
     setPdfLoading(true);
