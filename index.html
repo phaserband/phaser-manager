@@ -389,7 +389,7 @@ const loadTemplates = () => {
     riderCustom: [],
     riderStagePlot: { image: null, notes: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
-    poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru."
+    poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață."
   };
 };
 // Versiuni rider — phaser_rider_versions: [{ id, ts, label, data }]
@@ -1193,47 +1193,48 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             {(isPriv||pkPublic)&&<div style={{borderRadius:"16px 16px 0 0",overflow:"hidden",marginBottom:0}}>
               <img src={isPriv?PK_IMG_OFERTA_PRIVAT_ZGV:(pkPublic?.heroImage||PK_IMG_OFERTA_PUBLIC_HEAD)} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:isPriv?"center 50%":(pkPublic?.heroImagePos||"center 50%"),display:"block"}} onError={e=>{e.target.style.display="none";}}/>
             </div>}
-            {/* Header card — fără total; privat: logo-uri Za good vibes + Phaser */}
+            {/* Header card — logo-uri vizibile, OFERTĂ mare, tip mic, data direct */}
             <div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 50%,#1a1510 100%)",borderRadius:(isPriv||pkPublic)?"0 0 16px 16px":"16px",padding:"28px 28px 24px",marginBottom:12,position:"relative",overflow:"hidden",border:"1px solid rgba(245,158,11,.15)",borderTop:(isPriv||pkPublic)?"none":"1px solid rgba(245,158,11,.15)"}}>
               <div style={{position:"absolute",top:0,right:0,width:240,height:240,background:"radial-gradient(circle,rgba(245,158,11,.08) 0%,transparent 70%)",pointerEvents:"none"}}/>
               {isPriv&&<div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
-                <img src={ZGV_LOGO} alt="Za good vibes" style={{height:36,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
-                <img src={LOGO_URL} alt="PHASER" style={{height:32,objectFit:"contain",filter:"brightness(1.1)"}} onError={e=>{e.target.style.display="none";}}/>
+                <img src={ZGV_LOGO} alt="Za good vibes" style={{height:40,objectFit:"contain",filter:"brightness(0) invert(1)"}} onError={e=>{e.target.style.display="none";}}/>
+                <img src={LOGO_URL} alt="PHASER" style={{height:36,objectFit:"contain",filter:"brightness(0) invert(1)"}} onError={e=>{e.target.style.display="none";}}/>
               </div>}
-              <div style={{fontSize:10,color:"rgba(251,191,36,.6)",letterSpacing:3,textTransform:"uppercase",marginBottom:8}}>Ofertă de colaborare</div>
-              <div style={{fontSize:13,color:"rgba(251,191,36,.7)",fontStyle:"italic",marginBottom:12}}>Za good vibes presents Phaser</div>
-              <div style={{fontSize:22,fontWeight:700,color:"#fff",marginBottom:4}}>{ev.type}</div>
-              <div style={{fontSize:13,color:"rgba(251,191,36,.5)"}}>{ev.venue||""}{ev.city?", "+ev.city:""}</div>
-              <div style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(251,191,36,.12)"}}>
-                <div style={{fontSize:10,color:"rgba(251,191,36,.5)",letterSpacing:1,textTransform:"uppercase"}}>Data</div>
-                <div style={{fontSize:14,fontWeight:600,color:"#fff",marginTop:2}}>{fD(ev.date)}</div>
-              </div>
+              <div style={{fontSize:16,fontWeight:700,color:"rgba(251,191,36,.9)",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Ofertă de colaborare</div>
+              <div style={{fontSize:16,fontWeight:600,color:"#fff",marginBottom:12}}>{ev.type}</div>
+              <div style={{fontSize:11,color:"rgba(251,191,36,.5)",letterSpacing:1,textTransform:"uppercase"}}>Data</div>
+              <div style={{fontSize:15,fontWeight:600,color:"#fff",marginTop:2}}>{fD(ev.date)}</div>
+              {(ev.venue||ev.city)&&<div style={{fontSize:12,color:"rgba(251,191,36,.6)",marginTop:10}}>{ev.venue||""}{ev.city?", "+ev.city:""}</div>}
             </div>
 
             {/* Despre noi — editabil înainte de generare PDF (doar ofertă privată) */}
             {isPriv&&<div style={{background:"#fff",borderRadius:12,padding:"20px 24px",marginBottom:8,borderLeft:"4px solid #111"}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:12}}>Despre noi (Media)</div>
-              <textarea value={ev.poveste||templates?.poveste||"Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru."} onChange={e=>syncOffer({poveste:e.target.value})} placeholder="Despre noi — modifică înainte de a genera PDF" style={{width:"100%",minHeight:100,resize:"vertical",fontSize:14,lineHeight:1.8,fontStyle:"italic",color:"#333",border:"1px solid #e5e5e5",borderRadius:8,padding:12}}/>
+              <textarea value={ev.poveste||templates?.poveste||"Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață."} onChange={e=>syncOffer({poveste:e.target.value})} placeholder="Despre noi — modifică înainte de a genera PDF" style={{width:"100%",minHeight:100,resize:"vertical",fontSize:14,lineHeight:1.8,fontStyle:"italic",color:"#333",border:"1px solid #e5e5e5",borderRadius:8,padding:12}}/>
             </div>}
-            {/* Poza Presskit Privat — mai jos în ofertă (doar privat) */}
-            {isPriv&&<div style={{borderRadius:12,overflow:"hidden",marginBottom:8}}>
-              <img src={PK_IMG_PRIVAT_HEAD} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:"center 50%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+            {/* Za good vibes presents Phaser — după descriere, înainte de Prestație */}
+            {isPriv&&<div style={{background:"#fff",borderRadius:12,padding:"16px 24px",marginBottom:8,borderLeft:"4px solid #f59e0b"}}>
+              <div style={{fontSize:14,color:"#333",fontStyle:"italic"}}>Za good vibes presents Phaser</div>
             </div>}
-            {/* Prestație */}
+            {/* Prestație — PHASER + preț */}
             <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:14}}>Prestație artistică</div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:15,color:"#111"}}>
                     {isPriv
-                      ? `Phaser și ${ev.rep||1} ${(ev.rep||1)===1?"repriză":"reprize"} × ${ev.repDurs?.[0]||ev.repDur||45} min per repriză`
-                      : (ev.durataRecital||`Phaser — ${ev.rep||1}×45 min`)
+                      ? `PHASER → ${ev.rep||1} × ${ev.repDurs?.[0]||ev.repDur||45} min`
+                      : (ev.durataRecital||`PHASER → ${ev.rep||1}×45 min`)
                     }
                   </div>
                 </div>
                 <div style={{fontSize:18,fontWeight:800,color:"#111"}}>{fFmt(ev.fee,ev.valuta)}</div>
               </div>
             </div>
+            {/* Poza Phaser — după prețul Phaser (doar privat) */}
+            {isPriv&&<div style={{borderRadius:12,overflow:"hidden",marginBottom:8}}>
+              <img src={PK_IMG_PRIVAT_HEAD} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:"center 50%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+            </div>}
 
             {/* Servicii extra */}
             {isPriv&&Object.values(ev.svc||{}).some(v=>v)&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
@@ -1246,8 +1247,8 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               {(ev.svc?.sunet||ev.svc?.lumini||ev.svc?.ecran||ev.svc?.scena)&&<div style={{fontSize:11,color:"#888",marginTop:10,paddingTop:10,borderTop:"1px solid #f5f5f5"}}>Echipamentele tehnice vin cu operatori tehnici disponibili pe tot parcursul evenimentului.</div>}
             </div>}
 
-            {/* Cazare, Transport, Protocol — conform model PDF */}
-            {isPriv&&ev.hosp&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
+            {/* Cazare, Transport, Protocol — doar dacă există cazare sau transport */}
+            {isPriv&&ev.hosp&&((ev.hosp.camere??0)>0||(ev.dist??999)>=25)&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:14}}>Cazare și Transport</div>
               {[
                 ...((ev.hosp.camere??0)>0?[`Cazare — ${ev.hosp.camere} camere twin la locație sau în apropierea ei`]:[]),
@@ -3735,6 +3736,15 @@ function App() {
               const m=MEMBERS.find(x=>x.id===user.memberId);
               if(!m) return null;
               const prof=memberProfiles[m.id]||{};
+              const handleFile=(e)=>{
+                const f=e.target.files?.[0];
+                if(!f||!f.type.startsWith("image/")){ showToast("Alege o imagine (JPG, PNG)"); return; }
+                if(f.size>2*1024*1024){ showToast("Poza prea mare (max 2 MB)"); return; }
+                const r=new FileReader();
+                r.onload=()=>{ saveMemberProfile(m.id,{...prof,photo:r.result}); showToast("Poză încărcată ✓"); };
+                r.readAsDataURL(f);
+                e.target.value="";
+              };
               return <div style={{display:"flex",flexDirection:"column",gap:16}}>
                 <div style={{display:"flex",alignItems:"center",gap:16}}>
                   <div style={{width:80,height:80,borderRadius:"50%",background:prof.photo?`url(${prof.photo}) center/cover`:"linear-gradient(135deg,"+th.a+",#333)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:700,color:"#fff",flexShrink:0}}>{prof.photo?"":m.n[0]}</div>
@@ -3745,7 +3755,16 @@ function App() {
                 </div>
                 <div><label style={{...sty.l,display:"block",marginBottom:6}}>Telefon</label><input value={prof.phone||""} onChange={e=>saveMemberProfile(m.id,{...prof,phone:e.target.value})} placeholder="0744 771 488" style={{...sty.i,width:"100%",padding:12}}/></div>
                 <div><label style={{...sty.l,display:"block",marginBottom:6}}>Email</label><input type="email" value={prof.email||""} onChange={e=>saveMemberProfile(m.id,{...prof,email:e.target.value})} placeholder="contact@zagoodvibes.com" style={{...sty.i,width:"100%",padding:12}}/></div>
-                <div><label style={{...sty.l,display:"block",marginBottom:6}}>Poza de profil (URL)</label><input value={prof.photo||""} onChange={e=>saveMemberProfile(m.id,{...prof,photo:e.target.value})} placeholder="https://..." style={{...sty.i,width:"100%",padding:12}}/></div>
+                <div>
+                  <label style={{...sty.l,display:"block",marginBottom:6}}>Poza de profil</label>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <input type="file" accept="image/*" onChange={handleFile} id="contul-photo-input" style={{display:"none"}}/>
+                    <button type="button" onClick={()=>document.getElementById("contul-photo-input").click()} style={{...sty.bg,padding:"10px 16px",fontSize:13}}>📎 Alege fișier</button>
+                    <span style={{fontSize:11,color:th.tm,alignSelf:"center"}}>sau</span>
+                    <input value={prof.photo&&prof.photo.startsWith("http")?prof.photo:""} onChange={e=>saveMemberProfile(m.id,{...prof,photo:e.target.value})} placeholder="Lipește URL imagine" style={{...sty.i,flex:1,minWidth:120,padding:10}}/>
+                  </div>
+                </div>
+                <button onClick={()=>{ showToast("Datele au fost salvate ✓"); }} style={{...sty.b,padding:"12px 24px",fontSize:14,alignSelf:"flex-start"}}>Salvează</button>
               </div>;
             })()}
           </div>}
