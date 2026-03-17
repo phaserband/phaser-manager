@@ -272,6 +272,7 @@ const IDB_TRUSTED = "phaser_idb_trusted";
 const SUPABASE_URL = "https://qtiosqtcrqgmlkwcrnpu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aW9zcXRjcnFnbWxrd2NybnB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNTY2MzEsImV4cCI6MjA4ODkzMjYzMX0.VR4MZArOnsc-DuLF3H3ZH-0PyfnBANyMiv8i31vxBnA";
 const SUPABASE_CFG = (()=>{ try { const s=localStorage.getItem("phaser_supabase_cfg"); const fromLs=s?JSON.parse(s):{}; return { url: fromLs.url||SUPABASE_URL, key: fromLs.key||SUPABASE_ANON_KEY }; } catch(e){ return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY }; } })();
+const getSbClient = ()=>{ try { const fn=typeof createClient!=="undefined"?createClient:(window.supabase?.createClient); if(!fn||!SUPABASE_CFG.url||!SUPABASE_CFG.key) return null; return fn(SUPABASE_CFG.url,SUPABASE_CFG.key); } catch(e){ return null; } };
 const idbGetTrusted = ()=> new Promise((res)=>{ try { const r=indexedDB.open("phaser_db",1); r.onerror=()=>res(null); r.onupgradeneeded=(e)=>{ if(!e.target.result.objectStoreNames.contains("trusted")) e.target.result.createObjectStore("trusted",{keyPath:"k"}); }; r.onsuccess=()=>{ const db=r.result; if(!db.objectStoreNames.contains("trusted")){ res(null); db.close(); return; } const g=db.transaction("trusted","readonly").objectStore("trusted").get("user"); g.onsuccess=()=>{ res(g.result?.v||null); db.close(); }; g.onerror=()=>{ res(null); db.close(); }; }; } catch(e){ res(null); } });
 const idbSetTrusted = (u)=> { try { const r=indexedDB.open("phaser_db",1); r.onupgradeneeded=(e)=>{ if(!e.target.result.objectStoreNames.contains("trusted")) e.target.result.createObjectStore("trusted",{keyPath:"k"}); }; r.onsuccess=()=>{ const db=r.result; if(db.objectStoreNames.contains("trusted")){ db.transaction("trusted","readwrite").objectStore("trusted").put({k:"user",v:u}); } db.close(); }; r.onerror=()=>{}; } catch(e){} };
 const idbClearTrusted = ()=> { try { const r=indexedDB.open("phaser_db",1); r.onsuccess=()=>{ const db=r.result; if(db.objectStoreNames.contains("trusted")) db.transaction("trusted","readwrite").objectStore("trusted").delete("user"); db.close(); }; } catch(e){} };
@@ -1445,7 +1446,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               <img src={LOGO_URL} alt="PHASER" style={{height:28,objectFit:"contain",filter:"brightness(0) invert(1)",WebkitPrintColorAdjust:"exact",printColorAdjust:"exact"}} onError={e=>{e.target.style.display="none";}}/>
             </div>}
             {/* Imagine header — cover photo 220px via background-image (mai fiabil in PDF) */}
-            {(isPriv||pkPublic)&&<div style={{borderRadius:isPriv?"0":"16px 16px 0 0",height:"220px",backgroundImage:`url('${isPriv?PK_IMG_OFERTA_PRIVAT_ZGV:(pkPublic?.heroImage||PK_IMG_OFERTA_PUBLIC_HEAD)}')`,backgroundSize:"cover",backgroundPosition:"center 35%",WebkitPrintColorAdjust:"exact",printColorAdjust:"exact"}}/>}
+            {(isPriv||pkPublic)&&<div style={{borderRadius:isPriv?"0":"16px 16px 0 0",height:"220px",backgroundImage:`url('${isPriv?(ev.coverPhoto||PK_IMG_OFERTA_PRIVAT_ZGV):(pkPublic?.heroImage||PK_IMG_OFERTA_PUBLIC_HEAD)}')`,backgroundSize:"cover",backgroundPosition:"center 35%",WebkitPrintColorAdjust:"exact",printColorAdjust:"exact"}}/>}
             {/* Header card — tip + data + locatie pe acelasi rand */}
             <div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 50%,#1a1510 100%)",borderRadius:(isPriv||pkPublic)?"0 0 16px 16px":"16px",padding:"14px 18px 14px",marginBottom:6,position:"relative",overflow:"hidden",border:"1px solid rgba(245,158,11,.15)",borderTop:(isPriv||pkPublic)?"none":"1px solid rgba(245,158,11,.15)"}}>
               <div style={{position:"absolute",top:0,right:0,width:240,height:240,background:"radial-gradient(circle,rgba(245,158,11,.08) 0%,transparent 70%)",pointerEvents:"none"}}/>
@@ -2414,21 +2415,37 @@ Vom furniza 3 mix-uri separate din Stage Box-ul poziționat pe scenă:
             </div>}
 
 {secTab==="media"&&<div>
-              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:th.tm,marginBottom:12}}>Videoclipuri ({fm.videos.filter(v=>v.checked).length} active)</div>
+              {/* --- Poze ofertă privată --- */}
+              {isP&&<div style={{background:th.h,borderRadius:10,padding:"14px 16px",marginBottom:16,border:`1px solid ${th.b}`}}>
+                <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:th.tm,marginBottom:12}}>🖼️ Poze ofertă privată</div>
+                <label style={sty.l}>Cover photo (URL sau cale locală)</label>
+                <input value={fm.coverPhoto||""} onChange={e=>u("coverPhoto",e.target.value)} style={{...iStyle,marginBottom:8}} placeholder={`implicit: assets/poza oferta private za good vibes.jpg`}/>
+                {(fm.coverPhoto||"").trim()&&<div style={{borderRadius:8,overflow:"hidden",marginBottom:8,height:120,backgroundImage:`url('${fm.coverPhoto}')`,backgroundSize:"cover",backgroundPosition:"center 35%",border:`1px solid ${th.b}`}}/>}
+                {!(fm.coverPhoto||"").trim()&&<div style={{borderRadius:8,overflow:"hidden",marginBottom:8,height:120,backgroundImage:`url('assets/poza oferta private za good vibes.jpg')`,backgroundSize:"cover",backgroundPosition:"center 35%",border:`1px dashed ${th.b}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{fontSize:10,color:th.tm}}>previzualizare implicită</span>
+                </div>}
+                <button onClick={()=>u("coverPhoto","")} style={{...sty.bg,fontSize:10,padding:"3px 9px",opacity:(fm.coverPhoto||"").trim()?1:0.4}} disabled={!(fm.coverPhoto||"").trim()}>✕ Resetează la implicit</button>
+              </div>}
+              {/* --- Videoclipuri --- */}
+              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:th.tm,marginBottom:4}}>Videoclipuri ({fm.videos.filter(v=>v.checked).length} active)</div>
+              {isP&&<div style={{fontSize:11,color:th.tm,marginBottom:10,padding:"7px 10px",background:th.ab,borderRadius:6,borderLeft:`3px solid ${th.t}`}}>🎬 <b>Primul video bifat</b> → apare pe <b>pagina 1</b> a ofertei &nbsp;·&nbsp; restul merg în grila "Feel the Show" (pag. 3)</div>}
               <button onClick={()=>u("videos",[...fm.videos,{id:uid(),title:"",url:"",checked:true}])} style={{...sty.bg,fontSize:11,padding:"5px 10px",marginBottom:10}}><IcPlus s={11}/> Adaugă videoclip</button>
-              {fm.videos.map(v=>(
-                <div key={v.id} style={{borderRadius:10,overflow:"hidden",border:`1px solid ${th.b}`,opacity:v.checked?1:0.5,marginBottom:8}}>
+              {fm.videos.map((v,vi)=>{
+                const isFirstActive=isP&&v.checked&&fm.videos.filter(x=>x.checked)[0]?.id===v.id;
+                return(
+                <div key={v.id} style={{borderRadius:10,overflow:"hidden",border:`2px solid ${isFirstActive?th.t:th.b}`,opacity:v.checked?1:0.5,marginBottom:8}}>
+                  {isFirstActive&&<div style={{fontSize:10,fontWeight:700,padding:"3px 12px",background:th.t,color:"#fff",letterSpacing:1}}>📄 PAGINA 1 — primul video</div>}
                   <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:th.h,flexWrap:"wrap"}}>
                     <input type="checkbox" checked={v.checked} onChange={()=>u("videos",fm.videos.map(x=>x.id===v.id?{...x,checked:!x.checked}:x))} style={{accentColor:th.t,width:14,height:14,cursor:"pointer",flexShrink:0}}/>
                     <input value={v.title} onChange={e=>u("videos",fm.videos.map(x=>x.id===v.id?{...x,title:e.target.value}:x))} style={{...iStyle,flex:1,minWidth:0,padding:"4px 8px",fontSize:12}} placeholder="Titlu"/>
-                    <input value={v.url} onChange={e=>u("videos",fm.videos.map(x=>x.id===v.id?{...x,url:e.target.value}:x))} style={{...iStyle,flex:1,minWidth:0,padding:"4px 8px",fontSize:11}} placeholder="URL YouTube embed"/>
+                    <input value={v.url} onChange={e=>u("videos",fm.videos.map(x=>x.id===v.id?{...x,url:e.target.value}:x))} style={{...iStyle,flex:1,minWidth:0,padding:"4px 8px",fontSize:11}} placeholder="URL YouTube embed (https://www.youtube.com/embed/VIDEO_ID)"/>
                     <button onClick={()=>u("videos",fm.videos.filter(x=>x.id!==v.id))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}>✕</button>
                   </div>
                   {v.checked&&v.url&&<div style={{position:"relative",paddingBottom:"56.25%",height:0}}>
                     <iframe src={v.url} title={v.title} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/>
                   </div>}
                 </div>
-              ))}
+              )})}
             </div>}
 
 {secTab==="playlist"&&<div>
@@ -2988,6 +3005,62 @@ function App() {
   const { toast, showToast } = useToasts();
   const saveMemberProfile = (memberId, data) => { setMemberProfiles(p=>{ const n={...p,[memberId]:{...(p[memberId]||{}),...data}}; try{localStorage.setItem(LS_KEYS.memberProfiles,JSON.stringify(n));}catch(e){} return n; }); };
 
+  // ─── SUPABASE CLOUD SYNC ───
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
+  const syncTimerRef = useRef(null);
+
+  // La pornire: încarcă din Supabase dacă datele de acolo sunt mai noi
+  useEffect(()=>{
+    const client = getSbClient();
+    if(!client) return;
+    setSyncStatus("syncing");
+    client.from("app_data").select("data").eq("id","phaser_main").maybeSingle()
+      .then(({data:row,error})=>{
+        if(error||!row?.data){ setSyncStatus("idle"); return; }
+        const remote=row.data;
+        const localTs=parseInt(localStorage.getItem("phaser_sync_ts")||"0");
+        if((remote._ts||0)>localTs){
+          if(Array.isArray(remote.evs)) setEvs(remote.evs);
+          if(Array.isArray(remote.tasks)) setTasks(remote.tasks);
+          if(Array.isArray(remote.genExp)) setGE(remote.genExp);
+          if(Array.isArray(remote.annualCosts)) setAC(remote.annualCosts);
+          if(typeof remote.gigsPerYear==="number") setGigsPerYear(remote.gigsPerYear);
+          if(remote.templates){ setTemplates(remote.templates); try{localStorage.setItem(LS_KEYS.templates,JSON.stringify(remote.templates));}catch(e){} }
+          if(Array.isArray(remote.riderVersions)){ setRiderVersions(remote.riderVersions); try{localStorage.setItem(LS_KEYS.riderVersions,JSON.stringify(remote.riderVersions));}catch(e){} }
+          if(Array.isArray(remote.pressKitVersions)){ setPressKitVersions(remote.pressKitVersions); try{localStorage.setItem(LS_KEYS.pressKitVersions,JSON.stringify(remote.pressKitVersions));}catch(e){} }
+          if(remote.creative){ try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(remote.creative));}catch(e){} }
+          if(remote.memberProfiles){ setMemberProfiles(remote.memberProfiles); try{localStorage.setItem(LS_KEYS.memberProfiles,JSON.stringify(remote.memberProfiles));}catch(e){} }
+          localStorage.setItem("phaser_sync_ts",String(remote._ts));
+          showToast("☁️ Date sincronizate din cloud");
+        }
+        setSyncStatus("synced");
+      })
+      .catch(()=>setSyncStatus("error"));
+  },[]);
+
+  // La orice modificare: salvează în Supabase (debounced 2s)
+  useEffect(()=>{
+    if(syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current=setTimeout(()=>{
+      const client=getSbClient();
+      if(!client) return;
+      const ts=Date.now();
+      const syncData={
+        evs,tasks,genExp,annualCosts,gigsPerYear,templates,
+        riderVersions:(()=>{try{const s=localStorage.getItem(LS_KEYS.riderVersions);return s?JSON.parse(s):[];}catch(e){return[];}}()),
+        pressKitVersions:(()=>{try{const s=localStorage.getItem(LS_KEYS.pressKitVersions);return s?JSON.parse(s):[];}catch(e){return[];}}()),
+        creative:loadCreative(),
+        memberProfiles:loadMemberProfiles(),
+        _ts:ts
+      };
+      localStorage.setItem("phaser_sync_ts",String(ts));
+      setSyncStatus("syncing");
+      client.from("app_data").upsert({id:"phaser_main",data:syncData,updated_at:new Date().toISOString()},{onConflict:"id"})
+        .then(({error})=>setSyncStatus(error?"error":"synced"))
+        .catch(()=>setSyncStatus("error"));
+    },2000);
+  },[evs,tasks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,memberProfiles]);
+
   // ─── GOOGLE CALENDAR STATE ───
   const [gcalToken, setGcalToken] = useState(() => {
     const t = localStorage.getItem(GCAL_LS_TOKEN);
@@ -3414,6 +3487,13 @@ function App() {
           <button onClick={()=>setUser(null)} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
             <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · <span style={{textTransform:"uppercase",fontSize:9,letterSpacing:1}}>{user.rl}</span></span>}
           </button>
+          {/* Sync status */}
+          <div title={syncStatus==="synced"?"Date sincronizate în cloud":syncStatus==="syncing"?"Se sincronizează...":syncStatus==="error"?"Eroare sincronizare — verifică conexiunea":"Așteptând..."} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 14px 10px",opacity:.7}}>
+            <span style={{fontSize:13}}>{syncStatus==="synced"?"☁️":syncStatus==="syncing"?"🔄":syncStatus==="error"?"⚠️":"💤"}</span>
+            {sbMode==="full"&&<span style={{fontSize:9,color:syncStatus==="synced"?"#22c55e":syncStatus==="error"?"#ef4444":syncStatus==="syncing"?"#f59e0b":"#888",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}}>
+              {syncStatus==="synced"?"Cloud sync":syncStatus==="syncing"?"Sincronizare...":syncStatus==="error"?"Eroare sync":"Offline"}
+            </span>}
+          </div>
         </div>
       </div>
 
