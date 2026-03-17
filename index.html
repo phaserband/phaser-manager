@@ -3047,10 +3047,8 @@ function App() {
       const ts=Date.now();
       const syncData={
         evs,tasks,genExp,annualCosts,gigsPerYear,templates,
-        riderVersions:(()=>{try{const s=localStorage.getItem(LS_KEYS.riderVersions);return s?JSON.parse(s):[];}catch(e){return[];}}()),
-        pressKitVersions:(()=>{try{const s=localStorage.getItem(LS_KEYS.pressKitVersions);return s?JSON.parse(s):[];}catch(e){return[];}}()),
+        riderVersions,pressKitVersions,memberProfiles,
         creative:loadCreative(),
-        memberProfiles:loadMemberProfiles(),
         _ts:ts
       };
       localStorage.setItem("phaser_sync_ts",String(ts));
