@@ -2014,6 +2014,7 @@ function LocationSearch({ venue, city, dist, onUpdate, sty, th, mob }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templates }) {
   const tplCovers = (templates?.playlist&&templates.playlist.length>0) ? templates.playlist : DEFAULT_COVERS;
+  const tplVideos = (templates?.videos&&templates.videos.length>0) ? templates.videos : DEFAULT_VIDEOS;
   const [fm, setFm] = useState({
     cat: mData?.cat||"private",
     type: mData?.type||(isP?"Nuntă":"Festival"),
@@ -2033,7 +2034,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
     sp: mData?.sp||{}, svc: mData?.svc||{}, svcp: mData?.svcp||{sunet:350,lumini:500,ecran:600,scena:300,dj:600},
     ex: (()=>{const existing=mData?.ex||[];const oficiu=[{id:"ex_tehnicii",n:"Tehnicii",a:200,v:"Oficiu"},{id:"ex_backline",n:"Backline",a:250,v:"Oficiu"},{id:"ex_transport",n:"Transport",a:10,v:"Oficiu"}];const others=existing.filter(x=>!/tehnic/i.test(x.n||"")&&!/backline/i.test(x.n||"")&&!/transport/i.test(x.n||""));return[...oficiu,...others];})(), ven: mData?.ven||[], notes: mData?.notes||"",
     impozitVenit: mData?.impozitVenit??1, plataAvansFirma: mData?.plataAvansFirma ?? (mData?.plataDirect===false), plataRestFirma: mData?.plataRestFirma ?? (mData?.plataDirect===false), sumaAvansLei: mData?.sumaAvansLei??0, sumaRestLei: mData?.sumaRestLei??0, modalitatePlataAvans: mData?.modalitatePlataAvans||"", modalitatePlataRest: mData?.modalitatePlataRest||"", dividende: mData?.dividende??16, cuFond: mData?.cuFond??true, fondPct: mData?.fondPct??10, fondPct2: mData?.fondPct2??10,
-    videos: mData?.videos||DEFAULT_VIDEOS, covers: mData?.covers||(tplCovers.map(c=>({...c,checked:true}))),
+    videos: mData?.videos||tplVideos, covers: mData?.covers||(tplCovers.map(c=>({...c,checked:true}))),
     desc: mData?.desc||"",
     poveste: mData?.poveste||"",
     customSvc: mData?.customSvc||[],
@@ -3007,6 +3008,7 @@ function App() {
 
   // ─── SUPABASE CLOUD SYNC ───
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
+  const [syncErrorMsg, setSyncErrorMsg] = useState("");
   const syncTimerRef = useRef(null);
 
   // La pornire: încarcă din Supabase dacă datele de acolo sunt mai noi
@@ -3014,9 +3016,16 @@ function App() {
     const client = getSbClient();
     if(!client) return;
     setSyncStatus("syncing");
+    setSyncErrorMsg("");
     client.from("app_data").select("data").eq("id","phaser_main").maybeSingle()
       .then(({data:row,error})=>{
-        if(error||!row?.data){ setSyncStatus("idle"); return; }
+        if(error){
+          console.error("[Supabase] Eroare la citire:", error.message, error.code, error.details);
+          setSyncErrorMsg(error.message||String(error.code||""));
+          setSyncStatus("error");
+          return;
+        }
+        if(!row?.data){ setSyncStatus("idle"); return; }
         const remote=row.data;
         const localTs=parseInt(localStorage.getItem("phaser_sync_ts")||"0");
         if((remote._ts||0)>localTs){
@@ -3035,7 +3044,11 @@ function App() {
         }
         setSyncStatus("synced");
       })
-      .catch(()=>setSyncStatus("error"));
+      .catch((err)=>{
+        console.error("[Supabase] Eroare la citire (catch):", err);
+        setSyncErrorMsg(err?.message||String(err));
+        setSyncStatus("error");
+      });
   },[]);
 
   // La orice modificare: salvează în Supabase (debounced 2s)
@@ -3054,8 +3067,18 @@ function App() {
       localStorage.setItem("phaser_sync_ts",String(ts));
       setSyncStatus("syncing");
       client.from("app_data").upsert({id:"phaser_main",data:syncData,updated_at:new Date().toISOString()},{onConflict:"id"})
-        .then(({error})=>setSyncStatus(error?"error":"synced"))
-        .catch(()=>setSyncStatus("error"));
+        .then(({error})=>{
+          if(error){
+            console.error("[Supabase] Eroare la salvare:", error.message, error.code, error.details);
+            setSyncErrorMsg(error.message||String(error.code||""));
+            setSyncStatus("error");
+          } else setSyncStatus("synced");
+        })
+        .catch((err)=>{
+          console.error("[Supabase] Eroare la salvare (catch):", err);
+          setSyncErrorMsg(err?.message||String(err));
+          setSyncStatus("error");
+        });
     },2000);
   },[evs,tasks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,memberProfiles]);
 
@@ -3181,6 +3204,7 @@ function App() {
   const saveEv = data => {
     const isEdit = !!(mData&&mData.id);
     const tplPlaylist = (templates.playlist&&templates.playlist.length>0) ? templates.playlist : DEFAULT_COVERS;
+    const tplVideosNew = (templates.videos&&templates.videos.length>0) ? templates.videos : DEFAULT_VIDEOS;
     const merged = {...(isEdit?mData:{}),...data};
     const rs = repStr(merged);
     if(isEdit) {
@@ -3194,7 +3218,7 @@ function App() {
       });
     } else {
       const nextNr = Math.max(0, ...evs.map(e=>e.offerNr||0)) + 1;
-      const nev = {...data, id:uid(), cr:new Date().toISOString().split("T")[0], videos:data.videos||DEFAULT_VIDEOS, covers:data.covers||tplPlaylist, offerNr:nextNr};
+      const nev = {...data, id:uid(), cr:new Date().toISOString().split("T")[0], videos:data.videos||tplVideosNew, covers:data.covers||tplPlaylist, offerNr:nextNr};
       setEvs(p=>[...p,nev]); openModal("oferta",nev.id);
       showToast(rs ? `Ofertă creată! ${rs}` : "Ofertă creată!");
       // Sync în background cu Google Calendar
@@ -3486,7 +3510,7 @@ function App() {
             <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · <span style={{textTransform:"uppercase",fontSize:9,letterSpacing:1}}>{user.rl}</span></span>}
           </button>
           {/* Sync status */}
-          <div title={syncStatus==="synced"?"Date sincronizate în cloud":syncStatus==="syncing"?"Se sincronizează...":syncStatus==="error"?"Eroare sincronizare — verifică conexiunea":"Așteptând..."} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 14px 10px",opacity:.7}}>
+          <div title={syncStatus==="synced"?"Date sincronizate în cloud":syncStatus==="syncing"?"Se sincronizează...":syncStatus==="error"?(syncErrorMsg?"Eroare: "+syncErrorMsg:"Eroare sincronizare — verifică conexiunea și tabela app_data în Supabase"):"Așteptând..."} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 14px 10px",opacity:.7}}>
             <span style={{fontSize:13}}>{syncStatus==="synced"?"☁️":syncStatus==="syncing"?"🔄":syncStatus==="error"?"⚠️":"💤"}</span>
             {sbMode==="full"&&<span style={{fontSize:9,color:syncStatus==="synced"?"#22c55e":syncStatus==="error"?"#ef4444":syncStatus==="syncing"?"#f59e0b":"#888",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}}>
               {syncStatus==="synced"?"Cloud sync":syncStatus==="syncing"?"Sincronizare...":syncStatus==="error"?"Eroare sync":"Offline"}
@@ -3697,9 +3721,9 @@ function App() {
               </div>
             </div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {["rider","playlist","pressKitPublic"].map(s=>(
+              {["rider","playlist","media","pressKitPublic"].map(s=>(
                 <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:docsSectTab===s?700:400,cursor:"pointer",background:docsSectTab===s?th.ab:"transparent",color:docsSectTab===s?th.t:th.tm}}>
-                  {{rider:"Rider",playlist:"Playlist",pressKitPublic:"Press Kit Public"}[s]}
+                  {{rider:"Rider",playlist:"Playlist",media:"🎬 Media",pressKitPublic:"Press Kit Public"}[s]}
                 </button>
               ))}
             </div>
@@ -3776,6 +3800,31 @@ function App() {
                   ))}
                 </div>
               </div>}
+              {docsSectTab==="media"&&(()=>{
+                const tplVideos=(templates.videos&&templates.videos.length>0)?templates.videos:DEFAULT_VIDEOS;
+                return <div>
+                  <label style={sty.l}>Videoclipuri implicite — oferte private</label>
+                  <p style={{fontSize:11,color:th.tm,marginBottom:10}}>Aceste videoclipuri apar automat la orice ofertă privată nouă. <b>Primul bifat</b> merge pe pagina 1, restul în grila "Feel the Show".</p>
+                  <button onClick={()=>saveTemplates(tpl=>({...tpl,videos:[...(tpl.videos||DEFAULT_VIDEOS),{id:uid(),title:"",url:"",checked:true,caption:""}]}))} style={{...sty.bg,fontSize:11,padding:"5px 10px",marginBottom:12}}><IcPlus s={11}/> Adaugă videoclip</button>
+                  {tplVideos.map((v,vi)=>{
+                    const isFirst=v.checked&&tplVideos.filter(x=>x.checked)[0]?.id===v.id;
+                    const vidId=v.url?.match(/embed\/([^?&]+)/)?.[1]||v.url?.match(/(?:youtu\.be\/|v=)([^?&]+)/)?.[1]||"";
+                    return <div key={v.id} style={{borderRadius:10,overflow:"hidden",border:`2px solid ${isFirst?th.t:th.b}`,marginBottom:10}}>
+                      {isFirst&&<div style={{fontSize:10,fontWeight:700,padding:"3px 12px",background:th.t,color:"#fff",letterSpacing:1}}>📄 PAGINA 1 — primul video</div>}
+                      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:th.h,flexWrap:"wrap"}}>
+                        <input type="checkbox" checked={v.checked} onChange={()=>saveTemplates(tpl=>({...tpl,videos:(tpl.videos||DEFAULT_VIDEOS).map(x=>x.id===v.id?{...x,checked:!x.checked}:x)}))} style={{accentColor:th.t,width:14,height:14,cursor:"pointer",flexShrink:0}}/>
+                        <input value={v.title} onChange={e=>saveTemplates(tpl=>({...tpl,videos:(tpl.videos||DEFAULT_VIDEOS).map(x=>x.id===v.id?{...x,title:e.target.value}:x)}))} style={{...sty.i,flex:1,minWidth:120,padding:"4px 8px",fontSize:12}} placeholder="Titlu"/>
+                        <input value={v.url} onChange={e=>saveTemplates(tpl=>({...tpl,videos:(tpl.videos||DEFAULT_VIDEOS).map(x=>x.id===v.id?{...x,url:e.target.value}:x)}))} style={{...sty.i,flex:2,minWidth:180,padding:"4px 8px",fontSize:11}} placeholder="https://www.youtube.com/embed/VIDEO_ID"/>
+                        <input value={v.caption||""} onChange={e=>saveTemplates(tpl=>({...tpl,videos:(tpl.videos||DEFAULT_VIDEOS).map(x=>x.id===v.id?{...x,caption:e.target.value}:x)}))} style={{...sty.i,flex:1,minWidth:100,padding:"4px 8px",fontSize:11}} placeholder="Descriere scurtă"/>
+                        <button onClick={()=>saveTemplates(tpl=>({...tpl,videos:(tpl.videos||DEFAULT_VIDEOS).filter(x=>x.id!==v.id)}))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/></button>
+                      </div>
+                      {v.checked&&v.url&&<div style={{position:"relative",paddingBottom:"40%",height:0,background:"#000"}}>
+                        <iframe src={v.url} title={v.title} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}} allowFullScreen/>
+                      </div>}
+                    </div>;
+                  })}
+                </div>;
+              })()}
               {docsSectTab==="pressKitPublic"&&<div>
                 <label style={sty.l}>Press Kit Public — conținut pentru festivaluri, concerte</label>
                 <p style={{fontSize:11,color:th.tm,marginBottom:10}}>EPK editabil — imagine header, Music, Video oficiale, Videouri live, contact. Se aplică la ofertele publice.</p>
