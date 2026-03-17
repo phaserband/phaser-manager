@@ -3723,7 +3723,7 @@ function App() {
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
               {["rider","playlist","media","pressKitPublic"].map(s=>(
                 <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:docsSectTab===s?700:400,cursor:"pointer",background:docsSectTab===s?th.ab:"transparent",color:docsSectTab===s?th.t:th.tm}}>
-                  {{rider:"Rider",playlist:"Playlist",media:"🎬 Media",pressKitPublic:"Press Kit Public"}[s]}
+                  {{rider:"Rider",playlist:"Playlist",media:"🎬 Media privat",pressKitPublic:"Press Kit Public"}[s]}
                 </button>
               ))}
             </div>
