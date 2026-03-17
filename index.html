@@ -1273,6 +1273,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       "#offer-print-content > div:first-child { page-break-after: avoid; break-after: avoid; }",
       "#offer-print-content [style*='columns'] { columns: 1 !important; column-count: 1 !important; }",
       "#offer-print-content [style*='border-left'] { border-left: none !important; }",
+      "#offer-print-content .print-break { page-break-before: always !important; break-before: page !important; }",
     ].join("\n");
     document.head.appendChild(styleTag);
 
@@ -1452,13 +1453,19 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
 
             {/* Despre noi — editabil înainte de generare PDF (doar ofertă privată) */}
             {isPriv&&<div style={{background:"#fff",borderRadius:12,padding:"20px 24px",marginBottom:8,borderLeft:"4px solid #111"}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:12}}>Despre noi (Media)</div>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:12}}>Despre noi</div>
               <textarea value={ev.poveste||templates?.poveste||"Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață."} onChange={e=>syncOffer({poveste:e.target.value})} placeholder="Despre noi — modifică înainte de a genera PDF" style={{width:"100%",minHeight:100,resize:"vertical",fontSize:14,lineHeight:1.8,fontStyle:"italic",color:"#333",border:"1px solid #e5e5e5",borderRadius:8,padding:12}}/>
             </div>}
             {/* Za Good Vibes presents PHASER — fundal întunecat, text alb, bold */}
             {isPriv&&<div style={{background:"linear-gradient(135deg,#1a1510 0%,#2d2419 100%)",borderRadius:12,padding:"16px 24px",marginBottom:8,borderLeft:"4px solid #f59e0b"}}>
               <div style={{fontSize:14,color:"#fff",fontWeight:700}}>Za Good Vibes presents PHASER</div>
             </div>}
+            {/* Poza trupa — imediat după Za Good Vibes presents PHASER */}
+            {isPriv&&<div style={{borderRadius:12,overflow:"hidden",marginBottom:8}}>
+              <img src={PK_IMG_PRIVAT_HEAD} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:"center 50%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+            </div>}
+            {/* Pagină separată: Prestație + costuri */}
+            <div className="print-break" style={{breakBefore:"page"}}>
             {/* Prestație — PHASER + preț */}
             <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:14}}>Prestație artistică</div>
@@ -1474,10 +1481,6 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                 <div style={{fontSize:15,fontWeight:700,color:"#111"}}>{fFmt(ev.fee,ev.valuta)}</div>
               </div>
             </div>
-            {/* Poza Phaser — după prețul Phaser (doar privat) */}
-            {isPriv&&<div style={{borderRadius:12,overflow:"hidden",marginBottom:8}}>
-              <img src={PK_IMG_PRIVAT_HEAD} alt="" style={{width:"100%",height:300,objectFit:"cover",objectPosition:"center 50%",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
-            </div>}
 
             {/* Servicii extra */}
             {isPriv&&Object.values(ev.svc||{}).some(v=>v)&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
@@ -1549,9 +1552,11 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               </div>
               <div style={{fontSize:11,color:"rgba(251,191,36,.5)",textAlign:"center"}}>Oferta este valabilă 30 de zile · Prețurile vor fi calculate în RON la data facturării și includ toate taxele aferente</div>
             </div>
+            </div>
 
-            {/* Media / PHASER Live — după plată, cu video-uri selectate (doar afișare, fără input în PDF) */}
-            {isPriv&&videos.filter(v=>v.checked).length>0&&<div style={{background:"#fff",borderRadius:12,padding:"20px 24px",marginBottom:8,borderLeft:"4px solid #111"}}>
+            {/* Pagină separată: link-uri YouTube */}
+            {isPriv&&videos.filter(v=>v.checked).length>0&&<div className="print-break" style={{breakBefore:"page"}}>
+            <div style={{background:"#fff",borderRadius:12,padding:"20px 24px",marginBottom:8,borderLeft:"4px solid #111"}}>
               <div style={{marginBottom:24,paddingBottom:20,borderBottom:"1px solid #f0f0f0"}}>
                 <div style={{fontSize:40,fontWeight:900,color:"#111",letterSpacing:-2,lineHeight:1,marginBottom:8}}>Feel the Show.</div>
                 <div style={{fontSize:13,color:"#999",fontStyle:"italic",letterSpacing:.3}}>Za good vibes with Phaser</div>
@@ -1564,6 +1569,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                   {(v.caption||"").trim()&&<div style={{fontSize:12,color:"#555",fontStyle:"italic",padding:"4px 0"}}>{v.caption}</div>}
                 </div>
               ))}
+            </div>
             </div>}
 
             {/* Descriere */}
@@ -1571,8 +1577,9 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               <div style={{fontSize:13,color:"#555",lineHeight:1.7,fontStyle:"italic"}}>{ev.desc}</div>
             </div>}
 
-            {/* Playlist — la final */}
-            {isPriv&&covers.filter(c=>c.checked).length>0&&showPlaylist&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
+            {/* Pagină separată: Playlist */}
+            {isPriv&&covers.filter(c=>c.checked).length>0&&showPlaylist&&<div className="print-break" style={{breakBefore:"page"}}>
+            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999"}}>Playlist</div>
                 <button onClick={()=>setShowPlaylist(false)} style={{fontSize:10,color:"#bbb",background:"transparent",border:"none",cursor:"pointer"}}>Ascunde</button>
@@ -1586,6 +1593,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                   </div>
                 ))}
               </div>
+            </div>
             </div>}
             {isPriv&&!showPlaylist&&<button onClick={()=>setShowPlaylist(true)} style={{width:"100%",padding:"10px",borderRadius:12,border:"1px dashed #ddd",background:"transparent",fontSize:11,color:"#bbb",cursor:"pointer",marginBottom:8}}>+ Afișează playlist</button>}
 
