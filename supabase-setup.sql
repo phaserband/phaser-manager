@@ -2,31 +2,53 @@
 -- Phaser Manager - Setup Supabase
 -- ============================================
 -- Rulează acest SQL în Supabase Dashboard → SQL Editor
--- pentru a crea tabelele necesare sincronizării cloud.
 
--- 1. Tabela app_data (date principale: evenimente, tasks, etc.)
+-- ─────────────────────────────────────────────
+-- PASUL 0 — Activează Supabase Auth (Email)
+-- ─────────────────────────────────────────────
+-- În Supabase Dashboard → Authentication → Providers → Email:
+--   ✅ Enable Email provider
+--   ☐ Confirm email — DEZACTIVEAZĂ pentru aplicație internă (nu vrei să trimiți confirmări)
+--   (sau lasă activat dacă vrei confirmare prin email)
+--
+-- Utilizatorii se înregistrează singuri din aplicație cu emailul lor personal.
+-- Emailul trebuie să corespundă cu cel din MEMBERS sau setat în Contul Meu.
+
+-- ─────────────────────────────────────────────
+-- 1. Tabela app_data (date principale)
+-- ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS app_data (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL DEFAULT '{}',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Permite citire și scriere pentru toți (anon key)
 ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all for app_data" ON app_data;
-CREATE POLICY "Allow all for app_data" ON app_data
-  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow authenticated users for app_data" ON app_data
+  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
--- 2. Tabela phaser_trusted (utilizatori de încredere / login)
-CREATE TABLE IF NOT EXISTS phaser_trusted (
-  device_id TEXT PRIMARY KEY,
-  user_data JSONB,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Dacă vrei să păstrezi accesul anonim temporar (în timp ce migrezi):
+-- CREATE POLICY "Allow all for app_data" ON app_data FOR ALL USING (true) WITH CHECK (true);
 
-ALTER TABLE phaser_trusted ENABLE ROW LEVEL SECURITY;
+-- ─────────────────────────────────────────────
+-- 2. Tabela phaser_trusted — nu mai e necesară
+-- ─────────────────────────────────────────────
+-- Sesiunile sunt gestionate de Supabase Auth (JWT tokens).
+-- Poți șterge sau ignora această tabelă.
+DROP TABLE IF EXISTS phaser_trusted;
 
-DROP POLICY IF EXISTS "Allow all for phaser_trusted" ON phaser_trusted;
-CREATE POLICY "Allow all for phaser_trusted" ON phaser_trusted
-  FOR ALL USING (true) WITH CHECK (true);
+-- ─────────────────────────────────────────────
+-- MIGRARE LA phaser.ro (când ești gata)
+-- ─────────────────────────────────────────────
+-- 1. Creează un proiect nou Supabase pentru trupă
+-- 2. Rulează acest SQL în noul proiect
+-- 3. Exportă datele din proiectul vechi:
+--    SELECT data FROM app_data WHERE id = 'phaser_main';
+-- 4. Importă în noul proiect
+-- 5. Actualizează în index.html:
+--    const SUPABASE_URL = "https://[nou-proiect].supabase.co";
+--    const SUPABASE_ANON_KEY = "[noua-cheie-anon]";
+-- 6. Fiecare membru își creează cont nou cu emailul personal pe noul proiect
+-- 7. Deployează pe phaser.ro prin Cloudflare Pages sau Workers
