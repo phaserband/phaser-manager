@@ -1448,9 +1448,12 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     ? (showRiderTab ? [{id:"oferta",l:"📄 Ofertă"},{id:"rider",l:"📋 Rider"}]
                     : [{id:"oferta",l:"📄 Ofertă"}])
     : [{id:"oferta",l:"📄 Ofertă"},{id:"rider",l:"📋 Rider"},{id:"pressKit",l:"📷 Press Kit"}];
-  const allTabs = ["asteptare","plata_avans","confirmat"].includes(localSt)
+  const isEvent = ["plata_avans","confirmat"].includes(localSt);
+  const allTabs = isEvent
     ? [{id:"fisa",l:"📋 Fișa"},...baseTabs,{id:"contract",l:"📝 Contract"}]
-    : [{id:"fisa",l:"📋 Fișa"},...baseTabs];
+    : ["asteptare","plata_avans","confirmat"].includes(localSt)
+      ? [...baseTabs,{id:"contract",l:"📝 Contract"}]
+      : baseTabs;
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={onClose}>
@@ -1508,8 +1511,8 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         </div>
 
         {/* Tabs */}
-        <div style={{display:"flex",gap:1,padding:"8px 16px",borderBottom:"1px solid #e5e5e5",background:"#fafafa",flexShrink:0,overflowX:"auto"}}>
-          {allTabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:tab===t.id?700:400,cursor:"pointer",background:tab===t.id?"#111":"transparent",color:tab===t.id?"#fff":"#555",whiteSpace:"nowrap"}}>{t.l}</button>)}
+        <div style={{display:"flex",gap:1,padding:"8px 16px",borderBottom:"1px solid #e5e5e5",background:"#fafafa",flexShrink:0,overflowX:"auto"}} onClick={e=>e.stopPropagation()}>
+          {allTabs.map(t=><button key={t.id} type="button" onClick={e=>{e.stopPropagation();e.preventDefault();setTab(t.id);}} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:tab===t.id?700:400,cursor:"pointer",background:tab===t.id?"#111":"transparent",color:tab===t.id?"#fff":"#555",whiteSpace:"nowrap"}}>{t.l}</button>)}
         </div>
 
         {/* OFERTĂ */}
