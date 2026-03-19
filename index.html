@@ -4937,14 +4937,14 @@ function App() {
                       <span style={{fontSize:11,color:v?"#f59e0b":th.tm,fontWeight:v?600:400}}>{l}</span>
                       <div style={{textAlign:"right"}}>
                         <div style={{fontSize:11,fontWeight:700,color:v?"#f59e0b":th.tm}}>{fv(amt)}</div>
-                        {v&&<div style={{fontSize:9,color:"#f59e0b"}}>1% = {fv(amt*0.01)}</div>}
+                        {v&&<div style={{fontSize:9,color:"#f59e0b"}}>impozit 1%: {fv(amt*0.01)}</div>}
                       </div>
                     </div>
                   ))}
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span style={{fontSize:11,color:th.tm}}>Curs 1€ =</span>
-                  <input type="number" value={ev.cursLei||5} onChange={e=>upd({cursLei:Number(e.target.value)||5})} style={{...sty.i,width:60,padding:5,fontSize:12}}/> 
+                  <input type="number" value={ev.cursLei==null?"":ev.cursLei} onChange={e=>{const v=e.target.value;upd({cursLei:v===''?5:Number(v)||5});}} style={{...sty.i,width:60,padding:5,fontSize:12}} placeholder="5"/> 
                   <span style={{fontSize:11,color:th.tm}}>lei</span>
                 </div>
               </div>
@@ -4978,7 +4978,7 @@ function App() {
                   <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                     <span style={{fontSize:12,flex:1}}>{l}</span>
                     <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      <input type="number" value={(ev.fixedCosts||DEFAULT_FIXED_COSTS)[k]||0} onChange={e=>upd({fixedCosts:{...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{}),[k]:Number(e.target.value)||0}})} style={{...sty.i,width:70,padding:4,fontSize:12,textAlign:"right"}}/>
+                      <input type="number" value={(ev.fixedCosts||DEFAULT_FIXED_COSTS)[k]??""} onChange={e=>{const v=e.target.value;upd({fixedCosts:{...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{}),[k]:v===''?0:Number(v)||0}});}} style={{...sty.i,width:70,padding:4,fontSize:12,textAlign:"right"}} placeholder="0"/>
                       <span style={{fontSize:11,color:th.tm,width:22}}>lei</span>
                       <span style={{fontSize:11,color:th.tm,width:36}}>{fv(((ev.fixedCosts||DEFAULT_FIXED_COSTS)[k]||0)/CURS)}</span>
                     </div>
@@ -5084,10 +5084,24 @@ function App() {
               </div>
 
               {/* Fond total eveniment */}
-              <div style={{padding:"10px 14px",borderRadius:8,background:"rgba(99,102,241,.08)",border:"1px solid rgba(99,102,241,.2)"}}>
-                <div style={{display:"flex",justifyContent:"space-between"}}>
-                  <span style={{fontSize:12,color:"#a5b4fc"}}>💰 Fond 5% din acest eveniment</span>
-                  <span style={{fontSize:14,fontWeight:700,color:"#818cf8"}}>{fv(fond5)}</span>
+              <div style={{padding:"12px 14px",borderRadius:8,background:"rgba(99,102,241,.08)",border:"1px solid rgba(99,102,241,.2)"}}>
+                <div style={{fontSize:10,color:"#a5b4fc",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>💰 Fond din acest eveniment</div>
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
+                    <span style={{color:th.tm}}>Avans {ev.dp?"✓":""}</span>
+                    <span style={{color:ev.dp?"#a5b4fc":th.tm,fontWeight:ev.dp?600:400}}>{fv(dep)}{!ev.dp?<span style={{fontSize:9}}> · neîncasat</span>:null}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
+                    <span style={{color:th.tm}}>5% net {ev.restPaid?"✓":""}</span>
+                    <span style={{color:ev.restPaid?"#a5b4fc":th.tm,fontWeight:ev.restPaid?600:400}}>{fv(fond5)}{!ev.restPaid?<span style={{fontSize:9}}> · după plata integrală</span>:null}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,borderTop:"1px solid rgba(99,102,241,.2)",paddingTop:6,marginTop:2}}>
+                    <span style={{fontWeight:700,color:"#818cf8"}}>Total fond</span>
+                    <span style={{fontWeight:800,color:"#818cf8"}}>{fv(dep+fond5)}</span>
+                  </div>
+                </div>
+                <div onClick={()=>{upd({restPaid:!ev.restPaid});showToast(ev.restPaid?"Marcat neplătit":"Eveniment plătit integral ✓");}} style={{marginTop:10,padding:"8px 12px",borderRadius:8,border:`1px solid ${ev.restPaid?"#22c55e":"rgba(99,102,241,.4)"}`,cursor:"pointer",textAlign:"center",background:ev.restPaid?"rgba(34,197,94,.06)":"transparent",fontSize:11,color:ev.restPaid?"#22c55e":"#a5b4fc",fontWeight:ev.restPaid?600:400}}>
+                  {ev.restPaid?"✅ Eveniment plătit integral — fond complet":"⬜ Marchează ca plătit integral (activează 5% fond)"}
                 </div>
               </div>
 
