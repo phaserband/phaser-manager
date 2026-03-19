@@ -47,7 +47,7 @@
 <body>
   <div id="root"><div class="loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0a0a0c;color:#e5e5e5;font-family:system-ui;font-size:15px;font-weight:500;gap:12px;padding:24px"><span>Se încarcă Phaser Manager...</span><span style="font-size:11px;color:#888">Dacă rămâne negru, deschide http://localhost:8080</span></div></div>
   <script type="text/babel" data-presets="env,react">
-const { useState, useEffect, useMemo, useRef } = React;
+const { useState, useEffect, useMemo, useRef, useId } = React;
 
 /* Structură: HOOKS | CONSTANTS | STORAGE | ICONS | COMPONENTS | FEATURES | MAIN APP */
 
@@ -151,7 +151,16 @@ const formatDisplayDateTime = (val, evDate) => {
   const {date,time}=parseDateTime(val,evDate); if(!time) return "—";
   if(!date||date===evDate) return time; return fD(date)+" "+time;
 };
-const TIME_OPTIONS = ["08:00","09:00","10:00","12:00","14:00","16:00","18:00","20:00","21:00","22:00","23:00"];
+// Opțiuni 24h pentru datalist: 00:00 … 23:45 (la 15 min) — fiecare TimeInput are listă cu id unic
+const TIME_OPTIONS = (() => {
+  const o = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      o.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  return o;
+})();
 // Tipuri pentru Extra fișă — alți participanți / furnizori externi
 // Generează HTML standalone pentru fișa evenimentului (PDF, link partajabil)
 const buildFisaHtml = (ev) => {
@@ -2189,14 +2198,15 @@ const RO_CITIES = [
   {n:"Turda",km:160},{n:"Câmpia Turzii",km:155},{n:"Mediaș",km:240},{n:"Sebeș",km:190},
 ];
 
-// TimeInput — 24h format, dropdown + manual typing
+// TimeInput — 24h format, datalist + tastare (id unic per instanță — altfel toate câmpurile împart același datalist și dropdown-ul „nu merge”)
 function TimeInput({ value, onChange, style, placeholder }) {
+  const listId = useId().replace(/:/g, "");
   const norm = (v) => { const m = (v||"").match(/^(\d{1,2}):(\d{2})$/); if(m){ const h=Math.min(23,Math.max(0,parseInt(m[1],10))); const min=Math.min(59,Math.max(0,parseInt(m[2],10))); return String(h).padStart(2,"0")+":"+String(min).padStart(2,"0"); } return v||""; };
   const handleChange = (e) => { const v = norm(e.target.value); onChange(v); };
   return (
     <div style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
-      <input list="time-list-ro" value={value||""} onChange={handleChange} onBlur={()=>onChange(norm(value))} placeholder={placeholder||"09:00"} style={{...style,fontVariantNumeric:"tabular-nums"}} maxLength={5}/>
-      <datalist id="time-list-ro">{TIME_OPTIONS.map(t=><option key={t} value={t}/>)}</datalist>
+      <input list={listId} value={value||""} onChange={handleChange} onBlur={(e)=>onChange(norm(e.target.value))} placeholder={placeholder||"09:00"} style={{...style,fontVariantNumeric:"tabular-nums"}} maxLength={5}/>
+      <datalist id={listId}>{TIME_OPTIONS.map(t=><option key={t} value={t}/>)}</datalist>
     </div>
   );
 }
@@ -2484,12 +2494,11 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
       <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Client</div>
       {editable ? <><input value={ev.cn||""} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Nume client"/><input value={ev.cp||""} onChange={e=>u("cp",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Telefon"/><input value={ev.ce||""} onChange={e=>u("ce",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Email"/></> : <><div style={{fontSize:14,fontWeight:600}}>{ev.cn||"—"}</div>{ev.cp&&<div style={{fontSize:11,color:th.ts,marginTop:2}}>{ev.cp}</div>}{ev.ce&&<div style={{fontSize:11,color:th.ts}}>{ev.ce}</div>}</>}
     </div>
-    {/* 4. Ospitalitate — afișează doar ce are sens din ofertă (nu 0 camere) */}
+    {/* 4. Ospitalitate — cazare doar dacă există în ofertă (>0 camere); fără „Adaugă cazare” pe fișă */}
     {ev.cat==="private"&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
       <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Ospitalitate</div>
       {editable ? <>
         {(hosp.camere||0)>0&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:12}}>Camere:</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:Math.max(0,(hosp.camere||0)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.camere??0}</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:(hosp.camere||0)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div>}
-        {(hosp.camere||0)===0&&<div style={{marginBottom:8}}><button type="button" onClick={()=>u("hosp",{...hosp,camere:1})} style={{...sty.bg,fontSize:11,padding:"4px 10px"}}>+ Adaugă cazare</button></div>}
         <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12}}>Meniuri:</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:Math.max(0,(hosp.meniuri||6)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.meniuri??6}</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:(hosp.meniuri||6)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div>
       </> : <div style={{fontSize:12,color:th.ts}}>{[((hosp.camere||0)>0?`${hosp.camere} camere`:null),((hosp.meniuri||0)>0?`${hosp.meniuri} meniuri`:null)].filter(Boolean).join(" · ")||"—"}</div>}
     </div>}
