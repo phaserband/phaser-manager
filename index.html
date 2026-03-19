@@ -234,7 +234,7 @@ const getSvcCostBreakdown = (ev, prices) => {
   const ecranCost = p.ecranCost ?? (p.ecran ?? 600);
   const scenaCost = p.scenaCost ?? (p.scena ?? 300);
   const djCost = p.djCost ?? 0;
-  const leiPerPlate = p.scenaLeiPerPlate ?? 50;
+  const leiPerPlate = p.scenaLeiPerPlate ?? 0;
   const plates = Math.max(0, ev?.scenaPlates ?? 12);
   const out = [];
   if(svc.sunet){ const c=sunetCost; out.push({k:"sunet",label:SVC_COST_LABELS.sunet,cost:Math.round(c*100)/100}); }
@@ -493,7 +493,7 @@ const loadTemplates = () => {
       const d = JSON.parse(s);
       if (d && typeof d === "object") {
         d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
-        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, scenaLeiPerPlate:50, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 };
+        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, scenaLeiPerPlate:0, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 };
         return d;
       }
     }
@@ -505,7 +505,7 @@ const loadTemplates = () => {
     riderStagePlot: { image: null, notes: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
     poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
-    servicePrices: { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, scenaLeiPerPlate:50, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 }
+    servicePrices: { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, scenaLeiPerPlate:0, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 }
   };
 };
 // Versiuni rider — phaser_rider_versions: [{ id, ts, label, data }]
@@ -4648,7 +4648,7 @@ function App() {
                 <label style={sty.l}>Prețuri servicii extra — furnizori</label>
                 <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Prețurile salvate aici se folosesc la oferte noi. Costurile cu furnizorii se scad în finanțe când evenimentul e confirmat.</p>
                 <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
-                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"scenaLeiPerPlate",l:"Podium lei/placă",def:50},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic per serviciu (€)",def:120},{k:"tehnicExtraPerService",l:"Extra/tehnic din lumini/ecran/podium (€)",def:40}].map(({k,l,def})=>(
+                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"scenaLeiPerPlate",l:"Podium lei/placă",def:0},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic per serviciu (€)",def:120},{k:"tehnicExtraPerService",l:"Extra/tehnic din lumini/ecran/podium (€)",def:40}].map(({k,l,def})=>(
                     <div key={k}><label style={{...sty.l,fontSize:10}}>{l}</label><input type="number" value={(templates.servicePrices||{})[k]??def} onChange={e=>{const v=e.target.value;saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));}} style={sty.i} placeholder={String(def)}/></div>
                   ))}
                 </div>
