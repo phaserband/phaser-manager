@@ -768,6 +768,21 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
   const [dragOverCol, setDragOverCol] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const toggleSel = (id) => setSelectedIds(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
+  const now = new Date();
+  const confViitoare = evs.filter(e=>e.st==="confirmat"&&(!filterCat||e.cat===filterCat)&&new Date(e.date+"T00:00:00")>=now).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const confTrecute = evs.filter(e=>e.st==="confirmat"&&(!filterCat||e.cat===filterCat)&&new Date(e.date+"T00:00:00")<now).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const activeOffers = evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)&&(!filterCat||e.cat===filterCat));
+  const activeSorted = [...activeOffers].sort((a,b)=>{
+    if(sortBy==="date") return new Date(a.date||0)-new Date(b.date||0);
+    if(sortBy==="dateDesc") return new Date(b.date||0)-new Date(a.date||0);
+    if(sortBy==="cr") return new Date(b.cr||0)-new Date(a.cr||0);
+    if(sortBy==="crAsc") return new Date(a.cr||0)-new Date(b.cr||0);
+    if(sortBy==="fee") return (b.fee||0)-(a.fee||0);
+    if(sortBy==="feeAsc") return (a.fee||0)-(b.fee||0);
+    if(sortBy==="client") return (a.cn||"").localeCompare(b.cn||"");
+    if(sortBy==="status") return (a.st||"").localeCompare(b.st||"");
+    return 0;
+  });
   let base = evs.filter(e=>{
     if(filterSt) { if(e.st!==filterSt) return false; }
     else { if(!["oferta","asteptare","plata_avans","confirmat"].includes(e.st)) return false; }
@@ -794,7 +809,7 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
       <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
         <div>
           <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px"}}>Oferte</h1>
-          <p style={{color:th.tm,fontSize:12,marginTop:2}}>{active.length} oferte</p>
+          <p style={{color:th.tm,fontSize:12,marginTop:2}}>{filterSt===""?activeOffers.length+confViitoare.length+confTrecute.length:active.length} oferte</p>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
           <div style={{display:"flex",gap:2,padding:4,background:th.h,borderRadius:8,border:`1px solid ${th.b}`}}>
@@ -860,6 +875,78 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
           })}
         </div>
       ) : viewMode==="list" ? (
+        filterSt==="" ? (
+          <>
+            {/* Oferte active */}
+            <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Oferte active ({activeSorted.length})</div>
+            <div style={{...sty.cd,padding:0,overflow:"hidden",marginBottom:20}}>
+              {activeSorted.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă activă</div>}
+              {activeSorted.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
+                  {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={activeSorted.length>0&&activeSorted.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=activeSorted.map(e=>e.id);const all=activeSorted.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
+                  {["Nr","Ofertă","Tip","Locație","Data eveniment","Adăugată","Onorariu","Status"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
+                </tr></thead>
+                <tbody>{activeSorted.map((ev,i)=>(
+                  <tr key={ev.id} onClick={()=>onSelect(ev)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:"transparent"}} onMouseOver={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
+                    {(showSelection||onDeleteSelected)&&<td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(ev.id)} onChange={()=>toggleSel(ev.id)} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></td>}
+                    <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{(ev.offerNr?"O"+ev.offerNr:"—")}</td>
+                    <td style={{padding:"10px 12px",fontSize:13,fontWeight:600}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</td>
+                    <td style={{padding:"10px 12px",fontSize:11}}>{ev.type} · {ev.cat==="private"?"Privat":"Public"}</td>
+                    <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</td>
+                    <td style={{padding:"10px 12px",fontSize:11}}>{fD(ev.date)}</td>
+                    <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{fD(ev.cr)}</td>
+                    <td style={{padding:"10px 12px",fontSize:13,fontWeight:700}}>{fFmt(ev.fee,ev.valuta)}</td>
+                    <td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        <BadgeStatusSelect s={ev.st} th={th} evId={ev.id} onStatusChange={onStatusChange}/>
+                        {onAvansToggle&&["plata_avans","confirmat"].includes(ev.st)&&<span onClick={()=>onAvansToggle(ev.id)} style={{cursor:"pointer",fontSize:10,padding:"2px 6px",borderRadius:6,border:`1px solid ${ev.dp?"#22c55e":"#ef4444"}`,color:ev.dp?"#22c55e":"#ef4444",fontWeight:600}} title="Click: bifează avans încasat">{ev.dp?"✓ Avans":"✗ Avans"}</span>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>}
+            </div>
+            {/* Oferte confirmate - Viitoare + Trecute */}
+            <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Viitoare confirmate ({confViitoare.length})</div>
+            <div style={{...sty.cd,padding:0,overflow:"hidden",marginBottom:20}}>
+              {confViitoare.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă confirmată viitoare</div>}
+              {confViitoare.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
+                  {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={confViitoare.length>0&&confViitoare.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=confViitoare.map(e=>e.id);const all=confViitoare.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
+                  {["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
+                </tr></thead>
+                <tbody>{confViitoare.map((ev,i)=>(
+                  <tr key={ev.id} onClick={()=>onSelect(ev)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:"transparent"}} onMouseOver={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
+                    {(showSelection||onDeleteSelected)&&<td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(ev.id)} onChange={()=>toggleSel(ev.id)} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></td>}
+                    <td style={{padding:"10px 12px",fontSize:11}}>{fD(ev.date)}<div style={{fontSize:10,color:"#22c55e",fontWeight:600}}>în {dU(ev.date)} zile</div></td>
+                    <td style={{padding:"10px 12px",fontSize:13,fontWeight:700}}>{ev.type||"—"}</td>
+                    <td style={{padding:"10px 12px",fontSize:11}}>{ev.cn||(ev.cat==="private"?"Privat":"Public")||"—"}</td>
+                    <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</td>
+                  </tr>
+                ))}</tbody>
+              </table>}
+            </div>
+            <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Trecute ({confTrecute.length})</div>
+            <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
+              {confTrecute.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă trecută</div>}
+              {confTrecute.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
+                  {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={confTrecute.length>0&&confTrecute.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=confTrecute.map(e=>e.id);const all=confTrecute.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
+                  {["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
+                </tr></thead>
+                <tbody>{confTrecute.map((ev,i)=>(
+                  <tr key={ev.id} onClick={()=>onSelect(ev)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:"transparent",opacity:.7}} onMouseOver={e=>{e.currentTarget.style.opacity="1";if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{e.currentTarget.style.opacity=".7";if(!selectedIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
+                    {(showSelection||onDeleteSelected)&&<td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(ev.id)} onChange={()=>toggleSel(ev.id)} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></td>}
+                    <td style={{padding:"10px 12px",fontSize:11}}>{fD(ev.date)}</td>
+                    <td style={{padding:"10px 12px",fontSize:13,fontWeight:600}}>{ev.type||"—"}</td>
+                    <td style={{padding:"10px 12px",fontSize:11}}>{ev.cn||(ev.cat==="private"?"Privat":"Public")||"—"}</td>
+                    <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</td>
+                  </tr>
+                ))}</tbody>
+              </table>}
+            </div>
+          </>
+        ) : (
         <>
       {active.length===0 && <div style={{...sty.cd,padding:40,textAlign:"center",color:th.tm}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{fontSize:13}}>Nicio ofertă</div></div>}
       <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
@@ -889,6 +976,7 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
         </table>
       </div>
         </>
+        )
       ) : (
         <>
       {active.length===0 && <div style={{...sty.cd,padding:40,textAlign:"center",color:th.tm}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{fontSize:13}}>Nicio ofertă</div></div>}
@@ -1100,7 +1188,7 @@ function ContractView({ ev, th, contractFields, onContractChange }) {
   );
 }
 // ─── OFFER PREVIEW ───
-function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab }) {
+function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail }) {
   const [copied, setCopied] = useState(false);
   const [mediaTitle, setMediaTitle] = useState(ev.mediaTitle||"PHASER Live");
   const [videos, setVideos] = useState(ev.videos||DEFAULT_VIDEOS);
@@ -1454,6 +1542,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     : ["asteptare","plata_avans","confirmat"].includes(localSt)
       ? [...baseTabs,{id:"contract",l:"📝 Contract"}]
       : baseTabs;
+  const singleViewMode = fromDetail && (initialTab==="contract"||initialTab==="oferta");
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={onClose}>
@@ -1461,7 +1550,9 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         
         {/* Header simplu — trimite + close */}
         <div style={{padding:"14px 20px",borderBottom:"1px solid rgba(251,191,36,.2)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"linear-gradient(135deg,#1a1510 0%,#2d2419 100%)",borderRadius:mob?"0":"16px 16px 0 0",flexShrink:0}}>
-          <div/>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {singleViewMode&&onBackToDetail&&<button onClick={onBackToDetail} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"transparent",color:"rgba(255,255,255,.9)",fontSize:12,cursor:"pointer",fontWeight:600}}>← Înapoi</button>}
+          </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             {tab!=="fisa"&&<><button onClick={handleDownloadPdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
               {pdfLoading?"⏳":"⬇"} Descarcă PDF
@@ -1510,10 +1601,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
           </div>
         </div>
 
-        {/* Tabs */}
-        <div style={{display:"flex",gap:1,padding:"8px 16px",borderBottom:"1px solid #e5e5e5",background:"#fafafa",flexShrink:0,overflowX:"auto"}} onClick={e=>e.stopPropagation()}>
+        {/* Tabs — ascunse când singleViewMode (doar contract sau ofertă din detail) */}
+        {!singleViewMode&&<div style={{display:"flex",gap:1,padding:"8px 16px",borderBottom:"1px solid #e5e5e5",background:"#fafafa",flexShrink:0,overflowX:"auto"}} onClick={e=>e.stopPropagation()}>
           {allTabs.map(t=><button key={t.id} type="button" onClick={e=>{e.stopPropagation();e.preventDefault();setTab(t.id);}} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:tab===t.id?700:400,cursor:"pointer",background:tab===t.id?"#111":"transparent",color:tab===t.id?"#fff":"#555",whiteSpace:"nowrap"}}>{t.l}</button>)}
-        </div>
+        </div>}
 
         {/* OFERTĂ */}
                 <div style={{flex:1,overflow:"auto",background:"#f4f4f4",display:tab==="oferta"?"block":"none"}}>
@@ -3196,15 +3287,16 @@ function App() {
   useEffect(()=>{ if(modal==="detail") setDetailTab("fisa"); },[modal]);
   const mData = useMemo(() => {
     if (!modal || payload == null) return null;
-    if (modal === "detail" || modal === "finance") return typeof payload === "string" ? evs.find(e => e.id === payload) : payload;
+    if (modal === "detail") return typeof payload === "string" ? evs.find(e => e.id === payload) : payload;
+    if (modal === "finance") { const p=payload; if(typeof p==="object"&&p?.evId){const e=evs.find(x=>x.id===p.evId);return e?{...e,_from:p.from}:null;} return typeof p==="string"?evs.find(e=>e.id===p):p; }
     if (modal === "oferta") {
       const p = payload;
       if (typeof p === "object" && p?.evId) {
         const ev = evs.find(e => e.id === p.evId);
-        return ev ? { ev, initialTab: p.initialTab } : null;
+        return ev ? { ev, initialTab: p.initialTab, from: p.from } : null;
       }
       const ev = typeof payload === "string" ? evs.find(e => e.id === payload) : payload;
-      return ev;
+      return ev && typeof ev==="object" ? { ev, initialTab: undefined, from: undefined } : ev;
     }
     if (modal === "form") return typeof payload === "string" ? evs.find(e => e.id === payload) : payload;
     if (modal === "pick") return payload;
@@ -3552,7 +3644,7 @@ function App() {
 
   const getSvcTotal = ev => Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
   const getExpTotal = ev => (ev.ex||[]).reduce((s,x)=>s+x.a,0);
-  const pendingCount = evs.filter(e=>["oferta","asteptare"].includes(e.st)).length;
+  const pendingCount = evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).length;
   const activeTaskCount = tasks.filter(t=>!t.done).length;
 
   const MONTHS_RO = {ianuarie:1,februarie:2,martie:3,aprilie:4,mai:5,iunie:6,iulie:7,august:8,septembrie:9,octombrie:10,noiembrie:11,decembrie:12};
@@ -4047,7 +4139,7 @@ function App() {
                   <span>📤 Oferte active</span>
                   <button onClick={()=>setTab("offers")} style={{fontSize:10,color:th.tm,background:"transparent",border:"none",cursor:"pointer"}}>toate ({pendingCount}) →</button>
                 </div>
-                {evs.filter(e=>["oferta","asteptare"].includes(e.st)).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,5).map(ev=>
+                {evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,5).map(ev=>
                   <div key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:7,marginBottom:3,cursor:"pointer"}}
                     onMouseOver={e=>e.currentTarget.style.background=th.h}
                     onMouseOut={e=>e.currentTarget.style.background="transparent"}>
@@ -5076,8 +5168,8 @@ function App() {
                 <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap",borderBottom:`1px solid ${th.b}`,paddingBottom:12}}>
                   <button type="button" onClick={()=>setDetailTab("fisa")} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:detailTab==="fisa"?700:400,cursor:"pointer",background:detailTab==="fisa"?th.ab:"transparent",color:detailTab==="fisa"?th.t:th.tm}}><IcDoc s={13}/> Fișa evenimentului</button>
                   {isConfirmed&&<button type="button" onClick={()=>setDetailTab("finante")} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:detailTab==="finante"?700:400,cursor:"pointer",background:detailTab==="finante"?th.ab:"transparent",color:detailTab==="finante"?th.t:th.tm}}><IcMoney s={13}/> Finanțe</button>}
-                  <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
-                  <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",ev.id),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
+                  <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
+                  <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
                   {p.d&&<button type="button" onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
                 </div>
                 {detailTab==="fisa"&&<FisaEveniment ev={ev} updEv={updEv} th={th} SVC_LABELS={SVC_LABELS} fFmt={fFmt} fD={fD} editable={!isConfirmed} sty={sty} mob={mob} showPaymentCards={ev.st==="plata_avans"} showToast={showToast}/>}
@@ -5087,9 +5179,9 @@ function App() {
                     <div><div style={{fontSize:10,color:th.tm}}>Suma totală</div><div style={{fontSize:16,fontWeight:800}}>{fFmt((ev.fee??0)+svc,ev.valuta)}</div></div>
                     {canToggleAvans?<div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd&&ev.st==="plata_avans"?{st:"confirmat"}:{})});showToast(nd?(ev.st==="plata_avans"?"Avans încasat ✓ — confirmat":"Avans: încasat ✓"):"Avans: neîncasat")}} style={{cursor:"pointer",padding:6,borderRadius:6,border:`2px solid ${ev.dp?"#22c55e":"transparent"}`}}><div style={{fontSize:10,color:th.tm}}>Avans</div><div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep,ev.valuta)} {ev.dp?"✓":"✗"}</div></div>:<div><div style={{fontSize:10,color:th.tm}}>Avans</div><div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep,ev.valuta)} {ev.dp?"✓":"✗"}</div></div>}
                   </div>
-                  {(()=>{try{const tot=(ev.fee??0)+svc;const r=typeof getProfitWithFond==="function"?getProfitWithFond(tot,exp,ev):{fond:0,net:tot-exp};const {fond,net}=r;const v=ev.valuta||"EUR";return <><div style={{marginTop:8,fontSize:14,fontWeight:700,color:net>=0?"#22c55e":"#ef4444"}}>Profit net: {fFmt(net,v)}</div>{ev.cuFond!==false&&fond>0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Fond total: {fFmt(fond,v)}</div>}</>;}catch(_){return <div style={{fontSize:12,color:th.tm}}>—</div>}})()}
+                  {(()=>{try{const tot=(ev.fee??0)+svc;const dep=ev.dep||0;const rest=Math.max(0,tot-dep);const restDePrimit=ev.restPaid?0:rest;const v=ev.valuta||"EUR";let fondEl=null;if(ev.cuFond!==false){const r=typeof getProfitWithFond==="function"?getProfitWithFond(tot,exp,ev):{fond:0};if(r.fond>0)fondEl=<div style={{fontSize:10,color:th.tm,marginTop:2}}>Fond total: {fFmt(r.fond,v)}</div>;}return <><div style={{marginTop:8,fontSize:14,fontWeight:700,color:restDePrimit>0?"#f59e0b":"#22c55e"}}>{restDePrimit>0?`Rest de primit: ${fFmt(restDePrimit,v)}`:"✓ Plătit integral"}</div>{fondEl}</>;}catch(_){return <div style={{fontSize:12,color:th.tm}}>—</div>}})()}
                   {Object.keys(ev.sp||{}).length>0&&<div style={{marginTop:8,fontSize:10,color:th.tm}}>Split: {MEMBERS.filter(m=>ev.sp[m.id]).map(m=>`${m.n.split(" ")[0]} ${f$(ev.sp[m.id])}`).join(" · ")}</div>}
-                  <button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",ev.id),80);}} style={{...sty.bg,marginTop:12}}>Deschide fișa financiară completă</button>
+                  <button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",{evId:ev.id,from:"detail"}),80);}} style={{...sty.bg,marginTop:12}}>Deschide fișa financiară completă</button>
                 </div>}
               </>}
 
@@ -5244,9 +5336,9 @@ function App() {
               </div>}
 
               {!(ev.st==="plata_avans"||isConfirmed)&&<div style={{display:"flex",gap:4,justifyContent:mob?"center":"flex-end",flexWrap:"wrap",marginTop:16,paddingTop:12,borderTop:`1px solid ${th.b}`}}>
-                <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",ev.id),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
-                {["asteptare","plata_avans","confirmat"].includes(ev.st)&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>}
-                {(isConfirmed||ev.st==="plata_avans")&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",ev.id),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>}
+                <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
+                {["asteptare","plata_avans","confirmat"].includes(ev.st)&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>}
+                {(isConfirmed||ev.st==="plata_avans")&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",{evId:ev.id,from:"detail"}),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>}
                 {p.d&&<button onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
               </div>}
             </div>
@@ -5266,6 +5358,7 @@ function App() {
       {/* FINANCE POPUP — Fișa financiară E(nr) (data) */}
       {modal==="finance"&&(()=>{
         if(!mData) return null;
+        const fromDetail=mData._from==="detail";
         const ev={adminId:"m4",stageId:"m4",...mData};
         // Auto-calculates shares on every update — no "Aplică" needed
         const calcShares=(e)=>{
@@ -5373,10 +5466,13 @@ function App() {
 
         return <div style={{position:"fixed",inset:0,background:th.ov,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100}} onClick={closeModal}>
           <div style={{background:th.c,border:`1px solid ${th.b}`,borderRadius:14,width:mob?"95%":500,maxHeight:"92vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
-            <div style={{padding:"16px 20px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <div style={{fontSize:15,fontWeight:700}}>Fișa financiară · O{ev.offerNr||"?"}</div>
-                <div style={{fontSize:11,color:th.tm,marginTop:2}}>{isPrivate?"Privat":"Public"} · {fD(ev.date)}</div>
+            <div style={{padding:"16px 20px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+              <div style={{flex:1,display:"flex",alignItems:"center",gap:10}}>
+                {fromDetail&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("detail",ev.id),80);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:"transparent",color:th.t,fontSize:12,cursor:"pointer",fontWeight:600}}>← Înapoi</button>}
+                <div>
+                  <div style={{fontSize:15,fontWeight:700}}>Fișa financiară · O{ev.offerNr||"?"}</div>
+                  <div style={{fontSize:11,color:th.tm,marginTop:2}}>{isPrivate?"Privat":"Public"} · {fD(ev.date)}</div>
+                </div>
               </div>
               <button onClick={closeModal} style={{padding:4,border:"none",background:"transparent",color:th.tm,cursor:"pointer"}}><IcX s={14}/></button>
             </div>
@@ -5569,9 +5665,11 @@ function App() {
       })()}
 
             {/* OFFER PREVIEW */}
-      {modal==="oferta"&&mData&&(()=>{const ev=mData.ev||mData; return <OfferPreview
+      {modal==="oferta"&&mData&&(()=>{const ev=mData.ev||mData; const fromDetail=mData.from==="detail"; return <OfferPreview
         ev={ev}
         initialTab={mData.initialTab}
+        fromDetail={fromDetail}
+        onBackToDetail={fromDetail?()=>{closeModal();setTimeout(()=>openModal("detail",ev.id),80);}:undefined}
         evStatus={ev.st}
         onStatusChange={updSt}
         onOfferUpdate={(id,up)=>{setEvs(p=>p.map(e=>e.id===id?{...e,...up}:e));}}
