@@ -134,6 +134,26 @@ const GCAL_LS_EXPIRY = "gcal_expiry";
 const dU  = d => { if(!d) return 999; return Math.ceil((new Date(d+"T00:00:00")-new Date())/864e5); };
 const getProfitWithFond = (tot,exp,ev)=>{const brut=Math.max(0,tot-exp);const avansToFond=(ev?.dp&&ev?.dep)?(ev.dep||0):0;const cuFond=ev?.cuFond!==false;const pct=ev?.fondPct??10;const fondPct=cuFond?Math.round(brut*pct/100):0;const fondPct2=cuFond?Math.round(brut*(ev?.fondPct2??10)/100):0;const fond=avansToFond+fondPct+fondPct2;return{brut,fond,net:brut-fond};};
 
+// Cost servicii tehnice — ce plătim furnizorilor (scade din profit în finanțe)
+const getSvcCost = (ev, prices) => {
+  const p = prices || {};
+  const CURS = ev?.cursLei || 5;
+  const svc = ev?.svc || {}; const svcp = ev?.svcp || {};
+  const tehnicPerSvc = p.tehnicPerService ?? 120;
+  const extraPerSvc = p.tehnicExtraPerService ?? 40;
+  const sunetCost = p.sunetCost ?? 150;
+  const leiPerPlate = p.scenaLeiPerPlate ?? 50;
+  const plates = Math.max(0, ev?.scenaPlates ?? 12);
+  const tehnicCount = ["sunet","lumini","ecran","scena"].filter(k=>svc[k]).length;
+  let cost = 0;
+  if(svc.sunet) cost += sunetCost;
+  if(svc.lumini) cost += Math.max(0, (svcp.lumini||p.lumini||500) - extraPerSvc*tehnicCount);
+  if(svc.ecran) cost += Math.max(0, (svcp.ecran||p.ecran||600) - extraPerSvc*tehnicCount);
+  if(svc.scena) cost += Math.max(0, (svcp.scena||p.scena||300) - extraPerSvc*tehnicCount) + (plates*leiPerPlate/CURS);
+  cost += tehnicCount * tehnicPerSvc;
+  return Math.round(cost*100)/100;
+};
+
 const MEMBERS = [
   {id:"m1",n:"Carina Dumitru",short:"Carina",r:"Vocal",  email:"carina@phaser.ro"},
   {id:"m2",n:"Radu Racz",     short:"Radu",  r:"Bass",   email:"raczradurr@gmail.com"},
@@ -398,6 +418,7 @@ const loadTemplates = () => {
       const d = JSON.parse(s);
       if (d && typeof d === "object") {
         d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
+        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, ecran:600, scena:300, scenaLeiPerPlate:50, dj:600, tehnicPerService:120, tehnicExtraPerService:40 };
         return d;
       }
     }
@@ -408,7 +429,8 @@ const loadTemplates = () => {
     riderCustom: [],
     riderStagePlot: { image: null, notes: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
-    poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață."
+    poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
+    servicePrices: { sunet:350, sunetCost:150, lumini:500, ecran:600, scena:300, scenaLeiPerPlate:50, dj:600, tehnicPerService:120, tehnicExtraPerService:40 }
   };
 };
 // Versiuni rider — phaser_rider_versions: [{ id, ts, label, data }]
@@ -2318,7 +2340,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
     fee: mData?.fee||(isP?PX.r[1]:PX.pub),
     valuta: mData?.valuta||"EUR",
     dep: (()=>{const tot=(mData?.fee||PX.r[1])+(isP?Object.entries(mData?.svcp||{}).reduce((s,[k,v])=>s+(mData?.svc?.[k]?v:0),0):0);return mData?.dep??Math.round(tot*0.1/10)*10;})(), dp: mData?.dp||false, zileRest: mData?.zileRest??5,
-    sp: mData?.sp||{}, svc: mData?.svc||{}, svcp: mData?.svcp||{sunet:350,lumini:500,ecran:600,scena:300,dj:600},
+    sp: mData?.sp||{}, svc: mData?.svc||{}, svcp: mData?.svcp||{sunet:templates?.servicePrices?.sunet??350,lumini:templates?.servicePrices?.lumini??500,ecran:templates?.servicePrices?.ecran??600,scena:templates?.servicePrices?.scena??300,dj:templates?.servicePrices?.dj??600}, scenaPlates: mData?.scenaPlates??12,
     ex: (()=>{const existing=mData?.ex||[];const oficiu=[{id:"ex_tehnicii",n:"Tehnicii",a:200,v:"Oficiu"},{id:"ex_backline",n:"Backline",a:250,v:"Oficiu"},{id:"ex_transport",n:"Transport",a:10,v:"Oficiu"}];const others=existing.filter(x=>!/tehnic/i.test(x.n||"")&&!/backline/i.test(x.n||"")&&!/transport/i.test(x.n||""));return[...oficiu,...others];})(), ven: mData?.ven||[], notes: mData?.notes||"",
     impozitVenit: mData?.impozitVenit??1, plataAvansFirma: mData?.plataAvansFirma ?? (mData?.plataDirect===false), plataRestFirma: mData?.plataRestFirma ?? (mData?.plataDirect===false), sumaAvansLei: mData?.sumaAvansLei??0, sumaRestLei: mData?.sumaRestLei??0, modalitatePlataAvans: mData?.modalitatePlataAvans||"", modalitatePlataRest: mData?.modalitatePlataRest||"", dividende: mData?.dividende??16, cuFond: mData?.cuFond??true, fondPct: mData?.fondPct??10, fondPct2: mData?.fondPct2??10,
     videos: mData?.videos||tplVideos, covers: mData?.covers||(tplCovers.map(c=>({...c,checked:true}))),
@@ -2533,6 +2555,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
                   <span style={{fontSize:11,color:th.tm}}>{fm.valuta==="lei"?"lei":"€"}</span>
                 </div>
               )}
+              {fm.svc?.scena&&<div style={{marginTop:8,marginLeft:28}}><label style={{...sty.l,fontSize:10}}>Nr. plăci podium (cost furnizor)</label><input type="number" value={fm.scenaPlates??12} onChange={e=>u("scenaPlates",Math.max(0,Number(e.target.value)||0))} style={iStyle} min={1} placeholder="12"/></div>}
               <div style={{marginTop:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <label style={sty.l}>Extra personalizat</label>
@@ -4260,9 +4283,9 @@ function App() {
               </div>
             </div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {["rider","playlist","media","pressKitPublic"].map(s=>(
+              {["rider","servicePrices","playlist","media","pressKitPublic"].map(s=>(
                 <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:docsSectTab===s?700:400,cursor:"pointer",background:docsSectTab===s?th.ab:"transparent",color:docsSectTab===s?th.t:th.tm}}>
-                  {{rider:"Rider",playlist:"Playlist",media:"🎬 Media privat",pressKitPublic:"Press Kit Public"}[s]}
+                  {{rider:"Rider",servicePrices:"💰 Prețuri servicii",playlist:"Playlist",media:"🎬 Media privat",pressKitPublic:"Press Kit Public"}[s]}
                 </button>
               ))}
             </div>
@@ -4319,6 +4342,16 @@ function App() {
                     </div>
                   </div>
                 </div>
+              </div>}
+              {docsSectTab==="servicePrices"&&<div>
+                <label style={sty.l}>Prețuri servicii extra — furnizori</label>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Prețurile salvate aici se folosesc la oferte noi. Costurile cu furnizorii se scad în finanțe când evenimentul e confirmat.</p>
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
+                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaLeiPerPlate",l:"Podium lei/placă",def:50},{k:"dj",l:"DJ (client €)",def:600},{k:"tehnicPerService",l:"Tehnic per serviciu (€)",def:120},{k:"tehnicExtraPerService",l:"Extra/tehnic din lumini/ecran/podium (€)",def:40}].map(({k,l,def})=>(
+                    <div key={k}><label style={{...sty.l,fontSize:10}}>{l}</label><input type="number" value={(templates.servicePrices||{})[k]??def} onChange={e=>{const v=e.target.value;saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));}} style={sty.i} placeholder={String(def)}/></div>
+                  ))}
+                </div>
+                <button onClick={()=>saveTemplates(tpl=>({...tpl,servicePrices:templates.servicePrices}));showToast("Prețuri salvate — se aplică la oferte noi");} style={{...sty.bg,marginTop:16}}>Salvează prețuri</button>
               </div>}
               {docsSectTab==="playlist"&&<div>
                 <label style={sty.l}>Playlist — {((templates.playlist&&templates.playlist.length>0)?templates.playlist:DEFAULT_COVERS).length} piese</label>
@@ -5163,23 +5196,45 @@ function App() {
             </div>
             <div style={{padding:"16px 22px"}} onClick={e=>e.stopPropagation()}>
 
-              {/* TAB-URI — plata_avans și confirmat: Fișa, Finanțe (doar confirmat), Contract, Ofertă */}
-              {(ev.st==="plata_avans"||isConfirmed)&&<>
+              {/* DE PLATIT AVANS — doar plăți + butoane (fără Fișa) */}
+              {ev.st==="plata_avans"&&<>
+                <div style={{display:"flex",gap:10,marginBottom:16}}>
+                  <div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd?{st:"confirmat"}:{})});showToast(nd?"Avans încasat ✓ — eveniment confirmat":"Avans: neîncasat");}} style={{flex:1,padding:16,borderRadius:10,border:`2px solid ${ev.dp?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.dp?"rgba(34,197,94,.06)":"transparent"}}>
+                    <div style={{fontSize:18,marginBottom:4}}>{ev.dp?"✅":"⬜"}</div>
+                    <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Platit avans</div>
+                    <div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep||0,ev.valuta)}</div>
+                  </div>
+                  <div onClick={()=>{updEv({restPaid:!ev.restPaid});showToast(ev.restPaid?"Rest: neplătit":"Rest: plătit integral ✓");}} style={{flex:1,padding:16,borderRadius:10,border:`2px solid ${ev.restPaid?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.restPaid?"rgba(34,197,94,.06)":"transparent"}}>
+                    <div style={{fontSize:18,marginBottom:4}}>{ev.restPaid?"✅":"⬜"}</div>
+                    <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Platit integral</div>
+                    <div style={{fontSize:14,fontWeight:700,color:ev.restPaid?"#22c55e":"#ef4444"}}>{fFmt(Math.max(0,(ev.fee||0)+svc-(ev.dep||0)),ev.valuta)}</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:12}}>
+                  <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
+                  <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
+                  <button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",{evId:ev.id,from:"detail"}),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>
+                  {p.d&&<button onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
+                </div>
+              </>}
+
+              {/* TAB-URI — doar confirmat: Fișa, Finanțe, Contract, Ofertă */}
+              {isConfirmed&&<>
                 <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap",borderBottom:`1px solid ${th.b}`,paddingBottom:12}}>
                   <button type="button" onClick={()=>setDetailTab("fisa")} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:detailTab==="fisa"?700:400,cursor:"pointer",background:detailTab==="fisa"?th.ab:"transparent",color:detailTab==="fisa"?th.t:th.tm}}><IcDoc s={13}/> Fișa evenimentului</button>
-                  {isConfirmed&&<button type="button" onClick={()=>setDetailTab("finante")} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:detailTab==="finante"?700:400,cursor:"pointer",background:detailTab==="finante"?th.ab:"transparent",color:detailTab==="finante"?th.t:th.tm}}><IcMoney s={13}/> Finanțe</button>}
+                  <button type="button" onClick={()=>setDetailTab("finante")} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:detailTab==="finante"?700:400,cursor:"pointer",background:detailTab==="finante"?th.ab:"transparent",color:detailTab==="finante"?th.t:th.tm}}><IcMoney s={13}/> Finanțe</button>
                   <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
                   <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
                   {p.d&&<button type="button" onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
                 </div>
-                {detailTab==="fisa"&&<FisaEveniment ev={ev} updEv={updEv} th={th} SVC_LABELS={SVC_LABELS} fFmt={fFmt} fD={fD} editable={!isConfirmed} sty={sty} mob={mob} showPaymentCards={ev.st==="plata_avans"} showToast={showToast}/>}
-                {detailTab==="finante"&&isConfirmed&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+                {detailTab==="fisa"&&<FisaEveniment ev={ev} updEv={updEv} th={th} SVC_LABELS={SVC_LABELS} fFmt={fFmt} fD={fD} editable={false} sty={sty} mob={mob} showPaymentCards={false} showToast={showToast}/>}
+                {detailTab==="finante"&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
                   <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Finanțe</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                     <div><div style={{fontSize:10,color:th.tm}}>Suma totală</div><div style={{fontSize:16,fontWeight:800}}>{fFmt((ev.fee??0)+svc,ev.valuta)}</div></div>
                     {canToggleAvans?<div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd&&ev.st==="plata_avans"?{st:"confirmat"}:{})});showToast(nd?(ev.st==="plata_avans"?"Avans încasat ✓ — confirmat":"Avans: încasat ✓"):"Avans: neîncasat")}} style={{cursor:"pointer",padding:6,borderRadius:6,border:`2px solid ${ev.dp?"#22c55e":"transparent"}`}}><div style={{fontSize:10,color:th.tm}}>Avans</div><div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep,ev.valuta)} {ev.dp?"✓":"✗"}</div></div>:<div><div style={{fontSize:10,color:th.tm}}>Avans</div><div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep,ev.valuta)} {ev.dp?"✓":"✗"}</div></div>}
                   </div>
-                  {(()=>{try{const tot=(ev.fee??0)+svc;const dep=ev.dep||0;const rest=Math.max(0,tot-dep);const restDePrimit=ev.restPaid?0:rest;const v=ev.valuta||"EUR";let fondEl=null;if(ev.cuFond!==false){const r=typeof getProfitWithFond==="function"?getProfitWithFond(tot,exp,ev):{fond:0};if(r.fond>0)fondEl=<div style={{fontSize:10,color:th.tm,marginTop:2}}>Fond total: {fFmt(r.fond,v)}</div>;}return <><div style={{marginTop:8,fontSize:14,fontWeight:700,color:restDePrimit>0?"#f59e0b":"#22c55e"}}>{restDePrimit>0?`Rest de primit: ${fFmt(restDePrimit,v)}`:"✓ Plătit integral"}</div>{fondEl}</>;}catch(_){return <div style={{fontSize:12,color:th.tm}}>—</div>}})()}
+                  {(()=>{try{const tot=(ev.fee??0)+svc;const dep=ev.dep||0;const rest=Math.max(0,tot-dep);const restDePrimit=ev.restPaid?0:rest;const v=ev.valuta||"EUR";const svcCost=typeof getSvcCost==="function"?getSvcCost(ev,templates?.servicePrices):0;const expTotal=exp+svcCost;let fondEl=null;if(ev.cuFond!==false){const r=typeof getProfitWithFond==="function"?getProfitWithFond(tot,expTotal,ev):{fond:0};if(r.fond>0)fondEl=<div style={{fontSize:10,color:th.tm,marginTop:2}}>Fond total: {fFmt(r.fond,v)}</div>;}return <><div style={{marginTop:8,fontSize:14,fontWeight:700,color:restDePrimit>0?"#f59e0b":"#22c55e"}}>{restDePrimit>0?`Rest de primit: ${fFmt(restDePrimit,v)}`:"✓ Plătit integral"}</div>{svcCost>0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Cost servicii: {fFmt(svcCost,v)}</div>}{fondEl}</>;}catch(_){return <div style={{fontSize:12,color:th.tm}}>—</div>}})()}
                   {Object.keys(ev.sp||{}).length>0&&<div style={{marginTop:8,fontSize:10,color:th.tm}}>Split: {MEMBERS.filter(m=>ev.sp[m.id]).map(m=>`${m.n.split(" ")[0]} ${f$(ev.sp[m.id])}`).join(" · ")}</div>}
                   <button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",{evId:ev.id,from:"detail"}),80);}} style={{...sty.bg,marginTop:12}}>Deschide fișa financiară completă</button>
                 </div>}
@@ -5409,7 +5464,8 @@ function App() {
 
         // 1. Impozit pe venit 1% — doar pe porțiunea pe firmă
         const impVenit=Math.round(((avFirma?dep:0)+(restFirma?rest:0))*0.01*100)/100;
-        const netDupaTax=total-impVenit;
+        const svcCost=typeof getSvcCost==="function"?getSvcCost(ev,templates?.servicePrices):0;
+        const netDupaTax=Math.max(0,total-impVenit-svcCost);
 
         // 2. Cheltuieli fixe (lei → €)
         const fc={...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{})};
@@ -5557,6 +5613,7 @@ function App() {
                   {avFirma&&<Row l={`Avans pe firmă 1% (din ${fv(dep)})`} v={"-"+fv(dep*0.01)} c="#f59e0b"/>}
                   {restFirma&&<Row l={`Rest pe firmă 1% (din ${fv(rest)})`} v={"-"+fv(rest*0.01)} c="#f59e0b"/>}
                   {impVenit>0&&<Row l="Total impozit venit 1%" v={"-"+fv(impVenit)} c="#ef4444"/>}
+                  {svcCost>0&&<Row l="Cost servicii tehnice (furnizori)" v={"-"+fv(svcCost)} c="#ef4444"/>}
                   {ev.dp&&<Row l="Avans (intrat în fond)" v={"-"+fv(dep)} c="#818cf8"/>}
                   <Row l={`Cheltuieli fixe (${fvl(fcLeiTotal)})`} v={"-"+fv(fcEur)} c="#ef4444"/>
                   {fc16>0&&<Row l="16% div. pe logistică (pe firmă)" v={"-"+fv(fc16)} c="#ef4444"/>}
