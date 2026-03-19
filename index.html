@@ -3758,7 +3758,11 @@ function App() {
                   </div>
                   <div style={{display:"flex",gap:6,flexShrink:0}}>
                     <button onClick={()=>{setGlobalSearch("");setTab("calendar");const d=new Date(pd+"T00:00:00");setCalM(new Date(d.getFullYear(),d.getMonth()));setCalDateSearch(pd);setCalSidebarDate(pd);}} style={{...sty.bg,fontSize:11,padding:"5px 10px",color:"#3b82f6",border:"1px solid #3b82f6",whiteSpace:"nowrap"}}>📅 Calendar</button>
-                    {p.c&&<button onClick={()=>{setGlobalSearch("");openModal("pick",{date:pd});}} style={{padding:"5px 10px",borderRadius:7,border:"none",background:"#3b82f6",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>+ Adaugă</button>}
+                    {p.c&&<div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      <button onClick={()=>{setGlobalSearch("");openModal("pick",{date:pd});}} style={{padding:"4px 9px",borderRadius:7,border:"1px solid #3b82f6",background:"transparent",color:"#3b82f6",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Ofertă</button>
+                      <button onClick={()=>{setGlobalSearch("");openModal("form",{cat:"private",date:pd});}} style={{padding:"4px 9px",borderRadius:7,border:"none",background:"#3b82f6",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>+ Eveniment</button>
+                      <button onClick={()=>{const t={...fullTask(""),due:pd,text:"Task "+fD(pd)};setTasks(prev=>[...prev,t]);setGlobalSearch("");showToast("Task adăugat ✓");setTab("tasks");}} style={{padding:"4px 9px",borderRadius:7,border:`1px solid ${th.b}`,background:"transparent",color:th.tm,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Task</button>
+                    </div>}
                   </div>
                 </div>;
               })()}
@@ -4600,30 +4604,55 @@ function App() {
             {(()=>{
               const CURS=5;
               const totAnualEur=Math.round((annualCosts.filter(x=>(x.v||"lei")==="lei").reduce((s,x)=>s+(x.a||0),0)/CURS+annualCosts.filter(x=>x.v==="eur").reduce((s,x)=>s+(x.a||0),0))*100)/100;
-              const fondAcum=stats.fondTotal;
-              const fondTrupa=Math.max(0,fondAcum-totAnualEur);
-              const fondViitorTotal=evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).reduce((s,e)=>s+calcFond5(e),0);
-              const ramasDeAcoperit=Math.max(0,totAnualEur-fondAcum);
-              const fondViitorPentruAnual=Math.min(fondViitorTotal,ramasDeAcoperit);
-              const fondViitorTrupa=fondViitorTotal-fondViitorPentruAnual;
+              // Fond intrat = din avansuri primite (dp=true)
+              const fondIntrat=evs.filter(e=>e.st==="confirmat"&&e.dp).reduce((s,e)=>s+calcFond5(e),0);
+              // Fond confirmat dar neprimit (money pending)
+              const fondConfNePlatit=evs.filter(e=>e.st==="confirmat"&&!e.dp).reduce((s,e)=>s+calcFond5(e),0);
+              // Fond din pipeline (oferte/așteptare)
+              const fondPipeline=evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).reduce((s,e)=>s+calcFond5(e),0);
+              const fondUrmeaza=fondConfNePlatit+fondPipeline;
+              // Proiecție totală
+              const fondTotal=fondIntrat+fondConfNePlatit;
+              // Surplus după cheltuieli anuale
+              const fondDisponibil=Math.max(0,fondIntrat-totAnualEur);
+              const ramasDeCoperit=Math.max(0,totAnualEur-fondIntrat);
+              const pctIntrat=totAnualEur>0?Math.min(100,Math.round(fondIntrat/totAnualEur*100)):100;
+              const pctCuUrmeaza=totAnualEur>0?Math.min(100,Math.round((fondIntrat+fondUrmeaza)/totAnualEur*100)):100;
               return <div style={{...sty.cd,marginTop:16,border:`1px solid rgba(99,102,241,.3)`}}>
-                <div style={{fontSize:13,fontWeight:600,marginBottom:12,color:"#a5b4fc"}}>💰 Fond trupa</div>
-                <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-                  <div style={{flex:1,minWidth:120}}>
-                    <div style={{fontSize:10,color:"#818cf8",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Disponibil acum</div>
-                    <div style={{fontSize:28,fontWeight:800,color:"#818cf8"}}>{f$(fondTrupa)}</div>
-                    {fondTrupa===0&&fondAcum>0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Se duce spre cheltuieli anuale</div>}
+                <div style={{fontSize:13,fontWeight:600,marginBottom:12,color:"#a5b4fc"}}>💰 Fond trupă</div>
+                {/* Rânduri fond intrat / urmează */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                  <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid ${fondIntrat>0?"rgba(99,102,241,.3)":th.b}`}}>
+                    <div style={{fontSize:9,color:"#818cf8",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>✅ Fond intrat</div>
+                    <div style={{fontSize:22,fontWeight:800,color:"#818cf8"}}>{f$(fondIntrat)}</div>
+                    <div style={{fontSize:10,color:th.tm,marginTop:2}}>Din {evs.filter(e=>e.st==="confirmat"&&e.dp).length} events cu avans primit</div>
                   </div>
-                  {fondViitorTrupa>0&&<div style={{flex:1,minWidth:120,paddingLeft:16,borderLeft:`1px solid rgba(99,102,241,.2)`}}>
-                    <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Urmează să vină</div>
-                    <div style={{fontSize:20,fontWeight:700,color:th.tm}}>{f$(fondViitorTrupa)}</div>
-                    <div style={{fontSize:10,color:th.tm,marginTop:2}}>Din {evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).length} events în curs</div>
-                  </div>}
-                  {fondViitorPentruAnual>0&&fondViitorTrupa===0&&<div style={{flex:1,minWidth:120,paddingLeft:16,borderLeft:`1px solid rgba(99,102,241,.2)`}}>
-                    <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Urmează → cheltuieli anuale</div>
-                    <div style={{fontSize:16,fontWeight:600,color:"#6366f1"}}>{f$(fondViitorPentruAnual)}</div>
-                    <div style={{fontSize:10,color:th.tm,marginTop:2}}>Acoperă cheltuielile, nu intră în fond</div>
-                  </div>}
+                  <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid ${fondUrmeaza>0?"rgba(245,158,11,.2)":th.b}`}}>
+                    <div style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>⏳ Fond urmează</div>
+                    <div style={{fontSize:22,fontWeight:800,color:"#f59e0b"}}>{f$(fondUrmeaza)}</div>
+                    <div style={{fontSize:10,color:th.tm,marginTop:2}}>{fondConfNePlatit>0&&`${f$(fondConfNePlatit)} confirmat neprimite`}{fondConfNePlatit>0&&fondPipeline>0&&" + "}{fondPipeline>0&&`${f$(fondPipeline)} pipeline`}</div>
+                  </div>
+                </div>
+                {/* Progress spre cheltuieli anuale */}
+                {totAnualEur>0&&<>
+                  <div style={{fontSize:10,color:th.tm,marginBottom:6,display:"flex",justifyContent:"space-between"}}>
+                    <span>Spre cheltuieli anuale ({f$(totAnualEur)} target)</span>
+                    <span style={{color:pctIntrat>=100?"#22c55e":"#818cf8",fontWeight:600}}>{pctIntrat}% acoperit</span>
+                  </div>
+                  <div style={{height:8,borderRadius:6,background:th.b,overflow:"hidden",marginBottom:6,position:"relative"}}>
+                    <div style={{position:"absolute",height:"100%",width:pctCuUrmeaza+"%",borderRadius:6,background:"rgba(245,158,11,.25)"}}/>
+                    <div style={{position:"absolute",height:"100%",width:pctIntrat+"%",borderRadius:6,background:pctIntrat>=100?"#22c55e":"#818cf8",transition:"width .6s ease"}}/>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:th.tm,marginBottom:12}}>
+                    <span style={{color:"#818cf8"}}>{f$(fondIntrat)} intrat{fondUrmeaza>0&&<span style={{color:"#f59e0b"}}> · +{f$(fondUrmeaza)} urmează</span>}</span>
+                    {ramasDeCoperit>0?<span style={{color:"#ef4444"}}>Mai lipsesc {f$(ramasDeCoperit)}</span>:<span style={{color:"#22c55e",fontWeight:600}}>✓ Target acoperit!</span>}
+                  </div>
+                </>}
+                {/* Fond disponibil trupa */}
+                <div style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${fondDisponibil>0?"#22c55e":"rgba(99,102,241,.2)"}`,background:fondDisponibil>0?"rgba(34,197,94,.06)":"transparent"}}>
+                  <div style={{fontSize:10,color:fondDisponibil>0?"#22c55e":th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>💸 Fond disponibil trupă</div>
+                  <div style={{fontSize:22,fontWeight:800,color:fondDisponibil>0?"#22c55e":"#818cf8"}}>{f$(fondDisponibil)}</div>
+                  <div style={{fontSize:10,color:th.tm,marginTop:2}}>{fondDisponibil>0?"Surplus după acoperirea cheltuielilor anuale":"Se formează după acoperirea targetului anual · se adaugă pe măsură ce plătești cheltuielile"}</div>
                 </div>
               </div>;
             })()}
@@ -4829,33 +4858,40 @@ function App() {
         const upd=(patch)=>setEvs(p=>p.map(e=>e.id===ev.id?{...e,...patch}:e));
         const CURS=ev.cursLei||CURS_DEFAULT;
         const isPrivate=ev.cat==="private";
-        const payType=ev.payType||"direct";
-        const onFirma=payType==="firma";
+        // Partial firmă: avans și/sau rest separat
+        const avFirma=ev.avFirma??(ev.payType==="firma");
+        const restFirma=ev.restFirma??(ev.payType==="firma");
+        const anyFirma=avFirma||restFirma;
 
         // Total brut
         const svcTot=Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
         const total=(ev.fee||0)+svcTot;
         const dep=ev.dep||0; const rest=total-dep;
 
-        // 1. Impozit pe venit 1% (dacă pe firmă)
-        const impVenit=onFirma?Math.round(total*0.01*100)/100:0;
+        // 1. Impozit pe venit 1% — doar pe porțiunea pe firmă
+        const impVenit=Math.round(((avFirma?dep:0)+(restFirma?rest:0))*0.01*100)/100;
         const netDupaTax=total-impVenit;
 
         // 2. Cheltuieli fixe (lei → €)
         const fc={...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{})};
         const fcLeiTotal=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0);
         const fcEur=fcLeiTotal/CURS;
+        // Dacă restul e pe firmă, logistica se bruttifică cu 16% dividende
+        const fc16=restFirma?Math.round(fcEur*0.16*100)/100:0;
+        const fcEurEffective=fcEur+fc16;
 
         // 3. Net după cheltuieli fixe
-        const netDupaFixed=Math.max(0,netDupaTax-fcEur);
+        const netDupaFixed=Math.max(0,netDupaTax-fcEurEffective);
 
         // 4. Fond 5%
         const fond5=Math.round(netDupaFixed*0.05*100)/100;
         const dupaFond=netDupaFixed-fond5;
 
-        // 5. Dividende 16% (dacă pe firmă)
-        const div16=onFirma?Math.round(dupaFond*0.16*100)/100:0;
+        // 5. Dividende 16% pe profit — doar când restul e pe firmă
+        const div16=restFirma?Math.round(dupaFond*0.16*100)/100:0;
         const dupaDiv=dupaFond-div16;
+        // alias pentru compatibilitate cu rezumat
+        const onFirma=anyFirma;
 
         // 6. Roluri
         const leadPct=isPrivate?0.02:0.01;
@@ -4902,12 +4938,26 @@ function App() {
               {/* Tip plată */}
               <div>
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Tip plată</div>
-                <div style={{display:"flex",gap:10}}>
-                  {["direct","firma"].map(t=><button key={t} onClick={()=>upd({payType:t})} style={{flex:1,padding:"10px 0",borderRadius:8,border:`1px solid ${payType===t?th.a:th.b}`,background:payType===t?th.ab:"transparent",color:payType===t?th.a:th.tm,fontWeight:payType===t?700:400,fontSize:12,cursor:"pointer"}}>
-                    {t==="direct"?"🤝 Direct":"🏢 Pe firmă"}
-                  </button>)}
+                {/* Shortcuts rapide */}
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
+                  {[{l:"🤝 Direct",av:false,re:false},{l:"📤 Avans pe firmă",av:true,re:false},{l:"🏢 Tot pe firmă",av:true,re:true}].map(({l,av,re})=>{
+                    const active=avFirma===av&&restFirma===re;
+                    return <button key={l} onClick={()=>upd({avFirma:av,restFirma:re})} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${active?th.a:th.b}`,background:active?th.ab:"transparent",color:active?th.a:th.tm,fontWeight:active?700:400,fontSize:10,cursor:"pointer",textAlign:"center"}}>{l}</button>;
+                  })}
                 </div>
-                <div style={{display:"flex",gap:8,marginTop:8,alignItems:"center"}}>
+                {/* Granular toggles */}
+                <div style={{display:"flex",gap:6,marginBottom:8}}>
+                  {[{k:"avFirma",l:"Avans pe firmă",v:avFirma,amt:dep},{k:"restFirma",l:"Rest pe firmă",v:restFirma,amt:rest}].map(({k,l,v,amt})=>(
+                    <div key={k} onClick={()=>upd({[k]:!v})} style={{flex:1,padding:"8px 10px",borderRadius:8,border:`2px solid ${v?"#f59e0b":th.b}`,cursor:"pointer",background:v?"rgba(245,158,11,.07)":"transparent",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:11,color:v?"#f59e0b":th.tm,fontWeight:v?600:400}}>{l}</span>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:v?"#f59e0b":th.tm}}>{fv(amt)}</div>
+                        {v&&<div style={{fontSize:9,color:"#f59e0b"}}>1% = {fv(amt*0.01)}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span style={{fontSize:11,color:th.tm}}>Curs 1€ =</span>
                   <input type="number" value={ev.cursLei||5} onChange={e=>upd({cursLei:Number(e.target.value)||5})} style={{...sty.i,width:60,padding:5,fontSize:12}}/> 
                   <span style={{fontSize:11,color:th.tm}}>lei</span>
@@ -4955,11 +5005,14 @@ function App() {
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Distribuție</div>
                 <div style={{background:th.h,borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",gap:2}}>
                   <Row l="Total brut" v={fv(total)} bold/>
-                  {onFirma&&<Row l="Impozit pe venit 1%" v={"-"+fv(impVenit)} c="#ef4444"/>}
+                  {avFirma&&<Row l={`Avans pe firmă 1% (din ${fv(dep)})`} v={"-"+fv(dep*0.01)} c="#f59e0b"/>}
+                  {restFirma&&<Row l={`Rest pe firmă 1% (din ${fv(rest)})`} v={"-"+fv(rest*0.01)} c="#f59e0b"/>}
+                  {impVenit>0&&<Row l="Total impozit venit 1%" v={"-"+fv(impVenit)} c="#ef4444"/>}
                   <Row l={`Cheltuieli fixe (${fvl(fcLeiTotal)})`} v={"-"+fv(fcEur)} c="#ef4444"/>
+                  {fc16>0&&<Row l="16% div. pe logistică (pe firmă)" v={"-"+fv(fc16)} c="#ef4444"/>}
                   <Row l="Net după cheltuieli" v={fv(netDupaFixed)} bold/>
                   <Row l="Fond 5%" v={"-"+fv(fond5)} c="#6366f1"/>
-                  {onFirma&&<Row l="Dividende 16%" v={"-"+fv(div16)} c="#ef4444"/>}
+                  {restFirma&&<Row l="Dividende 16% (pe rest)" v={"-"+fv(div16)} c="#ef4444"/>}
                   {(ev.leadId||ev.leadCustom)&&<Row l={`Lead ${isPrivate?"2%":"1%"} — ${leadName}`} v={"-"+fv(leadAmt)} c="#f59e0b"/>}
                   {ev.adminId&&<Row l={`Administrator 2% — ${MEMBERS.find(m=>m.id===ev.adminId)?.short||""}`} v={"-"+fv(adminAmt)} c="#f59e0b"/>}
                   <Row l="Social Media 2% — Carina" v={"-"+fv(socialAmt)} c="#f59e0b"/>
@@ -4976,11 +5029,12 @@ function App() {
               <div style={{padding:"10px 14px",borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Rezumat taxe & retenții</div>
                 <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                  {onFirma&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Impozit venit (1%)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(impVenit)}</span></div>}
+                  {impVenit>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Impozit venit 1% {avFirma&&restFirma?"(total)":avFirma?"(doar avans)":"(doar rest)"}</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(impVenit)}</span></div>}
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Logistică fixă ({fvl(fcLeiTotal)})</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(fcEur)}</span></div>
+                  {fc16>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>16% div. logistică (pe firmă)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(fc16)}</span></div>}
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Fond trupă (5%)</span><span style={{color:"#6366f1",fontWeight:600}}>-{fv(fond5)}</span></div>
-                  {onFirma&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Dividende trupă (16%)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(div16)}</span></div>}
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,borderTop:`1px solid ${th.b}`,paddingTop:6,marginTop:2}}><span style={{fontWeight:600}}>Total reținut</span><span style={{color:"#ef4444",fontWeight:700}}>-{fv(impVenit+fcEur+fond5+div16)}</span></div>
+                  {restFirma&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Dividende trupă 16% (pe rest)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(div16)}</span></div>}
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,borderTop:`1px solid ${th.b}`,paddingTop:6,marginTop:2}}><span style={{fontWeight:600}}>Total reținut</span><span style={{color:"#ef4444",fontWeight:700}}>-{fv(impVenit+fcEurEffective+fond5+div16)}</span></div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}><span style={{fontWeight:600,color:"#22c55e"}}>Net trupă</span><span style={{color:"#22c55e",fontWeight:700}}>{fv(pool)}</span></div>
                 </div>
               </div>
