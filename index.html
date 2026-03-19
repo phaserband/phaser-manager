@@ -4351,7 +4351,7 @@ function App() {
                     <div key={k}><label style={{...sty.l,fontSize:10}}>{l}</label><input type="number" value={(templates.servicePrices||{})[k]??def} onChange={e=>{const v=e.target.value;saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));}} style={sty.i} placeholder={String(def)}/></div>
                   ))}
                 </div>
-                <button onClick={()=>saveTemplates(tpl=>({...tpl,servicePrices:templates.servicePrices}));showToast("Prețuri salvate — se aplică la oferte noi");} style={{...sty.bg,marginTop:16}}>Salvează prețuri</button>
+                <button onClick={()=>{saveTemplates(tpl=>({...tpl,servicePrices:templates.servicePrices}));showToast("Prețuri salvate — se aplică la oferte noi");}} style={{...sty.bg,marginTop:16}}>Salvează prețuri</button>
               </div>}
               {docsSectTab==="playlist"&&<div>
                 <label style={sty.l}>Playlist — {((templates.playlist&&templates.playlist.length>0)?templates.playlist:DEFAULT_COVERS).length} piese</label>
