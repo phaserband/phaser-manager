@@ -1134,7 +1134,26 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     onStatusChange(ev.id, k);
   };
 
-  const getPdfFilename = () => `Oferta-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`;
+  const getPdfFilename = (kind) => kind==="contract" ? `Contract-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf` : `Oferta-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`;
+
+  const getContractHtmlForWorker = () => {
+    const el = document.getElementById("contract-print-content");
+    if (!el) return "";
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll("input").forEach(inp => {
+      const span = document.createElement("span");
+      span.style.cssText = "border:none;border-bottom:1.5px solid #999;padding:1px 4px;font-size:13px;font-family:Georgia,serif;background:rgba(255,249,196,.6);color:#111;";
+      span.textContent = inp.value || inp.placeholder || "___";
+      inp.parentNode.replaceChild(span, inp);
+    });
+    const base = window.location.href;
+    let html = clone.innerHTML;
+    html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
+      if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
+      try { return "<img"+rest+' src="'+new URL(src, base).href+'"'; } catch(e) { return "<img"+rest+' src="'+src+'"'; }
+    });
+    return html;
+  };
 
   const getOfferHtmlForWorker = () => {
     const offerEl = document.getElementById("offer-print-content");
@@ -1184,10 +1203,8 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     return html;
   };
 
-  const generateOfferPdfViaWorker = async () => {
-    if (!PDF_WORKER_URL || !PDF_WORKER_URL.startsWith("http")) return null;
-    const html = getOfferHtmlForWorker();
-    if (!html) return null;
+  const generatePdfViaWorker = async (html) => {
+    if (!PDF_WORKER_URL || !PDF_WORKER_URL.startsWith("http") || !html) return null;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     const res = await fetch(PDF_WORKER_URL, {
@@ -1322,7 +1339,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     };
 
     return html2pdf().set({
-      margin: 12, filename: getPdfFilename(),
+      margin: 12, filename: getPdfFilename("oferta"),
       image: {type:"jpeg", quality:0.95},
       html2canvas: {
         scale: 2, useCORS: true, allowTaint: true, logging: false,
@@ -1332,28 +1349,65 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       pagebreak: { mode: ["css", "legacy"] }
     }).from(el).outputPdf("blob").then(blob => { restore(); return blob; }, err => { restore(); return Promise.reject(err); });
   };
+
+  const generateContractPdf = async () => {
+    const el = document.getElementById("contract-print-content");
+    if (!el || typeof html2pdf==="undefined") return Promise.reject(new Error("html2pdf indisponibil"));
+    const contractEl = el.querySelector("div") || el;
+    const inputRestores = [];
+    Array.from(contractEl.querySelectorAll("input")).forEach(inp => {
+      const span = document.createElement("span");
+      span.style.cssText = "border:none;border-bottom:1.5px solid #999;padding:1px 4px;font-size:13px;font-family:Georgia,serif;background:rgba(255,249,196,.6);color:#111;";
+      span.textContent = inp.value || inp.placeholder || "___";
+      inp.parentNode.replaceChild(span, inp);
+      inputRestores.push({ span, inp });
+    });
+    const restore = () => inputRestores.forEach(({ span, inp }) => { try { span.parentNode.replaceChild(inp, span); } catch(e){} });
+    return html2pdf().set({
+      margin: 12, filename: getPdfFilename("contract"),
+      image: {type:"jpeg", quality:0.95},
+      html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+      jsPDF: {unit:"mm", format:"a4", orientation:"portrait"},
+      pagebreak: { mode: ["css", "legacy"] }
+    }).from(contractEl).outputPdf("blob").then(blob => { restore(); return blob; }, err => { restore(); return Promise.reject(err); });
+  };
+
   const handleDownloadPdf = async () => {
+    if (tab==="fisa") return;
     setPdfLoading(true);
     try {
       let blob;
-      try { blob = await generateOfferPdfViaWorker(); } catch (e) { blob = null; }
-      if (!blob) blob = await generateOfferPdf();
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = getPdfFilename();
+      const kind = tab==="contract" ? "contract" : "oferta";
+      if (kind==="contract") {
+        try { blob = await generatePdfViaWorker(getContractHtmlForWorker()); } catch (e) { blob = null; }
+        if (!blob) blob = await generateContractPdf();
+      } else {
+        try { blob = await generatePdfViaWorker(getOfferHtmlForWorker()); } catch (e) { blob = null; }
+        if (!blob) blob = await generateOfferPdf();
+      }
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = getPdfFilename(kind);
       a.click(); URL.revokeObjectURL(a.href);
       showToast&&showToast("PDF descărcat ✓");
     } catch(e) { showToast&&showToast("Eroare la generare PDF"); console.error(e); }
     setPdfLoading(false);
   };
   const handleSharePdf = async () => {
+    if (tab==="fisa") return;
     setPdfLoading(true);
     try {
       let blob;
-      try { blob = await generateOfferPdfViaWorker(); } catch (e) { blob = null; }
-      if (!blob) blob = await generateOfferPdf();
-      const file = new File([blob], getPdfFilename(), { type: "application/pdf" });
+      const kind = tab==="contract" ? "contract" : "oferta";
+      if (kind==="contract") {
+        try { blob = await generatePdfViaWorker(getContractHtmlForWorker()); } catch (e) { blob = null; }
+        if (!blob) blob = await generateContractPdf();
+      } else {
+        try { blob = await generatePdfViaWorker(getOfferHtmlForWorker()); } catch (e) { blob = null; }
+        if (!blob) blob = await generateOfferPdf();
+      }
+      const file = new File([blob], getPdfFilename(kind), { type: "application/pdf" });
       if(navigator.share) {
         try {
-          await navigator.share({ title: `Oferta O${ev.offerNr||"?"}`, files: [file] });
+          await navigator.share({ title: kind==="contract" ? `Contract O${ev.offerNr||"?"}` : `Oferta O${ev.offerNr||"?"}`, files: [file] });
           showToast&&showToast("Distribuit ✓");
         } catch(shareErr) {
           if(shareErr?.name==="AbortError") return;
@@ -1395,8 +1449,8 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                     : [{id:"oferta",l:"📄 Ofertă"}])
     : [{id:"oferta",l:"📄 Ofertă"},{id:"rider",l:"📋 Rider"},{id:"pressKit",l:"📷 Press Kit"}];
   const allTabs = ["asteptare","plata_avans","confirmat"].includes(localSt)
-    ? [...baseTabs,{id:"contract",l:"📝 Contract"}]
-    : baseTabs;
+    ? [{id:"fisa",l:"📋 Fișa"},...baseTabs,{id:"contract",l:"📝 Contract"}]
+    : [{id:"fisa",l:"📋 Fișa"},...baseTabs];
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={onClose}>
@@ -1406,27 +1460,36 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         <div style={{padding:"14px 20px",borderBottom:"1px solid rgba(251,191,36,.2)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"linear-gradient(135deg,#1a1510 0%,#2d2419 100%)",borderRadius:mob?"0":"16px 16px 0 0",flexShrink:0}}>
           <div/>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <button onClick={handleDownloadPdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
+            {tab!=="fisa"&&<><button onClick={handleDownloadPdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
               {pdfLoading?"⏳":"⬇"} Descarcă PDF
             </button>
             <button onClick={handleSharePdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#fbbf24",color:"#111",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
               {pdfLoading?"⏳":"📤"} Distribuie
             </button>
             <button onClick={()=>{
+              if(tab==="fisa")return;
               const printWin = window.open("","_blank","width=820,height=1000");
               if(!printWin){alert("Blocatorul de pop-up a blocat fereastra. Permiteți pop-up-urile pentru acest site și încercați din nou.");return;}
-              const offerEl = document.getElementById("offer-print-content");
-              if(!offerEl){printWin.close();return;}
-              const iframeRepl=(html)=>{return html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi,function(m){var s=(m.match(/src="([^"]*)"/)||[])[1]||'';var vid=(s.match(/embed\/([^"?&\/]+)/)||[])[1]||'';if(!vid)return '';return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';});};
+              let pHtml; const iframeRepl=(html)=>{return html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi,function(m){var s=(m.match(/src="([^"]*)"/)||[])[1]||'';var vid=(s.match(/embed\/([^"?&\/]+)/)||[])[1]||'';if(!vid)return '';return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';});};
               const absImgSrc=(html)=>{const base=window.location.href; return html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi,function(_,rest,src){if(!src||src.startsWith('data:')||/^https?:\/\//i.test(src))return '<img'+rest+' src="'+src+'"'; try{return '<img'+rest+' src="'+new URL(src,base).href+'"';}catch(e){return '<img'+rest+' src="'+src+'"';}});};
-              let pHtml=absImgSrc(iframeRepl(offerEl.innerHTML));
-              if(!isPriv){
-                const riderEl=document.getElementById("rider-print-content");
-                const pkEl=document.getElementById("presskit-print-content");
-                if(riderEl){pHtml+='<div class="print-break"></div>'+iframeRepl(riderEl.innerHTML);}
-                if(pkEl){pHtml+='<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);}
+              if(tab==="contract"){
+                const contractEl=document.getElementById("contract-print-content");
+                if(!contractEl){printWin.close();return;}
+                const clone=contractEl.cloneNode(true);
+                clone.querySelectorAll("input").forEach(inp=>{const span=document.createElement("span");span.style.cssText="border:none;border-bottom:1.5px solid #999;padding:1px 4px;font-size:13px;font-family:Georgia,serif;background:rgba(255,249,196,.6);color:#111";span.textContent=inp.value||inp.placeholder||"___";inp.parentNode.replaceChild(span,inp);});
+                pHtml=absImgSrc(clone.innerHTML);
+              } else {
+                const offerEl=document.getElementById("offer-print-content");
+                if(!offerEl){printWin.close();return;}
+                pHtml=absImgSrc(iframeRepl(offerEl.innerHTML));
+                if(!isPriv){
+                  const riderEl=document.getElementById("rider-print-content");
+                  const pkEl=document.getElementById("presskit-print-content");
+                  if(riderEl){pHtml+='<div class="print-break"></div>'+iframeRepl(riderEl.innerHTML);}
+                  if(pkEl){pHtml+='<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);}
+                }
               }
-              printWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${window.location.href}"><title>O${ev.offerNr||"?"} (Event ${ev.date?ev.date.split('-').reverse().join('-'):""})</title><style>
+              printWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${window.location.href}"><title>${tab==="contract"?"Contract":"O${ev.offerNr||"?"}"} (${ev.date?ev.date.split('-').reverse().join('-'):""})</title><style>
                 *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
                 body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f4f4;padding:32px}
                 @media print{body{padding:0;background:#f4f4f4}@page{margin:0.5cm}}
@@ -1437,6 +1500,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             }} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.4)",background:"transparent",color:"rgba(255,255,255,.9)",fontWeight:600,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
               ↑ Print
             </button>
+            </>}
             <button onClick={onClose} style={{padding:4,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer"}}><IcX s={18}/></button>
           </div>
         </div>
@@ -1787,9 +1851,55 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
           </div>
         </div>}
 
+        {/* FIȘA — revenire la fișa evenimentului */}
+        {tab==="fisa"&&<div style={{flex:1,overflow:"auto",background:"#f4f4f4",padding:16}}>
+          <div style={{maxWidth:560,margin:"0 auto",background:"#fff",borderRadius:12,padding:20,border:"1px solid #e5e5e5"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#22c55e",textTransform:"uppercase",letterSpacing:1,marginBottom:16,display:"flex",alignItems:"center",gap:6}}>📋 Fișa evenimentului</div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Tip · Locație</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div><div style={{fontSize:15,fontWeight:700}}>{ev.type||"—"}</div></div>
+                <div><div style={{fontSize:13,fontWeight:600}}>{ev.venue||"—"}{ev.city?", "+ev.city:""}</div></div>
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing tehnic</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                {[{l:"Load In",v:ev.li,i:"📦"},{l:"Soundcheck",v:ev.sc,i:"🎛"},{l:"Show Start",v:ev.ss,i:"🎤"},{l:"Load Out",v:ev.lo,i:"🚐"}].map((x,i)=>
+                  <div key={i} style={{padding:10,borderRadius:8,background:"#f8f8f8",textAlign:"center",border:"1px solid #e5e5e5"}}>
+                    <div style={{fontSize:14,marginBottom:3}}>{x.i}</div>
+                    <div style={{fontSize:9,color:"#888",textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{x.l}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:x.v?"#111":"#999"}}>{x.v||"—"}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing show</div>
+              <div style={{padding:10,borderRadius:8,background:"#f8f8f8",border:"1px solid #e5e5e5"}}>
+                {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=><span key={i} style={{padding:"4px 10px",borderRadius:6,background:"rgba(0,0,0,.06)",fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {d} min</span>)}
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Client</div>
+              <div style={{fontSize:14,fontWeight:600}}>{ev.cn||"—"}</div>
+              {ev.cp&&<div style={{fontSize:11,color:"#666",marginTop:2}}>{ev.cp}</div>}
+              {ev.ce&&<div style={{fontSize:11,color:"#666"}}>{ev.ce}</div>}
+            </div>
+            {ev.svc&&Object.keys(ev.svc).some(k=>ev.svc[k])&&<div style={{marginBottom:16}}>
+              <div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Servicii</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {["sunet","lumini","ecran","scena","dj"].filter(k=>ev.svc?.[k]).map(k=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12}}>{({sunet:"Sistem sunet",lumini:"Sistem lumini",ecran:"Ecran LED",scena:"Scenă/Podium",dj:"DJ"})[k]||k}</span><span style={{fontSize:12,fontWeight:600}}>{fFmt(ev.svcp?.[k]||0,ev.valuta)}</span></div>)}
+              </div>
+            </div>}
+          </div>
+        </div>}
+
         {/* CONTRACT */}
         {tab==="contract"&&<div style={{flex:1,overflow:"auto"}}>
-          <ContractView ev={ev} th={th} contractFields={contractFields} onContractChange={setContractFields}/>
+          <div id="contract-print-content">
+            <ContractView ev={ev} th={th} contractFields={contractFields} onContractChange={setContractFields}/>
+          </div>
         </div>}
       </div>
     </div>
