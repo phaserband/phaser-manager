@@ -2,7 +2,7 @@
 <html lang="ro">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>Phaser Manager</title>
   <link rel="icon" type="image/png" href="assets/logo.png"/>
   <script>
@@ -32,9 +32,16 @@
   </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
     body { font-family: 'Inter', system-ui, sans-serif; background: #0a0a0c; color: #fff; }
-    #root { height: 100vh; min-height: 100vh; }
+    #root { height: 100vh; min-height: 100vh; min-height: -webkit-fill-available; }
     .tasks-cal-scroll::-webkit-scrollbar { display: none; }
+    @media (max-width: 767px) {
+      input, select, textarea { font-size: 16px !important; }
+      button { touch-action: manipulation; }
+      .table-scroll-mob { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -16px; padding: 0 16px; }
+      .table-scroll-mob table { min-width: 520px; }
+    }
   </style>
 </head>
 <body>
@@ -47,6 +54,15 @@ const { useState, useEffect, useMemo, useRef } = React;
 // ─── CONFIG ───
 // URL Worker Cloudflare pentru PDF de calitate. Lasă gol pentru html2pdf (local).
 const PDF_WORKER_URL = "https://phaser-pdf-worker.raczradurr.workers.dev";
+const generatePdfFromHtml = async (html) => {
+  if (!PDF_WORKER_URL || !PDF_WORKER_URL.startsWith("http") || !html) return null;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  const res = await fetch(PDF_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ html, baseUrl: window.location.origin + "/" }), signal: ctrl.signal });
+  clearTimeout(t);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || err.details || "Eroare Worker"); }
+  return await res.blob();
+};
 
 // ─── HOOKS ───
 const LOGO_URL = "assets/logo.png";
@@ -122,6 +138,62 @@ const f$  = n => new Intl.NumberFormat("ro",{maximumFractionDigits:0}).format(n|
 const fFmt = (n,currency)=>new Intl.NumberFormat("ro",{maximumFractionDigits:0}).format(n||0)+(currency==="lei"?" lei":" €");
 const fD  = d => { if(!d) return "—"; return new Date(d+"T00:00:00").toLocaleDateString("ro",{day:"numeric",month:"short",year:"numeric"}); };
 const fDFisa = d => { if(!d) return "—"; return new Date(d+"T00:00:00").toLocaleDateString("ro",{day:"2-digit",month:"2-digit",year:"numeric"}); };
+// Timing — parse/format datetime (YYYY-MM-DDTHH:mm sau HH:mm pentru backward compat)
+const parseDateTime = (val, evDate) => {
+  if(!val) return {date:"",time:""};
+  if(val.includes("T")){ const [d,t]=val.split("T"); return {date:d||"",time:(t||"").slice(0,5)||""}; }
+  return {date:evDate||"",time:val.slice(0,5)||""};
+};
+const formatDateTime = (date,time) => {
+  if(!time) return ""; if(!date) return time; return `${date}T${time}`;
+};
+const formatDisplayDateTime = (val, evDate) => {
+  const {date,time}=parseDateTime(val,evDate); if(!time) return "—";
+  if(!date||date===evDate) return time; return fD(date)+" "+time;
+};
+const TIME_OPTIONS = ["08:00","09:00","10:00","12:00","14:00","16:00","18:00","20:00","21:00","22:00","23:00"];
+// Tipuri pentru Extra fișă — alți participanți / furnizori externi
+// Generează HTML standalone pentru fișa evenimentului (PDF, link partajabil)
+const buildFisaHtml = (ev) => {
+  const esc = (s)=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const hosp = ev.hosp&&!Array.isArray(ev.hosp)?ev.hosp:{};
+  const c=hosp.camere??0,m=hosp.meniuri??0;
+  const hospStr = (c>0?`${c} camere`:"")+(c>0&&m>0?" · ":"")+(m>0?`${m} meniuri`:"")||"—";
+  const timingItems = [{l:"Load In",v:ev.li,i:"📦"},{l:"Soundcheck",v:ev.sc,i:"🎛"},{l:"Show Start",v:ev.ss,i:"🎤"},{l:"Load Out",v:ev.lo,i:"🚐"}];
+  const formatDt = (val,evDate) => {
+    if(!val) return "—";
+    if(val.includes("T")){ const [d,t]=val.split("T"); return (d&&d!==evDate?fD(d)+" ":"")+(t||"").slice(0,5)||""; }
+    return val.slice(0,5)||"";
+  };
+  const timingHtml = timingItems.map(x=>`<div style="padding:10px;border-radius:8px;background:#f8f8f8;text-align:center;border:1px solid #e5e5e5"><div style="font-size:14px;margin-bottom:3px">${x.i}</div><div style="font-size:9px;color:#888;text-transform:uppercase;margin-bottom:3px">${esc(x.l)}</div><div style="font-size:15px;font-weight:800;color:${x.v?"#111":"#999"}">${esc(formatDt(x.v,ev.date))}</div></div>`).join("");
+  const repDurs = ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45);
+  const repStarts = ev.repStarts||[];
+  const repHtml = repDurs.map((d,i)=>{const st=repStarts[i];return `<span style="padding:4px 10px;border-radius:6px;background:rgba(0,0,0,.06);font-size:11px;font-weight:600;margin-right:6px;margin-bottom:4px;display:inline-block">R${i+1}: ${st?esc(st)+" ":""}${d} min</span>`}).join("");
+  const extraHtml = (ev.fisaExtraItems||[]).length>0 ? (ev.fisaExtraItems||[]).map(x=>{const typeL=(FISA_EXTRA_TYPES.find(t=>t.k===x.type)||{}).l||x.type;return `<div style="padding:8px;border-radius:6px;background:#f8f8f8;border:1px solid #e5e5e5;margin-bottom:6px;font-size:12px"><div style="font-weight:600;color:#333">${esc(typeL)}</div>${x.desc?`<div style="color:#666;margin-top:2px">${esc(x.desc)}</div>`:""}${(x.nume||x.tel)?`<div style="font-size:11px;color:#888;margin-top:2px">${esc(x.nume||"—")} ${x.tel?`· 📞 ${esc(x.tel)}`:""}</div>`:""}</div>`}).join("") : "";
+  const svcHtml = ev.svc&&Object.keys(ev.svc).some(k=>ev.svc[k]) ? ["sunet","lumini","ecran","scena","dj"].filter(k=>ev.svc?.[k]).map(k=>`<div style="padding:10px;border-radius:8px;background:#f8f8f8;border:1px solid #e5e5e5;font-size:12px;font-weight:600">${esc(({sunet:"Sistem sunet",lumini:"Sistem lumini",ecran:"Ecran LED",scena:"Scenă/Podium",dj:"DJ"})[k]||k)}</div>`).join("") : "";
+  return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Fișa evenimentului — O${ev.offerNr||"?"}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#f4f4f4;padding:20px;color:#111;max-width:560px;margin:0 auto}</style></head><body>
+<div style="font-size:11px;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">📋 Fișa evenimentului</div>
+<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Tip eveniment</div><div style="font-size:15px;font-weight:700">${esc(ev.type||"—")}</div></div>
+<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Locație</div><div style="font-size:13px;font-weight:600">${esc(ev.venue||"—")}${ev.city?", "+esc(ev.city):""}</div>${ev.locPhone?`<div style="font-size:11px;color:#666;margin-top:4px">📞 ${esc(ev.locPhone)}</div>`:""}${ev.locAddress?`<div style="font-size:11px;color:#666;margin-top:2px">📍 ${esc(ev.locAddress)}</div>`:""}</div>
+<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Client</div><div style="font-size:14px;font-weight:600">${esc(ev.cn||"—")}</div>${ev.cp?`<div style="font-size:11px;color:#666;margin-top:2px">${esc(ev.cp)}</div>`:""}${ev.ce?`<div style="font-size:11px;color:#666">${esc(ev.ce)}</div>`:""}</div>
+${ev.cat==="private"?`<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Ospitalitate</div><div style="font-size:12px;color:#666">${esc(hospStr)}</div></div>`:""}
+<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Timing — Load in · Soundcheck · Show start · Load out</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${timingHtml}</div></div>
+<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Timing show</div><div style="padding:10px;border-radius:8px;background:#f8f8f8;border:1px solid #e5e5e5">${repHtml}</div></div>
+${svcHtml?`<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Servicii</div><div style="display:flex;flex-direction:column;gap:6px">${svcHtml}</div></div>`:""}
+<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:6px">Alți participanți / furnizori externi</div>${extraHtml||"<div style='font-size:12px;color:#999'>—</div>"}${ev.fisaExtra?`<div style="margin-top:8px;padding:8px;border-radius:6px;background:#f8f8f8;font-size:12px;color:#666;white-space:pre-wrap">${esc(ev.fisaExtra)}</div>`:""}</div>
+<div style="font-size:10px;color:#999;margin-top:24px;text-align:center">PHASER · Fișa evenimentului · O${ev.offerNr||"?"} · ${ev.date||""}</div>
+</body></html>`;
+};
+const getFisaBodyHtmlForWorker = (ev) => { const full = buildFisaHtml(ev); const m = full.match(/<body[^>]*>([\s\S]*?)<\/body>/i); return m ? m[1] : full; };
+
+const FISA_EXTRA_TYPES = [
+  {k:"canta_altcineva",l:"Cântă altcineva (alt artist/trupă)"},
+  {k:"dj_extern",l:"DJ extern (nu avem noi DJ-ul)"},
+  {k:"sunet_extern",l:"Sunet extern (altcineva cu sunetul)"},
+  {k:"lumini_externe",l:"Lumini externe (altcineva cu luminile)"},
+  {k:"ecran_extern",l:"Ecran / video extern"},
+  {k:"alte",l:"Altele"}
+];
 
 // ─── AI CONFIG ───
 const CLAUDE_API_KEY = "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";
@@ -145,17 +217,26 @@ const getSvcCostBreakdown = (ev, prices) => {
   const CURS = ev?.cursLei || 5;
   const svc = ev?.svc || {}; const svcp = ev?.svcp || {};
   const tehnicPerSvc = p.tehnicPerService ?? 120;
-  const extraPerSvc = p.tehnicExtraPerService ?? 40;
   const sunetCost = p.sunetCost ?? 150;
+  const luminiCost = p.luminiCost ?? (p.lumini ?? 500);
+  const ecranCost = p.ecranCost ?? (p.ecran ?? 600);
+  const scenaCost = p.scenaCost ?? (p.scena ?? 300);
+  const djCost = p.djCost ?? 0;
   const leiPerPlate = p.scenaLeiPerPlate ?? 50;
   const plates = Math.max(0, ev?.scenaPlates ?? 12);
   const tehnicCount = ["sunet","lumini","ecran","scena"].filter(k=>svc[k]).length;
   const out = [];
   if(svc.sunet){ const c=sunetCost; out.push({k:"sunet",label:SVC_COST_LABELS.sunet,cost:Math.round(c*100)/100}); }
-  if(svc.lumini){ const c=Math.max(0,(svcp.lumini||p.lumini||500)-extraPerSvc*tehnicCount); out.push({k:"lumini",label:SVC_COST_LABELS.lumini,cost:Math.round(c*100)/100}); }
-  if(svc.ecran){ const c=Math.max(0,(svcp.ecran||p.ecran||600)-extraPerSvc*tehnicCount); out.push({k:"ecran",label:SVC_COST_LABELS.ecran,cost:Math.round(c*100)/100}); }
-  if(svc.scena){ const c=Math.max(0,(svcp.scena||p.scena||300)-extraPerSvc*tehnicCount)+(plates*leiPerPlate/CURS); out.push({k:"scena",label:SVC_COST_LABELS.scena,cost:Math.round(c*100)/100}); }
-  if(tehnicCount>0){ const c=tehnicCount*tehnicPerSvc; out.push({k:"tehnic",label:`Tehnic (${tehnicCount} servicii)`,cost:Math.round(c*100)/100}); }
+  if(svc.lumini){ const c=Math.round(luminiCost*100)/100; out.push({k:"lumini",label:SVC_COST_LABELS.lumini,cost:c}); }
+  if(svc.ecran){ const c=Math.round(ecranCost*100)/100; out.push({k:"ecran",label:SVC_COST_LABELS.ecran,cost:c}); }
+  if(svc.scena){ const c=Math.round((scenaCost+plates*leiPerPlate/CURS)*100)/100; out.push({k:"scena",label:SVC_COST_LABELS.scena,cost:c}); }
+  if(svc.dj&&djCost>0){ const c=Math.round(djCost*100)/100; out.push({k:"dj",label:"DJ",cost:c}); }
+  if(tehnicCount>0){
+    const tehnicBaza=1*tehnicPerSvc;
+    const tehnicExtra=(tehnicCount-1)*tehnicPerSvc;
+    out.push({k:"tehnicBaza",label:"Tehnic bază (1× la fiecare eveniment)",cost:Math.round(tehnicBaza*100)/100});
+    if(tehnicExtra>0) out.push({k:"tehnicExtra",label:`Tehnic extra (${tehnicCount-1} servicii)`,cost:Math.round(tehnicExtra*100)/100});
+  }
   return out;
 };
 
@@ -179,7 +260,7 @@ const validatePw = (pw) => {
 const SPLIT_PRIVATE = {m1:24,m2:19,m3:19,m4:19,m5:19}; // Carina 24%, restul 19% fiecare
 const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100}; // lei
 const CURS_DEFAULT = 5; // 1€ = 5 lei
-const calcFond5 = (ev) => {
+const calcFond7 = (ev) => {
   const CURS = ev.cursLei||CURS_DEFAULT;
   const fee = (ev.fee||0) + Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
   const onFirma = ev.payType==="firma";
@@ -187,24 +268,7 @@ const calcFond5 = (ev) => {
   const fc = ev.fixedCosts||DEFAULT_FIXED_COSTS;
   const fcEur = ((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0))/CURS;
   const netAfterFixed = Math.max(0, fee - taxVenit - fcEur);
-  return Math.round(netAfterFixed*0.05*100)/100;
-};
-
-const calcPromoAds = (ev) => {
-  const CURS = ev.cursLei||CURS_DEFAULT;
-  const fee = (ev.fee||0) + Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
-  const avF = ev.avFirma??(ev.payType==="firma");
-  const rF = ev.restFirma??(ev.payType==="firma");
-  const dep = ev.dep||0; const rest = fee-dep;
-  const taxVenit = Math.round(((avF?dep:0)+(rF?rest:0))*0.01*100)/100;
-  const fc = ev.fixedCosts||DEFAULT_FIXED_COSTS;
-  const fcEur = ((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0))/CURS;
-  const fc16 = rF ? Math.round(fcEur*0.16*100)/100 : 0;
-  const netAfterFixed = Math.max(0, fee - taxVenit - fcEur - fc16);
-  const fond5 = Math.round(netAfterFixed*0.05*100)/100;
-  const div16 = rF ? Math.round((netAfterFixed-fond5)*0.16*100)/100 : 0;
-  const dupaDiv = netAfterFixed - fond5 - div16;
-  return Math.round(dupaDiv*0.01*100)/100;
+  return Math.round(netAfterFixed*0.07*100)/100;
 };
 
 const USERS = [
@@ -423,7 +487,7 @@ const loadTemplates = () => {
       const d = JSON.parse(s);
       if (d && typeof d === "object") {
         d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
-        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, ecran:600, scena:300, scenaLeiPerPlate:50, dj:600, tehnicPerService:120, tehnicExtraPerService:40 };
+        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, scenaLeiPerPlate:50, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 };
         return d;
       }
     }
@@ -435,7 +499,7 @@ const loadTemplates = () => {
     riderStagePlot: { image: null, notes: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
     poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
-    servicePrices: { sunet:350, sunetCost:150, lumini:500, ecran:600, scena:300, scenaLeiPerPlate:50, dj:600, tehnicPerService:120, tehnicExtraPerService:40 }
+    servicePrices: { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, scenaLeiPerPlate:50, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 }
   };
 };
 // Versiuni rider — phaser_rider_versions: [{ id, ts, label, data }]
@@ -907,9 +971,9 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
           <>
             {/* Oferte active */}
             <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Oferte active ({activeSorted.length})</div>
-            <div style={{...sty.cd,padding:0,overflow:"hidden",marginBottom:20}}>
+            <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden",marginBottom:20}} className={mob?"table-scroll-mob":""}>
               {activeSorted.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă activă</div>}
-              {activeSorted.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+              {activeSorted.length>0&&<table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?520:undefined}}>
                 <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
                   {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={activeSorted.length>0&&activeSorted.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=activeSorted.map(e=>e.id);const all=activeSorted.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
                   {["Nr","Ofertă","Tip","Locație","Data eveniment","Adăugată","Onorariu","Status"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
@@ -936,9 +1000,9 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
             </div>
             {/* Oferte confirmate - Viitoare + Trecute */}
             <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Oferte confirmate – Viitoare ({confViitoare.length})</div>
-            <div style={{...sty.cd,padding:0,overflow:"hidden",marginBottom:20}}>
+            <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden",marginBottom:20}} className={mob?"table-scroll-mob":""}>
               {confViitoare.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă confirmată viitoare</div>}
-              {confViitoare.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+              {confViitoare.length>0&&<table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?480:undefined}}>
                 <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
                   {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={confViitoare.length>0&&confViitoare.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=confViitoare.map(e=>e.id);const all=confViitoare.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
                   {["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
@@ -955,9 +1019,9 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
               </table>}
             </div>
             <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Oferte confirmate – Trecute ({confTrecute.length})</div>
-            <div style={{...sty.cd,padding:0,overflow:"hidden",marginBottom:20}}>
+            <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden",marginBottom:20}} className={mob?"table-scroll-mob":""}>
               {confTrecute.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă trecută</div>}
-              {confTrecute.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+              {confTrecute.length>0&&<table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?480:undefined}}>
                 <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
                   {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={confTrecute.length>0&&confTrecute.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=confTrecute.map(e=>e.id);const all=confTrecute.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
                   {["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
@@ -975,9 +1039,9 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
             </div>
             {/* Oferte respinse */}
             <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Oferte respinse ({respinseOffers.length})</div>
-            <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
+            <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden"}} className={mob?"table-scroll-mob":""}>
               {respinseOffers.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă respinsă</div>}
-              {respinseOffers.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+              {respinseOffers.length>0&&<table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?520:undefined}}>
                 <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
                   {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={respinseOffers.length>0&&respinseOffers.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=respinseOffers.map(e=>e.id);const all=respinseOffers.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
                   {["Nr","Ofertă","Tip","Locație","Data eveniment","Adăugată","Onorariu"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
@@ -1000,8 +1064,8 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
         ) : (
         <>
       {active.length===0 && <div style={{...sty.cd,padding:40,textAlign:"center",color:th.tm}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{fontSize:13}}>Nicio ofertă</div></div>}
-      <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
+      <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden"}} className={mob?"table-scroll-mob":""}>
+        <table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?520:undefined}}>
           <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
             {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={allSelected} onChange={selectAll} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
             {["Nr","Ofertă","Tip","Locație","Data eveniment","Adăugată","Onorariu","Status"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
@@ -1273,7 +1337,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     onStatusChange(ev.id, k);
   };
 
-  const getPdfFilename = (kind) => kind==="contract" ? `Contract-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf` : `Oferta-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`;
+  const getPdfFilename = (kind) => kind==="fisa" ? `Fisa-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf` : kind==="contract" ? `Contract-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf` : `Oferta-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`;
 
   const getContractHtmlForWorker = () => {
     const el = document.getElementById("contract-print-content");
@@ -1340,6 +1404,30 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       try { return "<img"+rest+' src="'+new URL(src, base).href+'"'; } catch(e) { return "<img"+rest+' src="'+src+'"'; }
     });
     return html;
+  };
+
+  const getFisaHtmlForWorker = () => {
+    const el = document.getElementById("fisa-print-content");
+    if (!el) return "";
+    const clone = el.cloneNode(true);
+    const base = window.location.href;
+    let html = clone.innerHTML;
+    html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
+      if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
+      try { return "<img"+rest+' src="'+new URL(src, base).href+'"'; } catch(e) { return "<img"+rest+' src="'+src+'"'; }
+    });
+    return html;
+  };
+
+  const generateFisaPdf = async () => {
+    const el = document.getElementById("fisa-print-content");
+    if (!el || typeof html2pdf === "undefined") return Promise.reject(new Error("html2pdf indisponibil"));
+    return html2pdf().set({
+      margin: 12, filename: getPdfFilename("fisa"),
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    }).from(el).outputPdf("blob");
   };
 
   const generatePdfViaWorker = async (html) => {
@@ -1512,12 +1600,14 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   };
 
   const handleDownloadPdf = async () => {
-    if (tab==="fisa") return;
     setPdfLoading(true);
     try {
       let blob;
-      const kind = tab==="contract" ? "contract" : "oferta";
-      if (kind==="contract") {
+      const kind = tab==="fisa" ? "fisa" : tab==="contract" ? "contract" : "oferta";
+      if (kind==="fisa") {
+        try { blob = await generatePdfViaWorker(getFisaHtmlForWorker()); } catch (e) { blob = null; }
+        if (!blob) blob = await generateFisaPdf();
+      } else if (kind==="contract") {
         try { blob = await generatePdfViaWorker(getContractHtmlForWorker()); } catch (e) { blob = null; }
         if (!blob) blob = await generateContractPdf();
       } else {
@@ -1531,12 +1621,14 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     setPdfLoading(false);
   };
   const handleSharePdf = async () => {
-    if (tab==="fisa") return;
     setPdfLoading(true);
     try {
       let blob;
-      const kind = tab==="contract" ? "contract" : "oferta";
-      if (kind==="contract") {
+      const kind = tab==="fisa" ? "fisa" : tab==="contract" ? "contract" : "oferta";
+      if (kind==="fisa") {
+        try { blob = await generatePdfViaWorker(getFisaHtmlForWorker()); } catch (e) { blob = null; }
+        if (!blob) blob = await generateFisaPdf();
+      } else if (kind==="contract") {
         try { blob = await generatePdfViaWorker(getContractHtmlForWorker()); } catch (e) { blob = null; }
         if (!blob) blob = await generateContractPdf();
       } else {
@@ -1546,16 +1638,16 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       const file = new File([blob], getPdfFilename(kind), { type: "application/pdf" });
       if(navigator.share) {
         try {
-          await navigator.share({ title: kind==="contract" ? `Contract O${ev.offerNr||"?"}` : `Oferta O${ev.offerNr||"?"}`, files: [file] });
+          await navigator.share({ title: kind==="fisa" ? `Fișa O${ev.offerNr||"?"}` : kind==="contract" ? `Contract O${ev.offerNr||"?"}` : `Oferta O${ev.offerNr||"?"}`, files: [file] });
           showToast&&showToast("Distribuit ✓");
         } catch(shareErr) {
           if(shareErr?.name==="AbortError") return;
-          const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = getPdfFilename();
+          const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = getPdfFilename(kind);
           a.click(); URL.revokeObjectURL(a.href);
           showToast&&showToast("PDF descărcat. Trimite fișierul manual (WhatsApp, Mail, etc.)");
         }
       } else {
-        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = getPdfFilename();
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = getPdfFilename(kind);
         a.click(); URL.revokeObjectURL(a.href);
         showToast&&showToast("PDF descărcat. Trimite fișierul manual (WhatsApp, Mail, etc.)");
       }
@@ -1605,26 +1697,27 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             {singleViewMode&&onBackToDetail&&<button onClick={onBackToDetail} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"transparent",color:"rgba(255,255,255,.9)",fontSize:12,cursor:"pointer",fontWeight:600}}>← Înapoi</button>}
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            {tab!=="fisa"&&<><button onClick={handleDownloadPdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
+            <button onClick={handleDownloadPdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
               {pdfLoading?"⏳":"⬇"} Descarcă PDF
             </button>
-            <button onClick={handleSharePdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#fbbf24",color:"#111",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
+            {tab==="fisa" ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/> : <button onClick={handleSharePdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#fbbf24",color:"#111",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
               {pdfLoading?"⏳":"📤"} Distribuie
-            </button>
+            </button>}
             <button onClick={()=>{
-              if(tab==="fisa")return;
               const printWin = window.open("","_blank","width=820,height=1000");
               if(!printWin){alert("Blocatorul de pop-up a blocat fereastra. Permiteți pop-up-urile pentru acest site și încercați din nou.");return;}
               let pHtml; const iframeRepl=(html)=>{return html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi,function(m){var s=(m.match(/src="([^"]*)"/)||[])[1]||'';var vid=(s.match(/embed\/([^"?&\/]+)/)||[])[1]||'';if(!vid)return '';return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';});};
               const absImgSrc=(html)=>{const base=window.location.href; return html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi,function(_,rest,src){if(!src||src.startsWith('data:')||/^https?:\/\//i.test(src))return '<img'+rest+' src="'+src+'"'; try{return '<img'+rest+' src="'+new URL(src,base).href+'"';}catch(e){return '<img'+rest+' src="'+src+'"';}});};
-              if(tab==="contract"){
+              if(tab==="fisa"){
+                pHtml = absImgSrc(getFisaBodyHtmlForWorker(ev));
+              } else if(tab==="contract"){
                 const contractEl=document.getElementById("contract-print-content");
                 if(!contractEl){printWin.close();return;}
                 const clone=contractEl.cloneNode(true);
                 clone.querySelectorAll("input").forEach(inp=>{const span=document.createElement("span");span.style.cssText="border:none;border-bottom:1.5px solid #999;padding:1px 4px;font-size:13px;font-family:Georgia,serif;background:rgba(255,249,196,.6);color:#111";span.textContent=inp.value||inp.placeholder||"___";inp.parentNode.replaceChild(span,inp);});
                 pHtml=absImgSrc(clone.innerHTML);
               } else {
-                const offerEl=document.getElementById("offer-print-content");
+                const offerEl = document.getElementById("offer-print-content");
                 if(!offerEl){printWin.close();return;}
                 pHtml=absImgSrc(iframeRepl(offerEl.innerHTML));
                 if(!isPriv){
@@ -1634,7 +1727,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                   if(pkEl){pHtml+='<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);}
                 }
               }
-              const printTitle = tab==="contract" ? "Contract" : ("O"+(ev.offerNr||"?"));
+              const printTitle = tab==="fisa" ? "Fisa" : tab==="contract" ? "Contract" : ("O"+(ev.offerNr||"?"));
               const printDate = ev.date ? ev.date.split('-').reverse().join('-') : "";
               printWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${window.location.href}"><title>${printTitle} (${printDate})</title><style>
                 *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
@@ -1648,7 +1741,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               ↑ Print
             </button>
             </>}
-            <button onClick={onClose} style={{padding:4,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer"}}><IcX s={18}/></button>
+            <button onClick={onClose} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={18}/></button>
           </div>
         </div>
 
@@ -2000,7 +2093,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
 
         {/* FIȘA — revenire la fișa evenimentului */}
         {tab==="fisa"&&<div style={{flex:1,overflow:"auto",background:"#f4f4f4",padding:16}}>
-          <div style={{maxWidth:560,margin:"0 auto",background:"#fff",borderRadius:12,padding:20,border:"1px solid #e5e5e5"}}>
+          <div id="fisa-print-content" style={{maxWidth:560,margin:"0 auto",background:"#fff",borderRadius:12,padding:20,border:"1px solid #e5e5e5"}}>
             <div style={{fontSize:11,fontWeight:700,color:"#22c55e",textTransform:"uppercase",letterSpacing:1,marginBottom:16,display:"flex",alignItems:"center",gap:6}}>📋 Fișa evenimentului</div>
             <div style={{marginBottom:16}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Tip eveniment</div><div style={{fontSize:15,fontWeight:700}}>{ev.type||"—"}</div></div>
             <div style={{marginBottom:16}}>
@@ -2014,12 +2107,12 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             <div style={{marginBottom:16}}>
               <div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing — Load in · Soundcheck · Show start · Load out</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-                {[{l:"Load In",v:ev.li,i:"📦"},{l:"Soundcheck",v:ev.sc,i:"🎛"},{l:"Show Start",v:ev.ss,i:"🎤"},{l:"Load Out",v:ev.lo,i:"🚐"}].map((x,i)=><div key={i} style={{padding:10,borderRadius:8,background:"#f8f8f8",textAlign:"center",border:"1px solid #e5e5e5"}}><div style={{fontSize:14,marginBottom:3}}>{x.i}</div><div style={{fontSize:9,color:"#888",textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{x.l}</div><div style={{fontSize:15,fontWeight:800,color:x.v?"#111":"#999"}}>{x.v||"—"}</div></div>)}
+                {[{l:"Load In",v:ev.li,i:"📦"},{l:"Soundcheck",v:ev.sc,i:"🎛"},{l:"Show Start",v:ev.ss,i:"🎤"},{l:"Load Out",v:ev.lo,i:"🚐"}].map((x,i)=><div key={i} style={{padding:10,borderRadius:8,background:"#f8f8f8",textAlign:"center",border:"1px solid #e5e5e5"}}><div style={{fontSize:14,marginBottom:3}}>{x.i}</div><div style={{fontSize:9,color:"#888",textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{x.l}</div><div style={{fontSize:15,fontWeight:800,color:x.v?"#111":"#999"}}>{formatDisplayDateTime(x.v,ev.date)}</div></div>)}
               </div>
             </div>
-            <div style={{marginBottom:16}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Timing show</div><div style={{padding:10,borderRadius:8,background:"#f8f8f8",border:"1px solid #e5e5e5"}}>{(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=><span key={i} style={{padding:"4px 10px",borderRadius:6,background:"rgba(0,0,0,.06)",fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {d} min</span>)}</div></div>
+            <div style={{marginBottom:16}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Timing show</div><div style={{padding:10,borderRadius:8,background:"#f8f8f8",border:"1px solid #e5e5e5"}}>{(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=>{const st=(ev.repStarts||[])[i];return <span key={i} style={{padding:"4px 10px",borderRadius:6,background:"rgba(0,0,0,.06)",fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {st?st+" ":""}{d} min</span>})}</div></div>
             {ev.svc&&Object.keys(ev.svc).some(k=>ev.svc[k])&&<div style={{marginBottom:16}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Servicii</div><div style={{display:"flex",flexDirection:"column",gap:6}}>{["sunet","lumini","ecran","scena","dj"].filter(k=>ev.svc?.[k]).map(k=><div key={k} style={{padding:10,borderRadius:8,background:"#f8f8f8",border:"1px solid #e5e5e5",fontSize:12,fontWeight:600}}>{({sunet:"Sistem sunet",lumini:"Sistem lumini",ecran:"Ecran LED",scena:"Scenă/Podium",dj:"DJ"})[k]||k}</div>)}</div></div>}
-            <div style={{marginBottom:0}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Extra</div><div style={{fontSize:12,color:"#666",whiteSpace:"pre-wrap"}}>{ev.fisaExtra||"—"}</div></div>
+            <div style={{marginBottom:0}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Alți participanți / furnizori externi</div>{(ev.fisaExtraItems||[]).length>0?(ev.fisaExtraItems||[]).map((x,i)=><div key={x.id} style={{padding:8,borderRadius:6,background:"#f8f8f8",border:"1px solid #e5e5e5",marginBottom:6,fontSize:12}}><div style={{fontWeight:600,color:"#333"}}>{FISA_EXTRA_TYPES.find(t=>t.k===x.type)?.l||x.type}</div>{x.desc&&<div style={{color:"#666",marginTop:2}}>{x.desc}</div>}{(x.nume||x.tel)&&<div style={{fontSize:11,color:"#888",marginTop:2}}>{x.nume||"—"} {x.tel&&<>· 📞 {x.tel}</>}</div>}</div>):<div style={{fontSize:12,color:"#999"}}>—</div>}{ev.fisaExtra&&<div style={{marginTop:8,padding:8,borderRadius:6,background:"#f8f8f8",fontSize:12,color:"#666",whiteSpace:"pre-wrap"}}>{ev.fisaExtra}</div>}</div>
           </div>
         </div>}
 
@@ -2096,6 +2189,93 @@ const RO_CITIES = [
   {n:"Bihor",km:160},{n:"Târgoviște",km:480},{n:"Buzău",km:530},{n:"Slatina",km:400},
   {n:"Turda",km:160},{n:"Câmpia Turzii",km:155},{n:"Mediaș",km:240},{n:"Sebeș",km:190},
 ];
+
+// TimeInput — 24h format, dropdown + manual typing
+function TimeInput({ value, onChange, style, placeholder }) {
+  const norm = (v) => { const m = (v||"").match(/^(\d{1,2}):(\d{2})$/); if(m){ const h=Math.min(23,Math.max(0,parseInt(m[1],10))); const min=Math.min(59,Math.max(0,parseInt(m[2],10))); return String(h).padStart(2,"0")+":"+String(min).padStart(2,"0"); } return v||""; };
+  const handleChange = (e) => { const v = norm(e.target.value); onChange(v); };
+  return (
+    <div style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
+      <input list="time-list-ro" value={value||""} onChange={handleChange} onBlur={()=>onChange(norm(value))} placeholder={placeholder||"09:00"} style={{...style,fontVariantNumeric:"tabular-nums"}} maxLength={5}/>
+      <datalist id="time-list-ro">{TIME_OPTIONS.map(t=><option key={t} value={t}/>)}</datalist>
+    </div>
+  );
+}
+
+// DateTimeInput — dată + oră (24h), pentru Load In etc.
+function DateTimeInput({ value, evDate, onChange, style, iStyle }) {
+  const {date,time}=parseDateTime(value,evDate);
+  const handleDate = (d) => onChange(formatDateTime(d,time));
+  const handleTime = (t) => onChange(formatDateTime(date,t));
+  const baseStyle = iStyle||{};
+  return (
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+      <input type="date" value={date||""} onChange={e=>handleDate(e.target.value)} style={{...baseStyle,flex:"1 1 120px",minWidth:100}}/>
+      <TimeInput value={time} onChange={handleTime} style={{...baseStyle,width:80,textAlign:"center"}} placeholder="09:00"/>
+    </div>
+  );
+}
+
+// FisaPdfButton — descarcă PDF doar fișa evenimentului
+function FisaPdfButton({ ev, showToast }) {
+  const [loading, setLoading] = useState(false);
+  const handleDownload = async () => {
+    setLoading(true);
+    try {
+      let blob = null;
+      try { blob = await generatePdfFromHtml(getFisaBodyHtmlForWorker(ev)); } catch (e) { blob = null; }
+      if (!blob && typeof html2pdf !== "undefined") {
+        const div = document.createElement("div");
+        div.innerHTML = getFisaBodyHtmlForWorker(ev);
+        div.style.cssText = "position:absolute;left:-9999px;top:0;width:560px;background:#fff;padding:20px";
+        document.body.appendChild(div);
+        blob = await html2pdf().set({ margin: 12, filename: `Fisa-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`, image: { type: "jpeg", quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: "mm", format: "a4", orientation: "portrait" } }).from(div).outputPdf("blob");
+        document.body.removeChild(div);
+      }
+      if (!blob) throw new Error("Nu s-a putut genera PDF");
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `Fisa-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`;
+      a.click(); URL.revokeObjectURL(a.href);
+      showToast?.("PDF descărcat ✓");
+    } catch (e) { showToast?.("Eroare la generare PDF"); console.error(e); }
+    setLoading(false);
+  };
+  return (
+    <button onClick={handleDownload} disabled={loading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:loading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.7:1}}>
+      {loading?"⏳":"⬇"} Descarcă PDF
+    </button>
+  );
+}
+
+// FisaLinkButton — generează link partajabil pentru fișa evenimentului (Supabase Storage)
+function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient }) {
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const handleCopyLink = async () => {
+    const sb = getSbClient?.();
+    if (!sb) { showToast?.("Link partajabil necesită Supabase. Configurează bucket-ul fisa-public."); return; }
+    setLoading(true);
+    try {
+      const html = buildFisaHtml(ev);
+      const fid = uid();
+      const path = `fisa-${fid}.html`;
+      const { error } = await sb.storage.from("fisa-public").upload(path, html, { contentType: "text/html; charset=utf-8", upsert: true });
+      if (error) throw error;
+      const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true); setTimeout(()=>setCopied(false), 2500);
+      showToast?.("Link copiat în clipboard ✓ Trimite-l oricui.");
+    } catch (e) {
+      console.error(e);
+      showToast?.("Eroare: "+ (e?.message||"Bucket fisa-public inexistent. Adaugă-l în Supabase Storage."));
+    }
+    setLoading(false);
+  };
+  return (
+    <button onClick={handleCopyLink} disabled={pdfLoading||loading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||loading)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||loading)?0.7:1}}>
+      {loading?"⏳":copied?"✓":"🔗"} {copied?"Copiat!":"Copiază link"}
+    </button>
+  );
+}
 
 function LocationSearch({ venue, city, dist, onUpdate, sty, th, mob }) {
   const [venueVal, setVenueVal] = useState(venue||"");
@@ -2305,12 +2485,16 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
       <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Client</div>
       {editable ? <><input value={ev.cn||""} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Nume client"/><input value={ev.cp||""} onChange={e=>u("cp",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Telefon"/><input value={ev.ce||""} onChange={e=>u("ce",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Email"/></> : <><div style={{fontSize:14,fontWeight:600}}>{ev.cn||"—"}</div>{ev.cp&&<div style={{fontSize:11,color:th.ts,marginTop:2}}>{ev.cp}</div>}{ev.ce&&<div style={{fontSize:11,color:th.ts}}>{ev.ce}</div>}</>}
     </div>
-    {/* 4. Ospitalitate */}
+    {/* 4. Ospitalitate — afișează doar ce are sens din ofertă (nu 0 camere) */}
     {ev.cat==="private"&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
       <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Ospitalitate</div>
-      {editable ? <><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:12}}>Camere:</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:Math.max(0,(hosp.camere||0)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.camere??0}</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:(hosp.camere||0)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12}}>Meniuri:</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:Math.max(0,(hosp.meniuri||6)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.meniuri??6}</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:(hosp.meniuri||6)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div></> : <div style={{fontSize:12,color:th.ts}}>{(hosp.camere||0)>0?`${hosp.camere} camere`:"—"}{(hosp.camere||0)>0&&(hosp.meniuri||0)>0?" · ":""}{(hosp.meniuri||0)>0?`${hosp.meniuri} meniuri`:""}</div>}
+      {editable ? <>
+        {(hosp.camere||0)>0&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:12}}>Camere:</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:Math.max(0,(hosp.camere||0)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.camere??0}</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:(hosp.camere||0)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div>}
+        {(hosp.camere||0)===0&&<div style={{marginBottom:8}}><button type="button" onClick={()=>u("hosp",{...hosp,camere:1})} style={{...sty.bg,fontSize:11,padding:"4px 10px"}}>+ Adaugă cazare</button></div>}
+        <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12}}>Meniuri:</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:Math.max(0,(hosp.meniuri||6)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.meniuri??6}</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:(hosp.meniuri||6)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div>
+      </> : <div style={{fontSize:12,color:th.ts}}>{[((hosp.camere||0)>0?`${hosp.camere} camere`:null),((hosp.meniuri||0)>0?`${hosp.meniuri} meniuri`:null)].filter(Boolean).join(" · ")||"—"}</div>}
     </div>}
-    {/* 5. Timing — Load in, Soundcheck, Show start, Load out + reprize */}
+    {/* 5. Timing — Load in, Soundcheck, Show start, Load out (dată+oră 24h) + reprize (oră start) */}
     <div style={{padding:16,borderRadius:10,background:th.h,border:`2px solid #22c55e`}}>
       <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12,color:"#22c55e",display:"flex",alignItems:"center",gap:6}}>📋 Timing</div>
       <div style={{marginBottom:12}}>
@@ -2320,23 +2504,24 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
             <div key={i} style={{padding:10,borderRadius:8,background:th.c,textAlign:"center",border:`1px solid ${th.b}`}}>
               <div style={{fontSize:14,marginBottom:3}}>{x.i}</div>
               <div style={{fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{x.l}</div>
-              {editable ? <input type="time" value={ev[x.k]||""} onChange={e=>u(x.k,e.target.value)} style={{...iStyle,width:"100%",textAlign:"center",fontSize:12}}/> : <div style={{fontSize:15,fontWeight:800,color:x.v?th.t:th.tm}}>{x.v||"—"}</div>}
+              {editable ? <DateTimeInput value={ev[x.k]} evDate={ev.date} onChange={v=>u(x.k,v)} iStyle={{...iStyle,fontSize:12}}/> : <div style={{fontSize:15,fontWeight:800,color:x.v?th.t:th.tm}}>{formatDisplayDateTime(x.v,ev.date)}</div>}
             </div>
           ))}
         </div>
       </div>
       <div style={{marginTop:12}}>
         <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing show (reprize)</div>
-        {editable ? <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {editable ? <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
-              <span style={{fontSize:11,color:th.tm}}>R{i+1}:</span>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,color:th.tm,minWidth:28}}>R{i+1}:</span>
+              <TimeInput value={(ev.repStarts||[])[i]} onChange={t=>{const arr=[...(ev.repStarts||[])].slice(0,ev.rep||1);arr[i]=t;while(arr.length<(ev.rep||1))arr.push("");u("repStarts",arr);}} style={{...iStyle,width:70,textAlign:"center"}} placeholder="21:00"/>
               <input type="number" value={d} onChange={e=>{const arr=[...(ev.repDurs||Array(ev.rep||1).fill(ev.repDur||45))];arr[i]=Number(e.target.value)||45;u("repDurs",arr);}} style={{...iStyle,width:60}} min={5} max={120}/>
               <span style={{fontSize:11,color:th.tm}}>min</span>
             </div>
           ))}
         </div> : <div style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
-          {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=><span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {d} min</span>)}
+          {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=>{const st=(ev.repStarts||[])[i];return <span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {st?st+" ":""}{d} min</span>})}
         </div>}
       </div>
     </div>
@@ -2355,10 +2540,39 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
         ))}
       </div>
     </div>}
-    {/* 7. Extra */}
+    {/* 7. Alți participanți / furnizori externi — cântă altcineva, DJ extern, sunet/lumini etc. */}
     <div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
-      <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Extra</div>
-      {editable ? <textarea value={ev.fisaExtra||""} onChange={e=>u("fisaExtra",e.target.value)} style={{...iStyle,minHeight:80,resize:"vertical",width:"100%"}} placeholder="Ex: Încă o trupă, observații suplimentare..."/> : <div style={{fontSize:12,color:th.ts,whiteSpace:"pre-wrap"}}>{ev.fisaExtra||"—"}</div>}
+      <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Alți participanți / furnizori externi</div>
+      <div style={{fontSize:11,color:th.ts,marginBottom:10}}>Cântă altcineva, DJ extern, sunet/lumini de la alții — descrieri, nume, telefoane</div>
+      {editable ? <>
+        <button type="button" onClick={()=>u("fisaExtraItems",[...(ev.fisaExtraItems||[]),{id:uid(),type:"canta_altcineva",desc:"",nume:"",tel:""}])} style={{...sty.bg,fontSize:11,padding:"6px 12px",marginBottom:10}}>+ Adaugă</button>
+        {(ev.fisaExtraItems||[]).map((x,i)=>(
+          <div key={x.id} style={{padding:12,borderRadius:8,background:th.c,border:`1px solid ${th.b}`,marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <select value={x.type||"canta_altcineva"} onChange={e=>{const arr=[...(ev.fisaExtraItems||[])];arr[i]={...arr[i],type:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,flex:1,maxWidth:280}}>
+                {FISA_EXTRA_TYPES.map(t=><option key={t.k} value={t.k}>{t.l}</option>)}
+              </select>
+              <button type="button" onClick={()=>u("fisaExtraItems",(ev.fisaExtraItems||[]).filter((_,j)=>j!==i))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer",marginLeft:6}}>✕</button>
+            </div>
+            <textarea value={x.desc||""} onChange={e=>{const arr=[...(ev.fisaExtraItems||[])];arr[i]={...arr[i],desc:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,minHeight:50,resize:"vertical",fontSize:12,marginBottom:6}} placeholder="Descriere"/>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <input value={x.nume||""} onChange={e=>{const arr=[...(ev.fisaExtraItems||[])];arr[i]={...arr[i],nume:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,flex:1,minWidth:120}} placeholder="Nume"/>
+              <input value={x.tel||""} onChange={e=>{const arr=[...(ev.fisaExtraItems||[])];arr[i]={...arr[i],tel:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,width:140}} placeholder="Telefon (+40...)"/>
+            </div>
+          </div>
+        ))}
+        <label style={{...sty.l,fontSize:10,marginTop:12,display:"block"}}>Alte observații</label>
+        <textarea value={ev.fisaExtra||""} onChange={e=>u("fisaExtra",e.target.value)} style={{...iStyle,minHeight:60,resize:"vertical",width:"100%"}} placeholder="Orice altceva relevant..."/>
+      </> : <>
+        {(ev.fisaExtraItems||[]).length>0 ? (ev.fisaExtraItems||[]).map((x,i)=>(
+          <div key={x.id} style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`,marginBottom:8}}>
+            <div style={{fontSize:12,fontWeight:600,color:th.a}}>{FISA_EXTRA_TYPES.find(t=>t.k===x.type)?.l||x.type}</div>
+            {x.desc&&<div style={{fontSize:12,color:th.ts,marginTop:4,whiteSpace:"pre-wrap"}}>{x.desc}</div>}
+            {(x.nume||x.tel)&&<div style={{fontSize:11,color:th.tm,marginTop:4}}>{(x.nume||"—")} {x.tel&&<span>· 📞 {x.tel}</span>}</div>}
+          </div>
+        )) : <div style={{fontSize:12,color:th.tm}}>—</div>}
+        {ev.fisaExtra&&<div style={{marginTop:10,padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}><div style={{fontSize:10,color:th.tm,marginBottom:4}}>Alte observații</div><div style={{fontSize:12,color:th.ts,whiteSpace:"pre-wrap"}}>{ev.fisaExtra}</div></div>}
+      </>}
     </div>
   </div>;
 }
@@ -2378,6 +2592,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
     cn: mData?.cn||"", cp: mData?.cp||"", ce: mData?.ce||"",
     rep: mData?.rep||(isP?1:1),
     repDurs: mData?.repDurs||[],
+    repStarts: mData?.repStarts||[],
     durataRecital: mData?.durataRecital||"",
     responsabilPrincipal: mData?.responsabilPrincipal||(user?.memberId?MEMBERS.find(m=>m.id===user.memberId)?.n||user.n:""),
     responsabili: mData?.responsabili||[],
@@ -2385,7 +2600,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
     valuta: mData?.valuta||"EUR",
     dep: (()=>{const tot=(mData?.fee||PX.r[1])+(isP?Object.entries(mData?.svcp||{}).reduce((s,[k,v])=>s+(mData?.svc?.[k]?v:0),0):0);return mData?.dep??Math.round(tot*0.1/10)*10;})(), dp: mData?.dp||false, zileRest: mData?.zileRest??5,
     sp: mData?.sp||{}, svc: mData?.svc||{}, svcp: mData?.svcp||{sunet:templates?.servicePrices?.sunet??350,lumini:templates?.servicePrices?.lumini??500,ecran:templates?.servicePrices?.ecran??600,scena:templates?.servicePrices?.scena??300,dj:templates?.servicePrices?.dj??600}, scenaPlates: mData?.scenaPlates??12,
-    ex: (()=>{const existing=mData?.ex||[];const oficiu=[{id:"ex_tehnicii",n:"Tehnicii",a:200,v:"Oficiu"},{id:"ex_backline",n:"Backline",a:250,v:"Oficiu"},{id:"ex_transport",n:"Transport",a:10,v:"Oficiu"}];const others=existing.filter(x=>!/tehnic/i.test(x.n||"")&&!/backline/i.test(x.n||"")&&!/transport/i.test(x.n||""));return[...oficiu,...others];})(), ven: mData?.ven||[], notes: mData?.notes||"", fisaExtra: mData?.fisaExtra||"", svcInfo: mData?.svcInfo||{},
+    ex: (()=>{const existing=mData?.ex||[];const oficiu=[{id:"ex_tehnicii",n:"Tehnicii",a:200,v:"Oficiu"},{id:"ex_backline",n:"Backline",a:250,v:"Oficiu"},{id:"ex_transport",n:"Transport",a:10,v:"Oficiu"}];const others=existing.filter(x=>!/tehnic/i.test(x.n||"")&&!/backline/i.test(x.n||"")&&!/transport/i.test(x.n||""));return[...oficiu,...others];})(), ven: mData?.ven||[], notes: mData?.notes||"", fisaExtra: mData?.fisaExtra||"", fisaExtraItems: mData?.fisaExtraItems||[], svcInfo: mData?.svcInfo||{},
     impozitVenit: mData?.impozitVenit??1, plataAvansFirma: mData?.plataAvansFirma ?? (mData?.plataDirect===false), plataRestFirma: mData?.plataRestFirma ?? (mData?.plataDirect===false), sumaAvansLei: mData?.sumaAvansLei??0, sumaRestLei: mData?.sumaRestLei??0, modalitatePlataAvans: mData?.modalitatePlataAvans||"", modalitatePlataRest: mData?.modalitatePlataRest||"", dividende: mData?.dividende??16, cuFond: mData?.cuFond??true, fondPct: mData?.fondPct??10, fondPct2: mData?.fondPct2??10,
     videos: mData?.videos||tplVideos, covers: mData?.covers||(tplCovers.map(c=>({...c,checked:true}))),
     desc: mData?.desc||"",
@@ -2433,12 +2648,12 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <span style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,.9)"}}>{isE?"Editează":"Ofertă nouă"} {isP?"(Privat / ZGV)":"(Public / PHASER)"}</span>
             </div>
-            <button onClick={onClose} style={{padding:3,border:"none",background:"transparent",color:"rgba(255,255,255,.5)",cursor:"pointer"}}><IcX s={16}/></button>
+            <button onClick={onClose} style={{padding:mob?12:3,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:"rgba(255,255,255,.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={16}/></button>
           </div>
 
           {/* Tab bar */}
-          <div style={{display:"flex",gap:1,padding:"8px 20px",borderBottom:`1px solid ${th.b}`,overflowX:"auto",flexShrink:0}}>
-            {tabs.map(t=><button key={t} onClick={()=>setSecTab(t)} style={{padding:"4px 10px",borderRadius:5,border:"none",fontSize:11,fontWeight:secTab===t?700:400,cursor:"pointer",background:secTab===t?th.ab:"transparent",color:secTab===t?th.t:th.tm,textTransform:"capitalize",whiteSpace:"nowrap"}}>{t}</button>)}
+          <div style={{display:"flex",gap:1,padding:mob?"8px 16px":"8px 20px",borderBottom:`1px solid ${th.b}`,overflowX:"auto",flexShrink:0,WebkitOverflowScrolling:"touch"}}>
+            {tabs.map(t=><button key={t} onClick={()=>setSecTab(t)} style={{padding:mob?"8px 12px":"4px 10px",borderRadius:5,border:"none",fontSize:11,fontWeight:secTab===t?700:400,cursor:"pointer",background:secTab===t?th.ab:"transparent",color:secTab===t?th.t:th.tm,textTransform:"capitalize",whiteSpace:"nowrap",flexShrink:0}}>{t}</button>)}
           </div>
 
           <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
@@ -2528,10 +2743,6 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
               />
               <div><label style={sty.l}>Telefon locație</label><input value={fm.locPhone||""} onChange={e=>u("locPhone",e.target.value)} style={iStyle} placeholder="+40..."/></div>
               <div><label style={sty.l}>Adresă locație</label><input value={fm.locAddress||""} onChange={e=>u("locAddress",e.target.value)} style={iStyle} placeholder="Strada, nr., oraș..."/></div>
-              <div style={{gridColumn:"1/-1",fontSize:11,fontWeight:600,color:th.tm,marginTop:8,marginBottom:4}}>Client (preluat în Fișa evenimentului)</div>
-              <div><label style={sty.l}>Nume client</label><input value={fm.cn||""} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Numele clientului"/></div>
-              <div><label style={sty.l}>Telefon client</label><input value={fm.cp||""} onChange={e=>u("cp",e.target.value)} style={iStyle} placeholder="+40..."/></div>
-              <div><label style={sty.l}>Email client</label><input value={fm.ce||""} onChange={e=>u("ce",e.target.value)} style={iStyle} placeholder="email@..."/></div>
               {!isP&&<div><label style={sty.l}>Durată recital / prestație</label>
                 <input value={fm.durataRecital} onChange={e=>u("durataRecital",e.target.value)} style={iStyle} placeholder="ex: 90 min, 2×45 min"/>
               </div>}
@@ -2545,6 +2756,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
             </div>}
 
             {secTab==="client"&&<div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
+              <div style={{gridColumn:"1/-1",fontSize:11,fontWeight:600,color:th.tm,marginBottom:4}}>Client (preluat în Fișa evenimentului)</div>
               <div style={{gridColumn:"1/-1"}}><label style={sty.l}>Nume client</label><input value={fm.cn} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Numele clientului"/></div>
               <div><label style={sty.l}>Telefon</label><input value={fm.cp} onChange={e=>u("cp",e.target.value)} style={iStyle} placeholder="+40..."/></div>
               <div><label style={sty.l}>Email</label><input value={fm.ce} onChange={e=>u("ce",e.target.value)} style={iStyle} placeholder="email@..."/></div>
@@ -2594,19 +2806,28 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
               </div>
               {!fm.repCustom&&<div style={{marginBottom:16}}><label style={sty.l}>Onorariu ({fm.valuta==="lei"?"lei":"€"})</label><input type="number" value={fm.fee} onChange={e=>{const f=Number(e.target.value);u("fee",f);u("dep",Math.round(f*0.1/10)*10);}} style={iStyle}/></div>}
               <label style={sty.l}>Servicii extra</label>
-              {[{k:"sunet",l:"Sistem sunet"},{k:"lumini",l:"Sistem lumini"},{k:"ecran",l:"Ecran LED"},{k:"scena",l:"Scenă/Podium"},{k:"dj",l:"DJ"}].map(sv=>
-                <div key={sv.k}>
+              <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:4,marginBottom:4,fontSize:10,color:th.tm,fontWeight:600}}>
+                <span>Client ({fm.valuta==="lei"?"lei":"€"})</span>
+                <span>Cost furnizor (€)</span>
+              </div>
+              {[{k:"sunet",l:"Sistem sunet",costKey:"sunetCost"},{k:"lumini",l:"Sistem lumini",costKey:"luminiCost"},{k:"ecran",l:"Ecran LED",costKey:"ecranCost"},{k:"scena",l:"Scenă/Podium",costKey:"scenaCost"},{k:"dj",l:"DJ",costKey:"djCost"}].map(sv=>{
+                const costFurnizor=(templates?.servicePrices||{})[sv.costKey]??0;
+                return <div key={sv.k}>
                   <div onClick={()=>{const nsvc={...fm.svc,[sv.k]:fm.svc[sv.k]?0:1};const nsvcT=Object.entries(fm.svcp||{}).reduce((s,[k,v])=>s+(nsvc[k]?v:0),0);const tot=fm.fee+nsvcT;setFm(p=>({...p,svc:nsvc,dep:Math.round(tot*0.1/10)*10}));}}
-                    style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:6,background:fm.svc[sv.k]?th.ab:th.h,marginBottom:4,cursor:"pointer",border:`1px solid ${fm.svc[sv.k]?th.a:th.b}`}}>
-                    <div style={{width:18,height:18,borderRadius:4,border:`2px solid ${fm.svc[sv.k]?th.a:th.b}`,background:fm.svc[sv.k]?th.a:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      {fm.svc[sv.k]?<IcCheck s={10}/>:null}
+                    style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:8,alignItems:"center",padding:"10px 12px",borderRadius:6,background:fm.svc[sv.k]?th.ab:th.h,marginBottom:4,cursor:"pointer",border:`1px solid ${fm.svc[sv.k]?th.a:th.b}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,gridColumn:mob?"1/-1":"1"}}>
+                      <div style={{width:18,height:18,borderRadius:4,border:`2px solid ${fm.svc[sv.k]?th.a:th.b}`,background:fm.svc[sv.k]?th.a:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        {fm.svc[sv.k]?<IcCheck s={10}/>:null}
+                      </div>
+                      <span style={{flex:1,fontSize:12,fontWeight:500}}>{sv.l}</span>
+                      <input type="number" value={fm.svcp[sv.k]||0} onChange={e=>{e.stopPropagation();const nsvcp={...fm.svcp,[sv.k]:Number(e.target.value)};const nsvcT=Object.entries(nsvcp).reduce((s,[k,v])=>s+(fm.svc?.[k]?v:0),0);const tot=fm.fee+nsvcT;setFm(p=>({...p,svcp:nsvcp,dep:Math.round(tot*0.1/10)*10}));}} style={{...iStyle,width:70,textAlign:"right"}} onClick={e=>e.stopPropagation()}/>
                     </div>
-                    <span style={{flex:1,fontSize:12,fontWeight:500}}>{sv.l}</span>
-                    <input type="number" value={fm.svcp[sv.k]||0} onChange={e=>{e.stopPropagation();const nsvcp={...fm.svcp,[sv.k]:Number(e.target.value)};const nsvcT=Object.entries(nsvcp).reduce((s,[k,v])=>s+(fm.svc?.[k]?v:0),0);const tot=fm.fee+nsvcT;setFm(p=>({...p,svcp:nsvcp,dep:Math.round(tot*0.1/10)*10}));}} style={{...iStyle,width:80,textAlign:"right"}} onClick={e=>e.stopPropagation()}/>
-                    <span style={{fontSize:11,color:th.tm}}>{fm.valuta==="lei"?"lei":"€"}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:th.tm}}>
+                      {fm.svc[sv.k]&&costFurnizor>0?<span style={{fontWeight:600,color:"#ef4444"}}>-{costFurnizor}€</span>:<span>—</span>}
+                    </div>
                   </div>
-                </div>
-              )}
+                </div>;
+              })}
               {fm.svc?.scena&&<div style={{marginTop:8,marginLeft:28}}><label style={{...sty.l,fontSize:10}}>Nr. plăci podium (cost furnizor)</label><input type="number" value={fm.scenaPlates??12} onChange={e=>u("scenaPlates",Math.max(0,Number(e.target.value)||0))} style={iStyle} min={1} placeholder="12"/></div>}
               <div style={{marginTop:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
@@ -2628,12 +2849,27 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
             </div>}
 
             {secTab==="timing"&&<div>
-              <div style={{padding:10,borderRadius:6,background:th.h,marginBottom:14,fontSize:11,color:th.ts}}>📍 Intern — program pe ore al evenimentului.</div>
-              <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"1fr 1fr 1fr 1fr",gap:10}}>
-                <div><label style={sty.l}>Load In</label><input type="time" value={fm.li} onChange={e=>u("li",e.target.value)} style={iStyle}/></div>
-                <div><label style={sty.l}>Soundcheck</label><input type="time" value={fm.sc} onChange={e=>u("sc",e.target.value)} style={iStyle}/></div>
-                <div><label style={sty.l}>Show Start</label><input type="time" value={fm.ss} onChange={e=>u("ss",e.target.value)} style={iStyle}/></div>
-                <div><label style={sty.l}>Load Out</label><input type="time" value={fm.lo} onChange={e=>u("lo",e.target.value)} style={iStyle}/></div>
+              <div style={{padding:10,borderRadius:6,background:th.h,marginBottom:14,fontSize:11,color:th.ts}}>📍 Intern — program pe ore (24h: 09:00, 21:00). Dată + oră pentru fiecare milestone.</div>
+              <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
+                {[{l:"Load In",k:"li",i:"📦"},{l:"Soundcheck",k:"sc",i:"🎛"},{l:"Show Start",k:"ss",i:"🎤"},{l:"Load Out",k:"lo",i:"🚐"}].map(x=>(
+                  <div key={x.k} style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
+                    <div style={{fontSize:11,color:th.tm,marginBottom:4}}>{x.i} {x.l}</div>
+                    <DateTimeInput value={fm[x.k]} evDate={fm.date} onChange={v=>u(x.k,v)} iStyle={{...iStyle,fontSize:13}}/>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:16}}>
+                <div style={{fontSize:11,fontWeight:600,color:th.tm,marginBottom:8}}>Timing show (reprize) — ora start + durată</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {(fm.repDurs||Array(fm.rep||1).fill(45)).slice(0,fm.rep||1).map((d,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,color:th.tm,minWidth:28}}>R{i+1}:</span>
+                      <TimeInput value={(fm.repStarts||[])[i]} onChange={t=>{const arr=[...(fm.repStarts||[])].slice(0,fm.rep||1);arr[i]=t;while(arr.length<(fm.rep||1))arr.push("");u("repStarts",arr);}} style={{...iStyle,width:80,textAlign:"center"}} placeholder="21:00"/>
+                      <input type="number" value={d} onChange={e=>{const arr=[...(fm.repDurs||Array(fm.rep||1).fill(45))];arr[i]=Number(e.target.value)||45;u("repDurs",arr);}} style={{...iStyle,width:65}} min={5} max={120}/>
+                      <span style={{fontSize:11,color:th.tm}}>min</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>}
 
@@ -2843,8 +3079,26 @@ Vom furniza 3 mix-uri separate din Stage Box-ul poziționat pe scenă:
 {secTab==="note"&&<div>
               <label style={sty.l}>Note interne / Cerințe speciale</label>
               <textarea value={fm.notes} onChange={e=>u("notes",e.target.value)} style={{...iStyle,minHeight:100,resize:"vertical"}} placeholder="Obs. interne, repertoriu, cerințe speciale..."/>
-              <label style={{...sty.l,marginTop:16}}>Extra (fișă eveniment)</label>
-              <textarea value={fm.fisaExtra||""} onChange={e=>u("fisaExtra",e.target.value)} style={{...iStyle,minHeight:80,resize:"vertical"}} placeholder="Ex: Încă o trupă, observații suplimentare..."/>
+              <label style={{...sty.l,marginTop:16}}>Alți participanți / furnizori externi (fișă eveniment)</label>
+              <div style={{fontSize:11,color:th.tm,marginBottom:8}}>Cântă altcineva, DJ extern, sunet/lumini de la alții — descrieri, nume, telefoane</div>
+              <button onClick={()=>u("fisaExtraItems",[...(fm.fisaExtraItems||[]),{id:uid(),type:"canta_altcineva",desc:"",nume:"",tel:""}])} style={{...sty.bg,fontSize:11,padding:"6px 12px",marginBottom:10}}>+ Adaugă</button>
+              {(fm.fisaExtraItems||[]).map((x,i)=>(
+                <div key={x.id} style={{padding:12,borderRadius:8,background:th.h,border:`1px solid ${th.b}`,marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <select value={x.type||"canta_altcineva"} onChange={e=>{const arr=[...(fm.fisaExtraItems||[])];arr[i]={...arr[i],type:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,flex:1,maxWidth:280}}>
+                      {FISA_EXTRA_TYPES.map(t=><option key={t.k} value={t.k}>{t.l}</option>)}
+                    </select>
+                    <button onClick={()=>u("fisaExtraItems",(fm.fisaExtraItems||[]).filter((_,j)=>j!==i))} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer",marginLeft:6}}>✕</button>
+                  </div>
+                  <textarea value={x.desc||""} onChange={e=>{const arr=[...(fm.fisaExtraItems||[])];arr[i]={...arr[i],desc:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,minHeight:50,resize:"vertical",fontSize:12,marginBottom:6}} placeholder="Descriere"/>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <input value={x.nume||""} onChange={e=>{const arr=[...(fm.fisaExtraItems||[])];arr[i]={...arr[i],nume:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,flex:1,minWidth:120}} placeholder="Nume"/>
+                    <input value={x.tel||""} onChange={e=>{const arr=[...(fm.fisaExtraItems||[])];arr[i]={...arr[i],tel:e.target.value};u("fisaExtraItems",arr);}} style={{...iStyle,width:140}} placeholder="Telefon (+40...)"/>
+                  </div>
+                </div>
+              ))}
+              <label style={{...sty.l,marginTop:12}}>Alte observații</label>
+              <textarea value={fm.fisaExtra||""} onChange={e=>u("fisaExtra",e.target.value)} style={{...iStyle,minHeight:60,resize:"vertical"}} placeholder="Orice altceva relevant..."/>
             </div>}
 
           </div>
@@ -3559,8 +3813,10 @@ function App() {
     const token = localStorage.getItem(GCAL_LS_TOKEN);
     const exp   = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
     if (!token || exp < Date.now() || !ev.date) return null;
-    const startTime = ev.ss || ev.li || "20:00";
-    const [sh, sm] = startTime.split(":").map(Number);
+    const startRaw = ev.ss || ev.li || "20:00";
+    const startTime = startRaw.includes("T") ? startRaw.split("T")[1].slice(0,5) : startRaw;
+    const startDate = startRaw.includes("T") ? startRaw.split("T")[0] : ev.date;
+    const [sh, sm] = (startTime||"20:00").split(":").map(Number);
     const totalMin = (ev.rep||1)*(ev.repDur||45) + Math.max(0,((ev.rep||1)-1)*20);
     const endTotal = sh*60 + sm + totalMin;
     const endH = String(Math.floor(endTotal/60)%24).padStart(2,"0");
@@ -3573,8 +3829,8 @@ function App() {
         ev.ce?"Email: "+ev.ce:"", "Onorariu: "+f$(ev.fee||0),
         ev.dep?"Avans: "+f$(ev.dep):"", ev.desc?"\n"+ev.desc:""
       ].filter(Boolean).join("\n"),
-      start: { dateTime:`${ev.date}T${startTime}:00`, timeZone:"Europe/Bucharest" },
-      end:   { dateTime:`${ev.date}T${endH}:${endM}:00`, timeZone:"Europe/Bucharest" }
+      start: { dateTime:`${startDate||ev.date}T${(startTime||"20:00").slice(0,5)}:00`, timeZone:"Europe/Bucharest" },
+      end:   { dateTime:`${startDate||ev.date}T${endH}:${endM}:00`, timeZone:"Europe/Bucharest" }
     };
     try {
       const url = ev.gcalId
@@ -3612,8 +3868,8 @@ function App() {
     const sg = evs.filter(e=>e.st==="confirmat");
     const rev = sg.reduce((s,e)=>s+(e.fee||0)+Object.entries(e.svcp||{}).reduce((a,[k,v])=>a+(e.svc?.[k]?v:0),0),0);
     const exp = sg.reduce((s,e)=>s+(e.ex||[]).reduce((a,x)=>a+x.a,0),0);
-    // Fond 5% din noul sistem de calcul
-    const fondTotal = sg.reduce((s,e)=>s+calcFond5(e),0);
+    // Fond 7% din noul sistem de calcul
+    const fondTotal = sg.reduce((s,e)=>s+calcFond7(e),0);
     const ge  = genExp.reduce((s,e)=>s+e.a,0);
     const pipe= evs.filter(e=>["oferta","asteptare"].includes(e.st)).reduce((s,e)=>s+(e.fee||0),0);
     const pd  = sg.filter(e=>!e.dp).reduce((s,e)=>s+(e.dep||0),0);
@@ -4054,7 +4310,7 @@ function App() {
 
   return (
     <div
-      style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:th.bg,color:th.t,overflow:"hidden"}}
+      style={{display:"flex",height:"100vh",height:"100dvh",minHeight:"-webkit-fill-available",fontFamily:"'Inter',system-ui,sans-serif",background:th.bg,color:th.t,overflow:"hidden"}}
       onTouchStart={handleAppTouchStart}
       onTouchEnd={handleAppTouchEnd}
     >
@@ -4062,18 +4318,18 @@ function App() {
 
       {/* SIDEBAR — urmărește tema day/night */}
       <div style={{width:sbW,background:th.sb,borderRight:`1px solid ${th.sbb}`,display:"flex",flexDirection:"column",flexShrink:0,transition:"width .25s ease",overflow:"hidden"}}>
-        <div style={{padding:sbMode==="full"?"18px 16px":"10px",borderBottom:`1px solid ${th.sbb}`,display:"flex",alignItems:"center",justifyContent:sbMode==="mini"?"center":"space-between",minHeight:62}}>
-          {sbMode==="full"&&<Logo height={28} dark={effectiveTheme==="light"}/>}
-          <button onClick={()=>setSbMode(sbMode==="full"?"mini":"full")} style={{padding:8,border:"none",background:sbMode==="mini"?(effectiveTheme==="light"?"rgba(0,0,0,.08)":"rgba(255,255,255,.08)"):"transparent",color:th.sbt,cursor:"pointer",flexShrink:0,borderRadius:8}} title={sbMode==="mini"?"Deschide meniu":"Închide meniu"}>
+        <div style={{padding:sbMode==="full"?(mob?"14px 12px":"18px 16px"):(mob?"12px":"10px"),borderBottom:`1px solid ${th.sbb}`,display:"flex",alignItems:"center",justifyContent:sbMode==="mini"?"center":"space-between",minHeight:mob?56:62}}>
+          {sbMode==="full"&&<Logo height={mob?24:28} dark={effectiveTheme==="light"}/>}
+          <button onClick={()=>setSbMode(sbMode==="full"?"mini":"full")} style={{padding:mob?12:8,border:"none",background:sbMode==="mini"?(effectiveTheme==="light"?"rgba(0,0,0,.08)":"rgba(255,255,255,.08)"):"transparent",color:th.sbt,cursor:"pointer",flexShrink:0,borderRadius:8,minWidth:mob?44:undefined,minHeight:mob?44:undefined,display:"flex",alignItems:"center",justifyContent:"center"}} title={sbMode==="mini"?"Deschide meniu":"Închide meniu"}>
             {sbMode==="full"?<IcChevL s={14}/>:<IcChevR s={14}/>}
           </button>
         </div>
 
 
 
-        <nav style={{flex:1,padding:"10px 12px",display:"flex",flexDirection:"column",gap:2}}>
+        <nav style={{flex:1,padding:mob?"8px 6px":"10px 12px",display:"flex",flexDirection:"column",gap:2}}>
           {navItems.map(it=><button key={it.id} onClick={()=>{ setTab(it.id); if(mob) setSbMode("mini"); }} title={sbMode==="mini"?it.l:undefined}
-            style={{display:"flex",alignItems:"center",gap:12,padding:sbMode==="full"?"10px 14px":"10px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:tab===it.id?700:400,background:tab===it.id?(effectiveTheme==="light"?"rgba(0,0,0,.1)":"rgba(255,255,255,.1)"):"transparent",color:tab===it.id?th.sba:th.sbt,transition:"all .15s",whiteSpace:"nowrap",position:"relative"}}>
+            style={{display:"flex",alignItems:"center",gap:12,padding:sbMode==="full"?(mob?"12px 10px":"10px 14px"):(mob?"12px 0":"10px 0"),justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",cursor:"pointer",fontSize:mob?13:12,fontWeight:tab===it.id?700:400,background:tab===it.id?(effectiveTheme==="light"?"rgba(0,0,0,.1)":"rgba(255,255,255,.1)"):"transparent",color:tab===it.id?th.sba:th.sbt,transition:"all .15s",whiteSpace:"nowrap",position:"relative",minHeight:mob?44:undefined,minWidth:sbMode==="mini"&&mob?44:undefined}}>
             <it.Ic s={16}/>
             {sbMode==="full"&&<><span style={{flex:1,textAlign:"left"}}>{it.l}</span>{it.badge>0&&<span style={{background:"#f59e0b",color:"#000",borderRadius:10,fontSize:9,fontWeight:700,padding:"1px 6px"}}>{it.badge}</span>}</>}
             {sbMode==="mini"&&it.badge>0&&<span style={{position:"absolute",top:4,right:4,width:7,height:7,borderRadius:"50%",background:"#f59e0b"}}/>}
@@ -4118,11 +4374,10 @@ function App() {
 
       {/* MAIN */}
       <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",position:"relative"}}>
-        {sbMode==="mini"&&<button onClick={()=>setSbMode("full")} style={{position:"absolute",left:12,top:16,zIndex:100,padding:10,borderRadius:10,border:`1px solid ${th.b}`,background:th.c,color:th.t,cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,.15)"}} title="Deschide meniu"><IcChevR s={18}/></button>}
-        <div style={{flex:1,minHeight:0,overflow:"auto",padding:mob?"14px 16px":"22px 36px 22px 44px",paddingLeft:sbMode==="mini"?52:(mob?16:44)}}>
+        <div style={{flex:1,minHeight:0,overflow:"auto",padding:mob?"14px 16px 24px":"22px 36px 22px 44px",paddingLeft:sbMode==="mini"?(mob?56:52):(mob?16:44),paddingBottom:mob?"max(24px, env(safe-area-inset-bottom))":"22px"}}>
 
           {/* GLOBAL SEARCH — mereu vizibil */}
-          <div style={{position:"relative",marginBottom:16,maxWidth:400}}>
+          <div style={{position:"relative",marginBottom:16,maxWidth:mob?"100%":400}}>
             <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:th.tm,pointerEvents:"none"}}><IcSearch s={16}/></span>
             <input value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} placeholder="Caută în toată aplicația..." style={{...sty.i,width:"100%",paddingLeft:38,paddingRight:12,paddingTop:10,paddingBottom:10,fontSize:14,borderRadius:10}}/>
             {globalSearch.trim()&&<button onClick={()=>setGlobalSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",padding:4,border:"none",background:"transparent",color:th.tm,cursor:"pointer",fontSize:18}}>×</button>}
@@ -4167,10 +4422,10 @@ function App() {
           {tab==="acasa"&&<div style={{animation:"su .3s ease"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
               <div>
-                <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px"}}>Acasă</h1>
+                <h1 style={{fontSize:mob?20:22,fontWeight:700,letterSpacing:"-0.5px"}}>Acasă</h1>
                 <p style={{color:th.tm,fontSize:12,marginTop:2}}>Bun venit, {user.n}!</p>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:mob?6:8,flexWrap:"wrap"}}>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                   <IcCal s={16} style={{color:th.tm}}/>
                   <input type="date" value={dashboardDateSearch} onChange={e=>setDashboardDateSearch(e.target.value)} style={{...sty.i,padding:"6px 10px",fontSize:12,maxWidth:150}} placeholder="Caută după dată"/>
@@ -4260,8 +4515,8 @@ function App() {
               })()}
             </div>
             {search ? (
-              <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
-                <table style={{width:"100%"}}>
+              <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden"}} className={mob?"table-scroll-mob":""}>
+                <table style={{width:"100%",minWidth:mob?480:undefined}}>
                   <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
                     {(p.d||p.e)&&<th style={{padding:"9px 12px",width:36}}><input type="checkbox" checked={fEvs.length>0&&fEvs.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=fEvs.map(e=>e.id);const all=fEvs.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}
                     {["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
@@ -4283,9 +4538,9 @@ function App() {
             ) : <>
               {/* Viitoare */}
               <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Viitoare confirmate ({viitoare.length})</div>
-              <div style={{...sty.cd,padding:0,overflow:"hidden",marginBottom:20}}>
+              <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden",marginBottom:20}} className={mob?"table-scroll-mob":""}>
                 {viitoare.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Niciun eveniment confirmat viitor</div>}
-                {viitoare.length>0&&<table style={{width:"100%"}}>
+                {viitoare.length>0&&<table style={{width:"100%",minWidth:mob?480:undefined}}>
                   <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>{(p.d||p.e)&&<th style={{padding:"10px 14px",width:36}}><input type="checkbox" checked={viitoare.length>0&&viitoare.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=viitoare.map(e=>e.id);const all=viitoare.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}{["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}{p.e&&<th style={{width:44}}/>}</tr></thead>
                   <tbody>{viitoare.map((ev,i)=>
                     <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:i<viitoare.length-1?`1px solid ${th.bl}`:"none",cursor:"pointer",background:selectedEvIds.includes(ev.id)?th.ab:"transparent"}}
@@ -4303,9 +4558,9 @@ function App() {
               </div>
               {/* Trecute */}
               <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Trecute ({trecute.length})</div>
-              <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
+              <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden"}} className={mob?"table-scroll-mob":""}>
                 {trecute.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Niciun eveniment trecut</div>}
-                {trecute.length>0&&<table style={{width:"100%"}}>
+                {trecute.length>0&&<table style={{width:"100%",minWidth:mob?480:undefined}}>
                   <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>{(p.d||p.e)&&<th style={{padding:"10px 14px",width:36}}><input type="checkbox" checked={trecute.length>0&&trecute.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=trecute.map(e=>e.id);const all=trecute.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}{["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}</tr></thead>
                   <tbody>{trecute.map((ev,i)=>
                     <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:i<trecute.length-1?`1px solid ${th.bl}`:"none",cursor:"pointer",opacity:.7,background:selectedEvIds.includes(ev.id)?th.ab:"transparent"}}
@@ -4401,7 +4656,7 @@ function App() {
                 <label style={sty.l}>Prețuri servicii extra — furnizori</label>
                 <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Prețurile salvate aici se folosesc la oferte noi. Costurile cu furnizorii se scad în finanțe când evenimentul e confirmat.</p>
                 <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
-                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaLeiPerPlate",l:"Podium lei/placă",def:50},{k:"dj",l:"DJ (client €)",def:600},{k:"tehnicPerService",l:"Tehnic per serviciu (€)",def:120},{k:"tehnicExtraPerService",l:"Extra/tehnic din lumini/ecran/podium (€)",def:40}].map(({k,l,def})=>(
+                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"scenaLeiPerPlate",l:"Podium lei/placă",def:50},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic per serviciu (€)",def:120},{k:"tehnicExtraPerService",l:"Extra/tehnic din lumini/ecran/podium (€)",def:40}].map(({k,l,def})=>(
                     <div key={k}><label style={{...sty.l,fontSize:10}}>{l}</label><input type="number" value={(templates.servicePrices||{})[k]??def} onChange={e=>{const v=e.target.value;saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));}} style={sty.i} placeholder={String(def)}/></div>
                   ))}
                 </div>
@@ -4796,7 +5051,7 @@ function App() {
               return <div style={{position:mob?"fixed":"sticky",top:0,right:0,width:mob?"100%":360,maxWidth:"100%",height:mob?"70vh":"auto",maxHeight:"85vh",background:th.c,borderLeft:`1px solid ${th.b}`,boxShadow:"-4px 0 20px rgba(0,0,0,.15)",zIndex:100,overflow:"auto",padding:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                   <h3 style={{fontSize:14,fontWeight:700}}>{fD(calSidebarDate)} — {dayEvs.length} eveniment{dayEvs.length!==1?"e":""}</h3>
-                  <button onClick={()=>setCalSidebarDate(null)} style={{padding:4,border:"none",background:"transparent",color:th.tm,cursor:"pointer"}}><IcX s={14}/></button>
+                  <button onClick={()=>setCalSidebarDate(null)} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:th.tm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={14}/></button>
                 </div>
                 {dayEvs.length===0?<div style={{fontSize:12,color:th.tm}}>Niciun eveniment în această zi</div>:dayEvs.map(ev=>(
                   <div key={ev.id} style={{padding:14,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,marginBottom:10}}>
@@ -4923,16 +5178,15 @@ function App() {
               const fcE=((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0))/C;
               const fc16=rF?Math.round(fcE*0.16*100)/100:0;
               const net=Math.max(0,fee-taxV-fcE-fc16);
-              const f5=Math.round(net*0.05*100)/100;
-              const d16=rF?Math.round((net-f5)*0.16*100)/100:0;
-              const dupa=net-f5-d16;
+              const f7=Math.round(net*0.07*100)/100;
+              const d16=rF?Math.round((net-f7)*0.16*100)/100:0;
+              const dupa=net-f7-d16;
               const lAmt=(ev.leadId||ev.leadCustom)?Math.round(dupa*(isP?0.02:0.01)*100)/100:0;
               const aAmt=Math.round(dupa*0.02*100)/100;
               const sAmt=Math.round(dupa*0.02*100)/100;
               const stAmt=Math.round(dupa*0.02*100)/100;
-              const promoA=Math.round(dupa*0.01*100)/100;
               const avD=ev.dp?(ev.dep||0):0;
-              const pool=Math.max(0,dupa-lAmt-aAmt-sAmt-stAmt-promoA-avD);
+              const pool=Math.max(0,dupa-lAmt-aAmt-sAmt-stAmt-avD);
               const base=isP?Math.round(pool*(SPLIT_PRIVATE[mId]||0)/100*100)/100:Math.round(pool/5*100)/100;
               const lead=(ev.leadId===mId&&!ev.leadCustom)?lAmt:0;
               const admin=adminId===mId?aAmt:0;
@@ -4969,8 +5223,8 @@ function App() {
                     <span>{roleLabel}</span>
                     <span style={{fontSize:14,fontWeight:800}}>{fv2(tot)}</span>
                   </div>
-                  <div style={{overflow:"auto"}}>
-                    <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+                  <div className={mob?"table-scroll-mob":""} style={{overflow:mob?"auto":"hidden"}}>
+                    <table style={{width:"100%",minWidth:mob?520:undefined,fontSize:12,borderCollapse:"collapse"}}>
                       <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
                         {["Data","Tipul","Specificul","Descriere","Suma","Status"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
                       </tr></thead>
@@ -5081,7 +5335,7 @@ function App() {
               </div>
               <p style={{fontSize:11,color:th.tm,marginBottom:10}}>Cheltuieli neprevăzute (asigurări, etc.) — scad din Profit net</p>
               {genExp.length===0&&<div style={{padding:20,textAlign:"center",color:th.tm,fontSize:11}}>Nicio cheltuială generală</div>}
-              {genExp.length>0&&<table style={{width:"100%",fontSize:12}}><thead><tr style={{borderBottom:`1px solid ${th.b}`}}><th style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Perioadă</th><th style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Descriere</th><th style={{padding:"8px 10px",textAlign:"right",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Sumă</th><th style={{width:36}}/></tr></thead><tbody>{genExp.map((g,i)=><tr key={g.id||i} style={{borderBottom:`1px solid ${th.bl}`}}><td style={{padding:"8px 10px"}}>{g.d||"—"}</td><td style={{padding:"8px 10px",color:th.tm}}>{g.desc||"—"}</td><td style={{padding:"8px 10px",textAlign:"right",fontWeight:600,color:"#ef4444"}}>-{f$((g.a||0))}</td><td style={{padding:"4px"}}><button onClick={()=>{setGE(genExp.filter((_,j)=>j!==i));showToast("Cheltuială ștearsă");}} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}>✕</button></td></tr>)}</tbody></table>}
+              {genExp.length>0&&<div className={mob?"table-scroll-mob":""} style={{overflow:mob?"auto":"visible"}}><table style={{width:"100%",minWidth:mob?400:undefined,fontSize:12}}><thead><tr style={{borderBottom:`1px solid ${th.b}`}}><th style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Perioadă</th><th style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Descriere</th><th style={{padding:"8px 10px",textAlign:"right",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Sumă</th><th style={{width:36}}/></tr></thead><tbody>{genExp.map((g,i)=><tr key={g.id||i} style={{borderBottom:`1px solid ${th.bl}`}}><td style={{padding:"8px 10px"}}>{g.d||"—"}</td><td style={{padding:"8px 10px",color:th.tm}}>{g.desc||"—"}</td><td style={{padding:"8px 10px",textAlign:"right",fontWeight:600,color:"#ef4444"}}>-{f$((g.a||0))}</td><td style={{padding:"4px"}}><button onClick={()=>{setGE(genExp.filter((_,j)=>j!==i));showToast("Cheltuială ștearsă");}} style={{padding:mob?8:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}>✕</button></td></tr>)}</tbody></table></div>}
               <button onClick={()=>{const d=prompt("Perioadă (ex: 2025-01 sau descriere):");const desc=prompt("Descriere:");const a=Number(prompt("Sumă €:")||0);if(d!==null&&a)setGE([...genExp,{id:uid(),d,desc:desc||"",a}]);}} style={{...sty.bg,fontSize:11,padding:"5px 10px",marginTop:10}}>+ Adaugă</button>
             </div>
 
@@ -5117,12 +5371,12 @@ function App() {
               // Fond din avansuri intrate (dp=true, event neplătit integral)
               // Avansul intră imediat în fond când e primit
               const fondDinAvans=evs.filter(e=>e.st==="confirmat"&&e.dp).reduce((s,e)=>s+(e.dep||0),0);
-              // Fond din 5% — DOAR pentru evenimente plătite integral (restPaid=true)
-              const fondDin5pct=evs.filter(e=>e.st==="confirmat"&&e.restPaid).reduce((s,e)=>s+calcFond5(e),0);
-              const fondIntrat=fondDinAvans+fondDin5pct;
-              // Fond urmează: confirmate neplătite (5%) + pipeline
-              const fondConfUrmeaza=evs.filter(e=>e.st==="confirmat"&&!e.restPaid).reduce((s,e)=>s+calcFond5(e),0);
-              const fondPipeline=evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).reduce((s,e)=>s+calcFond5(e),0);
+              // Fond din 7% — DOAR pentru evenimente plătite integral (restPaid=true)
+              const fondDin7pct=evs.filter(e=>e.st==="confirmat"&&e.restPaid).reduce((s,e)=>s+calcFond7(e),0);
+              const fondIntrat=fondDinAvans+fondDin7pct;
+              // Fond urmează: confirmate neplătite (7%) + pipeline
+              const fondConfUrmeaza=evs.filter(e=>e.st==="confirmat"&&!e.restPaid).reduce((s,e)=>s+calcFond7(e),0);
+              const fondPipeline=evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).reduce((s,e)=>s+calcFond7(e),0);
               const fondUrmeaza=fondConfUrmeaza+fondPipeline;
               // Surplus după cheltuieli anuale
               const fondDisponibil=Math.max(0,fondIntrat-totAnualEur);
@@ -5137,13 +5391,13 @@ function App() {
                     <div style={{fontSize:9,color:"#818cf8",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>✅ Fond intrat</div>
                     <div style={{fontSize:22,fontWeight:800,color:"#818cf8"}}>{f$(fondIntrat)}</div>
                     {fondDinAvans>0&&<div style={{fontSize:10,color:"#a5b4fc",marginTop:3}}>Avansuri: {f$(fondDinAvans)}</div>}
-                    {fondDin5pct>0&&<div style={{fontSize:10,color:"#818cf8",marginTop:1}}>5% finalizat: {f$(fondDin5pct)}</div>}
+                    {fondDin7pct>0&&<div style={{fontSize:10,color:"#818cf8",marginTop:1}}>7% finalizat: {f$(fondDin7pct)}</div>}
                     {fondIntrat===0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Niciun avans sau eveniment plătit integral</div>}
                   </div>
                   <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid ${fondUrmeaza>0?"rgba(245,158,11,.2)":th.b}`}}>
                     <div style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>⏳ Fond urmează</div>
                     <div style={{fontSize:22,fontWeight:800,color:"#f59e0b"}}>{f$(fondUrmeaza)}</div>
-                    {fondConfUrmeaza>0&&<div style={{fontSize:10,color:th.tm,marginTop:3}}>5% confirmate: {f$(fondConfUrmeaza)}</div>}
+                    {fondConfUrmeaza>0&&<div style={{fontSize:10,color:th.tm,marginTop:3}}>7% confirmate: {f$(fondConfUrmeaza)}</div>}
                     {fondPipeline>0&&<div style={{fontSize:10,color:th.tm,marginTop:1}}>Pipeline: {f$(fondPipeline)}</div>}
                   </div>
                 </div>
@@ -5171,26 +5425,6 @@ function App() {
               </div>;
             })()}
 
-            {/* Fond Promo Ads */}
-            {(()=>{
-              const promoIntrat=evs.filter(e=>e.st==="confirmat"&&e.restPaid).reduce((s,e)=>s+calcPromoAds(e),0);
-              const promoUrmeaza=evs.filter(e=>e.st==="confirmat"&&!e.restPaid).reduce((s,e)=>s+calcPromoAds(e),0)+evs.filter(e=>["oferta","asteptare","plata_avans"].includes(e.st)).reduce((s,e)=>s+calcPromoAds(e),0);
-              return <div style={{...sty.cd,marginTop:16,border:`1px solid rgba(236,72,153,.25)`}}>
-                <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:"#f472b6"}}>📣 Fond Promo Ads</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid rgba(236,72,153,.2)`}}>
-                    <div style={{fontSize:9,color:"#ec4899",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>✅ Intrat</div>
-                    <div style={{fontSize:22,fontWeight:800,color:"#ec4899"}}>{f$(promoIntrat)}</div>
-                    {promoIntrat===0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Se formează la plata integrală</div>}
-                  </div>
-                  <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid rgba(236,72,153,.1)`}}>
-                    <div style={{fontSize:9,color:"#f9a8d4",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>⏳ Urmează</div>
-                    <div style={{fontSize:22,fontWeight:800,color:"#f9a8d4"}}>{f$(promoUrmeaza)}</div>
-                    {promoUrmeaza===0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Niciun eveniment în pipeline</div>}
-                  </div>
-                </div>
-              </div>;
-            })()}
             </div>;
           })()}
 
@@ -5205,10 +5439,10 @@ function App() {
             <p style={{color:th.tm,fontSize:12,marginTop:3}}>Ce tip de eveniment?</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <button onClick={()=>{closeModal();setTimeout(()=>openModal("form",{cat:"private",...(mData?.date&&{date:mData.date})}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:22,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)"}}>
+            <button onClick={()=>{closeModal();setTimeout(()=>openModal("form",{cat:"private",...(mData?.date&&{date:mData.date})}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:mob?24:22,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?100:undefined}}>
               <div style={{fontSize:28,marginBottom:8}}>🎉</div><div style={{fontWeight:700,fontSize:14}}>Privat</div><div style={{fontSize:10,color:"#666",marginTop:4}}>ZăGoodVibes</div>
             </button>
-            <button onClick={()=>{closeModal();setTimeout(()=>openModal("form",{cat:"public",...(mData?.date&&{date:mData.date})}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:22,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)"}}>
+            <button onClick={()=>{closeModal();setTimeout(()=>openModal("form",{cat:"public",...(mData?.date&&{date:mData.date})}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:mob?24:22,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?100:undefined}}>
               <div style={{fontSize:28,marginBottom:8}}>🎸</div><div style={{fontWeight:700,fontSize:14}}>Public</div><div style={{fontSize:10,color:"#666",marginTop:4}}>PHASER</div>
             </button>
           </div>
@@ -5245,7 +5479,7 @@ function App() {
                   <div style={{fontSize:11,color:th.tm}}>{fD(ev.date)} · {ev.venue}{ev.city?", "+ev.city:""}</div>
                   {(ev.responsabilPrincipal||(ev.responsabili||[]).length>0)&&<div style={{fontSize:10,color:th.tm,marginTop:4}}>Preluat: {ev.responsabilPrincipal||"—"} {(ev.responsabili||[]).length>0&&` · ${(ev.responsabili||[]).filter(r=>r.nume||r.rol).map(r=>r.nume+(r.rol?" ("+r.rol+")":"")).join(", ")}`}</div>}
                 </div>
-                <button onClick={closeModal} style={{padding:3,border:"none",background:"transparent",color:th.tm,cursor:"pointer"}}><IcX s={16}/></button>
+                <button onClick={closeModal} style={{padding:mob?12:3,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:th.tm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={16}/></button>
               </div>
             </div>
             <div style={{padding:"16px 22px"}} onClick={e=>e.stopPropagation()}>
@@ -5282,7 +5516,13 @@ function App() {
                   {p.e&&<button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("form",ev.id),80);}} style={sty.bg}>Editează date</button>}
                   {p.d&&<button type="button" onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
                 </div>
-                {detailTab==="fisa"&&<FisaEveniment ev={ev} updEv={updEv} th={th} SVC_LABELS={SVC_LABELS} fFmt={fFmt} fD={fD} editable={true} sty={sty} mob={mob} showPaymentCards={false} showToast={showToast}/>}
+                {detailTab==="fisa"&&<>
+                  <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                    <FisaPdfButton ev={ev} showToast={showToast}/>
+                    <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={false} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/>
+                  </div>
+                  <FisaEveniment ev={ev} updEv={updEv} th={th} SVC_LABELS={SVC_LABELS} fFmt={fFmt} fD={fD} editable={true} sty={sty} mob={mob} showPaymentCards={false} showToast={showToast}/>
+                </>}
                 {detailTab==="finante"&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
                   <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Finanțe</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -5323,7 +5563,7 @@ function App() {
                         <div key={i} style={{padding:10,borderRadius:8,background:th.c,textAlign:"center",border:`1px solid ${th.b}`}}>
                           <div style={{fontSize:14,marginBottom:3}}>{x.i}</div>
                           <div style={{fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{x.l}</div>
-                          <div style={{fontSize:15,fontWeight:800,color:x.v?th.t:th.tm}}>{x.v||"—"}</div>
+                          <div style={{fontSize:15,fontWeight:800,color:x.v?th.t:th.tm}}>{formatDisplayDateTime(x.v,ev.date)}</div>
                         </div>
                       )}
                     </div>
@@ -5331,7 +5571,7 @@ function App() {
                   <div style={{marginBottom:12}}>
                     <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing show</div>
                     <div style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
-                      {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=><span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {d} min</span>)}
+                      {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=>{const st=(ev.repStarts||[])[i];return <span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {st?st+" ":""}{d} min</span>})}
                       {(!ev.repDurs||ev.repDurs.length===0)&&(!ev.rep||ev.rep<2)&&<span style={{fontSize:11,color:th.tm}}>{(ev.rep||1)} repriză × {(ev.repDur||45)} min</span>}
                     </div>
                   </div>
@@ -5389,7 +5629,7 @@ function App() {
                         <div key={i} style={{padding:10,borderRadius:8,background:th.c,textAlign:"center",border:`1px solid ${th.b}`}}>
                           <div style={{fontSize:14,marginBottom:3}}>{x.i}</div>
                           <div style={{fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{x.l}</div>
-                          <div style={{fontSize:15,fontWeight:800,color:x.v?th.t:th.tm}}>{x.v||"—"}</div>
+                          <div style={{fontSize:15,fontWeight:800,color:x.v?th.t:th.tm}}>{formatDisplayDateTime(x.v,ev.date)}</div>
                         </div>
                       )}
                     </div>
@@ -5398,7 +5638,7 @@ function App() {
                   <div style={{marginBottom:12}}>
                     <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing show</div>
                     <div style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
-                      {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=><span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {d} min</span>)}
+                      {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=>{const st=(ev.repStarts||[])[i];return <span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {st?st+" ":""}{d} min</span>})}
                       {(!ev.repDurs||ev.repDurs.length===0)&&(!ev.rep||ev.rep<2)&&<span style={{fontSize:11,color:th.tm}}>{(ev.rep||1)} repriză × {(ev.repDur||45)} min</span>}
                     </div>
                   </div>
@@ -5533,9 +5773,9 @@ function App() {
         // 3. Net după cheltuieli fixe
         const netDupaFixed=Math.max(0,netDupaTax-fcEurEffective);
 
-        // 4. Fond 5%
-        const fond5=Math.round(netDupaFixed*0.05*100)/100;
-        const dupaFond=netDupaFixed-fond5;
+        // 4. Fond 7%
+        const fond7=Math.round(netDupaFixed*0.07*100)/100;
+        const dupaFond=netDupaFixed-fond7;
 
         // 5. Dividende 16% pe profit — doar când restul e pe firmă
         const div16=restFirma?Math.round(dupaFond*0.16*100)/100:0;
@@ -5553,20 +5793,23 @@ function App() {
         const totalRoluri=leadAmt+adminAmt+socialAmt+stageAmt;
 
         // 7. Pool de împărțit
-        const promoAmt=Math.round(dupaDiv*0.01*100)/100;
         const avansInFond=ev.dp?dep:0;
-        const pool=Math.max(0,dupaDiv-totalRoluri-avansInFond-promoAmt);
+        const pool=Math.max(0,dupaDiv-totalRoluri-avansInFond);
 
-        // 8. Split per membru
-        const shares={};
+        // 8. Split per membru — partea de cantat (base) și roluri separate
+        const baseShares={};
+        const roleBonus={};
         MEMBERS.forEach(m=>{
           const base=isPrivate?Math.round(pool*(SPLIT_PRIVATE[m.id]||0)/100*100)/100:Math.round(pool/5*100)/100;
-          shares[m.id]=base;
+          baseShares[m.id]=base;
+          roleBonus[m.id]=0;
         });
-        if(ev.leadId&&!ev.leadCustom) shares[ev.leadId]=(shares[ev.leadId]||0)+leadAmt;
-        if(ev.adminId) shares[ev.adminId]=(shares[ev.adminId]||0)+adminAmt;
-        shares["m1"]=(shares["m1"]||0)+socialAmt; // Carina întotdeauna
-        if(ev.stageId) shares[ev.stageId]=(shares[ev.stageId]||0)+stageAmt;
+        if(ev.leadId&&!ev.leadCustom){ roleBonus[ev.leadId]=(roleBonus[ev.leadId]||0)+leadAmt; }
+        if(ev.adminId){ roleBonus[ev.adminId]=(roleBonus[ev.adminId]||0)+adminAmt; }
+        roleBonus["m1"]=(roleBonus["m1"]||0)+socialAmt; // Carina Social Media
+        if(ev.stageId){ roleBonus[ev.stageId]=(roleBonus[ev.stageId]||0)+stageAmt; }
+        const shares={};
+        MEMBERS.forEach(m=>{ shares[m.id]=(baseShares[m.id]||0)+(roleBonus[m.id]||0); });
 
         const fv=(v)=>v.toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+"€";
         const fvl=(v)=>Math.round(v).toLocaleString("ro-RO")+" lei";
@@ -5585,10 +5828,10 @@ function App() {
                   <div style={{fontSize:11,color:th.tm,marginTop:2}}>{isPrivate?"Privat":"Public"} · {fD(ev.date)}</div>
                 </div>
               </div>
-              <button onClick={closeModal} style={{padding:4,border:"none",background:"transparent",color:th.tm,cursor:"pointer"}}><IcX s={14}/></button>
+              <button onClick={closeModal} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:th.tm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={14}/></button>
             </div>
 
-            <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:16}}>
+            <div style={{padding:mob?"16px":"16px 20px",display:"flex",flexDirection:"column",gap:16}}>
 
               {/* Tip plată */}
               <div>
@@ -5634,8 +5877,8 @@ function App() {
                     <div style={{fontSize:9,color:ev.restPaid?"#22c55e":"#f59e0b",marginTop:2}}>{ev.restPaid?"Plătit integral":"Neîncasat · click"}</div>
                   </div>
                 </div>
-                {ev.dp&&ev.restPaid&&<div style={{fontSize:10,color:"#22c55e",fontWeight:600,textAlign:"center",marginTop:6}}>✓ Eveniment plătit integral — 5% fond activ</div>}
-                {ev.dp&&!ev.restPaid&&<div style={{fontSize:10,color:"#f59e0b",textAlign:"center",marginTop:6}}>Avans în fond · 5% se calculează după plata integrală</div>}
+                {ev.dp&&ev.restPaid&&<div style={{fontSize:10,color:"#22c55e",fontWeight:600,textAlign:"center",marginTop:6}}>✓ Eveniment plătit integral — 7% fond activ</div>}
+                {ev.dp&&!ev.restPaid&&<div style={{fontSize:10,color:"#f59e0b",textAlign:"center",marginTop:6}}>Avans în fond · 7% se calculează după plata integrală</div>}
               </div>
 
               {/* Cheltuieli fixe editabile */}
@@ -5673,10 +5916,9 @@ function App() {
                   <Row l={`Cheltuieli fixe (${fvl(fcLeiTotal)})`} v={"-"+fv(fcEur)} c="#ef4444"/>
                   {fc16>0&&<Row l="16% div. pe logistică (pe firmă)" v={"-"+fv(fc16)} c="#ef4444"/>}
                   <Row l="Net după cheltuieli" v={fv(netDupaFixed)} bold/>
-                  <Row l="Fond 5%" v={"-"+fv(fond5)} c="#6366f1"/>
+                  <Row l="Fond 7%" v={"-"+fv(fond7)} c="#6366f1"/>
                   {restFirma&&<Row l="Dividende 16% (pe rest)" v={"-"+fv(div16)} c="#ef4444"/>}
                   <Row l="Social Media Manager (2%)" v={"-"+fv(socialAmt)} c="#8b5cf6"/>
-                  <Row l="Promo Ads (1%)" v={"-"+fv(promoAmt)} c="#ec4899"/>
                   {(ev.leadId||ev.leadCustom)&&<Row l={`Lead ${isPrivate?"2%":"1%"} — ${leadName}`} v={"-"+fv(leadAmt)} c="#f59e0b"/>}
                   {ev.adminId&&<Row l={`Administrator 2% — ${MEMBERS.find(m=>m.id===ev.adminId)?.short||""}`} v={"-"+fv(adminAmt)} c="#f59e0b"/>}
                   {ev.stageId&&<Row l={`Stage Manager 2% — ${MEMBERS.find(m=>m.id===ev.stageId)?.short||""}`} v={"-"+fv(stageAmt)} c="#f59e0b"/>}
@@ -5692,11 +5934,12 @@ function App() {
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Rezumat taxe & retenții</div>
                 <div style={{display:"flex",flexDirection:"column",gap:4}}>
                   {impVenit>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Impozit venit 1% {avFirma&&restFirma?"(total)":avFirma?"(doar avans)":"(doar rest)"}</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(impVenit)}</span></div>}
+                  {svcCost>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Cost servicii tehnice (furnizori)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(svcCost)}</span></div>}
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Logistică fixă ({fvl(fcLeiTotal)})</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(fcEur)}</span></div>
                   {fc16>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>16% div. logistică (pe firmă)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(fc16)}</span></div>}
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Fond trupă (5%)</span><span style={{color:"#6366f1",fontWeight:600}}>-{fv(fond5)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Fond trupă (7%)</span><span style={{color:"#6366f1",fontWeight:600}}>-{fv(fond7)}</span></div>
                   {restFirma&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Dividende trupă 16% (pe rest)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(div16)}</span></div>}
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,borderTop:`1px solid ${th.b}`,paddingTop:6,marginTop:2}}><span style={{fontWeight:600}}>Total reținut</span><span style={{color:"#ef4444",fontWeight:700}}>-{fv(impVenit+fcEurEffective+fond5+div16)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,borderTop:`1px solid ${th.b}`,paddingTop:6,marginTop:2}}><span style={{fontWeight:600}}>Total reținut</span><span style={{color:"#ef4444",fontWeight:700}}>-{fv(impVenit+svcCost+fcEurEffective+fond7+div16)}</span></div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}><span style={{fontWeight:600,color:"#22c55e"}}>Net trupă</span><span style={{color:"#22c55e",fontWeight:700}}>{fv(pool)}</span></div>
                 </div>
               </div>
@@ -5737,16 +5980,25 @@ function App() {
                 <div style={{marginBottom:8}}>
                   <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Total per membru</div>
                 </div>
-                {MEMBERS.map(m=>(
-                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:`1px solid ${th.bl}`}}>
-                    <div style={{width:26,height:26,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:th.bg,flexShrink:0}}>{m.n[0]}</div>
-                    <span style={{fontSize:12,flex:1}}>{m.n.split(" ")[0]}</span>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:13,fontWeight:700}}>{fv(shares[m.id]||0)}</div>
-                      {[ev.leadId,ev.adminId,ev.stageId].includes(m.id)&&<div style={{fontSize:9,color:"#f59e0b"}}>+bonus rol</div>}
+                {MEMBERS.map(m=>{
+                  const base=baseShares[m.id]||0;
+                  const rol=roleBonus[m.id]||0;
+                  const total=shares[m.id]||0;
+                  const hasRol=rol>0;
+                  const rolLabel=ev.leadId===m.id?"Lead":ev.adminId===m.id?"Administrator":ev.stageId===m.id?"Stage Manager":m.id==="m1"&&socialAmt>0?"Social Media":null;
+                  return (
+                  <div key={m.id} style={{padding:"8px 0",borderBottom:`1px solid ${th.bl}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:26,height:26,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:th.bg,flexShrink:0}}>{m.n[0]}</div>
+                      <span style={{fontSize:12,flex:1}}>{m.n.split(" ")[0]}</span>
+                      <div style={{textAlign:"right",fontSize:13,fontWeight:700}}>{fv(total)}</div>
                     </div>
+                    {hasRol&&<div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:4,marginLeft:34,fontSize:11,color:th.tm}}>
+                      <span>Parte cantat: {fv(base)}</span>
+                      <span style={{color:"#f59e0b",fontWeight:600}}>{rolLabel||"Bonus rol"}: {fv(rol)}</span>
+                    </div>}
                   </div>
-                ))}
+                );})}
               </div>
 
               {/* Fond total eveniment */}
@@ -5758,12 +6010,12 @@ function App() {
                     <span style={{color:ev.dp?"#a5b4fc":th.tm,fontWeight:ev.dp?600:400}}>{fv(dep)}{!ev.dp?<span style={{fontSize:9}}> · neîncasat</span>:null}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
-                    <span style={{color:th.tm}}>5% net {ev.restPaid?"✓":""}</span>
-                    <span style={{color:ev.restPaid?"#a5b4fc":th.tm,fontWeight:ev.restPaid?600:400}}>{fv(fond5)}{!ev.restPaid?<span style={{fontSize:9}}> · după plata integrală</span>:null}</span>
+                    <span style={{color:th.tm}}>7% net {ev.restPaid?"✓":""}</span>
+                    <span style={{color:ev.restPaid?"#a5b4fc":th.tm,fontWeight:ev.restPaid?600:400}}>{fv(fond7)}{!ev.restPaid?<span style={{fontSize:9}}> · după plata integrală</span>:null}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:13,borderTop:"1px solid rgba(99,102,241,.2)",paddingTop:6,marginTop:2}}>
                     <span style={{fontWeight:700,color:"#818cf8"}}>Total fond</span>
-                    <span style={{fontWeight:800,color:"#818cf8"}}>{fv(dep+fond5)}</span>
+                    <span style={{fontWeight:800,color:"#818cf8"}}>{fv(dep+fond7)}</span>
                   </div>
                 </div>
                 <div onClick={()=>{upd({restPaid:!ev.restPaid});showToast(ev.restPaid?"Marcat neplătit":"Eveniment plătit integral ✓");}} style={{marginTop:10,padding:"8px 12px",borderRadius:8,border:`1px solid ${ev.restPaid?"#22c55e":"rgba(99,102,241,.4)"}`,cursor:"pointer",textAlign:"center",background:ev.restPaid?"rgba(34,197,94,.06)":"transparent",fontSize:11,color:ev.restPaid?"#22c55e":"#a5b4fc",fontWeight:ev.restPaid?600:400}}>

@@ -1173,6 +1173,7 @@ function EventForm({ th, sty, isE, isP, mData, onSave, onPreview, onClose, mob }
             </div>}
 
             {secTab==="client"&&<div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
+              <div style={{gridColumn:"1/-1",fontSize:11,fontWeight:600,color:th.tm,marginBottom:4}}>Client (preluat în Fișa evenimentului)</div>
               <div style={{gridColumn:"1/-1"}}><label style={sty.l}>Nume client</label><input value={fm.cn} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Numele clientului"/></div>
               <div><label style={sty.l}>Telefon</label><input value={fm.cp} onChange={e=>u("cp",e.target.value)} style={iStyle} placeholder="+40..."/></div>
               <div><label style={sty.l}>Email</label><input value={fm.ce} onChange={e=>u("ce",e.target.value)} style={iStyle} placeholder="email@..."/></div>

@@ -96,6 +96,25 @@ CREATE POLICY "avatars_auth_update" ON storage.objects
   );
 
 -- ─────────────────────────────────────────────
+-- 3b. Supabase Storage — bucket "fisa-public" (fișe evenimente partajabile)
+-- Creează bucket public pentru link-uri către fișa evenimentului
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('fisa-public', 'fisa-public', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Oricine poate vedea fișele (bucket public)
+DROP POLICY IF EXISTS "fisa_public_read" ON storage.objects;
+CREATE POLICY "fisa_public_read" ON storage.objects
+  FOR SELECT USING (bucket_id = 'fisa-public');
+
+-- Userii autentificați pot uploada
+DROP POLICY IF EXISTS "fisa_auth_insert" ON storage.objects;
+CREATE POLICY "fisa_auth_insert" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'fisa-public' AND auth.role() = 'authenticated'
+  );
+
+-- ─────────────────────────────────────────────
 -- 4. Curăță tabele vechi
 -- ─────────────────────────────────────────────
 DROP TABLE IF EXISTS phaser_trusted;
