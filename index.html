@@ -2138,6 +2138,74 @@ function LocationSearch({ venue, city, dist, onUpdate, sty, th, mob }) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ─── FIȘA EVENIMENTULUI (tab în modal detalii) ───
+function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob, showPaymentCards, showToast }) {
+  const iStyle = {...sty.i, fontSize: mob?"16px":"14px"};
+  const hosp = ev.hosp && !Array.isArray(ev.hosp) ? ev.hosp : {camere:0,meniuri:6,micDejun:false,pranz:false,extra:[],protocolOverride:""};
+  const svc = Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
+  const u = (k,v) => editable && updEv && updEv({[k]:v});
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {showPaymentCards&&<div style={{display:"flex",gap:10}}>
+      <div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd?{st:"confirmat"}:{})});showToast&&showToast(nd?"Avans încasat ✓ — eveniment confirmat":"Avans: neîncasat");}} style={{flex:1,padding:12,borderRadius:10,border:`2px solid ${ev.dp?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.dp?"rgba(34,197,94,.06)":"transparent"}}>
+        <div style={{fontSize:18,marginBottom:4}}>{ev.dp?"✅":"⬜"}</div>
+        <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Platit avans</div>
+        <div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep||0,ev.valuta)}</div>
+      </div>
+      <div onClick={()=>{updEv({restPaid:!ev.restPaid});showToast&&showToast(ev.restPaid?"Rest: neplătit":"Rest: plătit integral ✓");}} style={{flex:1,padding:12,borderRadius:10,border:`2px solid ${ev.restPaid?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.restPaid?"rgba(34,197,94,.06)":"transparent"}}>
+        <div style={{fontSize:18,marginBottom:4}}>{ev.restPaid?"✅":"⬜"}</div>
+        <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Platit integral</div>
+        <div style={{fontSize:14,fontWeight:700,color:ev.restPaid?"#22c55e":"#ef4444"}}>{fFmt(Math.max(0,(ev.fee||0)+svc-(ev.dep||0)),ev.valuta)}</div>
+      </div>
+    </div>}
+    {/* Detalii din ofertă */}
+    <div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div><div style={{fontSize:9,color:th.tm,textTransform:"uppercase",marginBottom:2}}>Tip eveniment</div>{editable ? <input value={ev.type||""} onChange={e=>u("type",e.target.value)} style={iStyle} placeholder="ex: Nuntă"/> : <div style={{fontSize:15,fontWeight:700}}>{ev.type||"—"}</div>}</div>
+        <div><div style={{fontSize:9,color:th.tm,textTransform:"uppercase",marginBottom:2}}>Locație</div>{editable ? <div style={{display:"flex",flexDirection:"column",gap:6}}><input value={ev.venue||""} onChange={e=>u("venue",e.target.value)} style={iStyle} placeholder="Venue"/><input value={ev.city||""} onChange={e=>u("city",e.target.value)} style={iStyle} placeholder="Oraș"/></div> : <div style={{fontSize:13,fontWeight:600}}>{ev.venue||"—"}{ev.city?", "+ev.city:""}</div>}</div>
+      </div>
+    </div>
+    {/* Client */}
+    <div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+      <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Client</div>
+      {editable ? <><input value={ev.cn||""} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Nume client"/><input value={ev.cp||""} onChange={e=>u("cp",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Telefon"/><input value={ev.ce||""} onChange={e=>u("ce",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Email"/></> : <><div style={{fontSize:14,fontWeight:600}}>{ev.cn||"—"}</div>{ev.cp&&<div style={{fontSize:11,color:th.ts,marginTop:2}}>{ev.cp}</div>}{ev.ce&&<div style={{fontSize:11,color:th.ts}}>{ev.ce}</div>}</>}
+    </div>
+    {/* Servicii */}
+    {ev.svc&&Object.keys(ev.svc).some(k=>ev.svc[k])&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+      <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Servicii</div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {["sunet","lumini","ecran","scena","dj"].filter(k=>ev.svc?.[k]).map(k=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12}}>{SVC_LABELS[k]||k}</span><span style={{fontSize:12,fontWeight:600}}>{fFmt(ev.svcp?.[k]||0,ev.valuta)}</span></div>)}
+      </div>
+    </div>}
+    {/* Ospitalitate */}
+    {ev.cat==="private"&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+      <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Ospitalitate</div>
+      {editable ? <><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:12}}>Camere:</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:Math.max(0,(hosp.camere||0)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.camere??0}</span><button type="button" onClick={()=>u("hosp",{...hosp,camere:(hosp.camere||0)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12}}>Meniuri:</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:Math.max(0,(hosp.meniuri||6)-1)})} style={{...sty.bg,padding:"4px 10px"}}>−</button><span style={{fontSize:14,fontWeight:700,minWidth:24,textAlign:"center"}}>{hosp.meniuri??6}</span><button type="button" onClick={()=>u("hosp",{...hosp,meniuri:(hosp.meniuri||6)+1})} style={{...sty.bg,padding:"4px 10px"}}>+</button></div></> : <div style={{fontSize:12,color:th.ts}}>{(hosp.camere||0)>0?`${hosp.camere} camere`:"—"}{(hosp.camere||0)>0&&(hosp.meniuri||0)>0?" · ":""}{(hosp.meniuri||0)>0?`${hosp.meniuri} meniuri`:""}</div>}
+    </div>}
+    {/* Timing — reprize + show timing */}
+    <div style={{padding:16,borderRadius:10,background:th.h,border:`2px solid #22c55e`}}>
+      <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12,color:"#22c55e",display:"flex",alignItems:"center",gap:6}}>📋 Timing</div>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing show</div>
+        {editable ? <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
+              <span style={{fontSize:11,color:th.tm}}>R{i+1}:</span>
+              <input type="number" value={d} onChange={e=>{const arr=[...(ev.repDurs||Array(ev.rep||1).fill(ev.repDur||45))];arr[i]=Number(e.target.value)||45;u("repDurs",arr);}} style={{...iStyle,width:60}} min={5} max={120}/>
+              <span style={{fontSize:11,color:th.tm}}>min</span>
+            </div>
+          ))}
+        </div> : <div style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
+          {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=><span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {d} min</span>)}
+        </div>}
+      </div>
+      <div style={{marginTop:12}}>
+        <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Show timing</div>
+        {editable ? <input value={ev.ss||""} onChange={e=>u("ss",e.target.value)} style={iStyle} placeholder="ex: 21:00"/> : <div style={{fontSize:14,fontWeight:600}}>{ev.ss||"—"}</div>}
+      </div>
+    </div>
+  </div>;
+}
+
 // FEATURES — Event form, offer preview, contract, location search
 // ═══════════════════════════════════════════════════════════════════════════════
 function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templates }) {
@@ -2251,6 +2319,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
                 </select>
               </div>
               <div><label style={sty.l}>Onorariu trupă ({fm.valuta==="lei"?"lei":"€"})</label><input type="number" value={fm.fee} onChange={e=>{const f=Number(e.target.value);u("fee",f);const tot=f+svcT;u("dep",Math.round(tot*0.1/10)*10);}} style={iStyle}/></div>
+              {isP&&svcT>0&&<div style={{gridColumn:"1/-1",padding:10,borderRadius:7,background:th.h,border:`1px solid ${th.b}`,fontSize:13,fontWeight:700}}>Onorariu total: {f$((fm.fee||0)+svcT)}</div>}
               <div>
                 <label style={sty.l}>Avans (10% din total)</label>
                 <div style={{display:"flex",gap:6}}>
@@ -2388,6 +2457,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
                 ))}
               </div>
               <div style={{marginTop:10,padding:10,borderRadius:6,background:th.h,display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:600}}><span>Total servicii:</span><span>{f$(svcT)}</span></div>
+              <div style={{marginTop:6,padding:10,borderRadius:6,background:th.ab,border:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700}}><span>Onorariu total:</span><span>{f$((fm.fee||0)+svcT)}</span></div>
 
             </div>}
 
@@ -3122,6 +3192,8 @@ function App() {
   const [finMember, setFinMember] = useState(null);
   const [templates, setTemplates] = useState(loadTemplates);
   const { modal, payload, openModal, closeModal } = useModal();
+  const [detailTab, setDetailTab] = useState("fisa");
+  useEffect(()=>{ if(modal==="detail") setDetailTab("fisa"); },[modal]);
   const mData = useMemo(() => {
     if (!modal || payload == null) return null;
     if (modal === "detail" || modal === "finance") return typeof payload === "string" ? evs.find(e => e.id === payload) : payload;
@@ -4999,8 +5071,30 @@ function App() {
             </div>
             <div style={{padding:"16px 22px"}} onClick={e=>e.stopPropagation()}>
 
-              {/* VISTA SIMPLIFICATĂ — când eveniment confirmat: doar ce e, locație, servicii, fișă, client */}
-              {isConfirmed&&<>
+              {/* TAB-URI — plata_avans și confirmat: Fișa, Finanțe (doar confirmat), Contract, Ofertă */}
+              {(ev.st==="plata_avans"||isConfirmed)&&<>
+                <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap",borderBottom:`1px solid ${th.b}`,paddingBottom:12}}>
+                  <button type="button" onClick={()=>setDetailTab("fisa")} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:detailTab==="fisa"?700:400,cursor:"pointer",background:detailTab==="fisa"?th.ab:"transparent",color:detailTab==="fisa"?th.t:th.tm}}><IcDoc s={13}/> Fișa evenimentului</button>
+                  {isConfirmed&&<button type="button" onClick={()=>setDetailTab("finante")} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:detailTab==="finante"?700:400,cursor:"pointer",background:detailTab==="finante"?th.ab:"transparent",color:detailTab==="finante"?th.t:th.tm}}><IcMoney s={13}/> Finanțe</button>}
+                  <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
+                  <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",ev.id),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
+                  {p.d&&<button type="button" onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
+                </div>
+                {detailTab==="fisa"&&<FisaEveniment ev={ev} updEv={updEv} th={th} SVC_LABELS={SVC_LABELS} fFmt={fFmt} fD={fD} editable={!isConfirmed} sty={sty} mob={mob} showPaymentCards={ev.st==="plata_avans"} showToast={showToast}/>}
+                {detailTab==="finante"&&isConfirmed&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+                  <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Finanțe</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div><div style={{fontSize:10,color:th.tm}}>Suma totală</div><div style={{fontSize:16,fontWeight:800}}>{fFmt((ev.fee??0)+svc,ev.valuta)}</div></div>
+                    {canToggleAvans?<div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd&&ev.st==="plata_avans"?{st:"confirmat"}:{})});showToast(nd?(ev.st==="plata_avans"?"Avans încasat ✓ — confirmat":"Avans: încasat ✓"):"Avans: neîncasat")}} style={{cursor:"pointer",padding:6,borderRadius:6,border:`2px solid ${ev.dp?"#22c55e":"transparent"}`}}><div style={{fontSize:10,color:th.tm}}>Avans</div><div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep,ev.valuta)} {ev.dp?"✓":"✗"}</div></div>:<div><div style={{fontSize:10,color:th.tm}}>Avans</div><div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep,ev.valuta)} {ev.dp?"✓":"✗"}</div></div>}
+                  </div>
+                  {(()=>{try{const tot=(ev.fee??0)+svc;const r=typeof getProfitWithFond==="function"?getProfitWithFond(tot,exp,ev):{fond:0,net:tot-exp};const {fond,net}=r;const v=ev.valuta||"EUR";return <><div style={{marginTop:8,fontSize:14,fontWeight:700,color:net>=0?"#22c55e":"#ef4444"}}>Profit net: {fFmt(net,v)}</div>{ev.cuFond!==false&&fond>0&&<div style={{fontSize:10,color:th.tm,marginTop:2}}>Fond total: {fFmt(fond,v)}</div>}</>;}catch(_){return <div style={{fontSize:12,color:th.tm}}>—</div>}})()}
+                  {Object.keys(ev.sp||{}).length>0&&<div style={{marginTop:8,fontSize:10,color:th.tm}}>Split: {MEMBERS.filter(m=>ev.sp[m.id]).map(m=>`${m.n.split(" ")[0]} ${f$(ev.sp[m.id])}`).join(" · ")}</div>}
+                  <button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",ev.id),80);}} style={{...sty.bg,marginTop:12}}>Deschide fișa financiară completă</button>
+                </div>}
+              </>}
+
+              {/* VISTA SIMPLIFICATĂ — când eveniment confirmat (legacy - acum în tab Fișa): doar ce e, locație, servicii, fișă, client */}
+              {false&&isConfirmed&&<>
                 {/* 1. Ce e + Locație */}
                 <div style={{marginBottom:16,padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -5049,8 +5143,8 @@ function App() {
                 </div>
               </>}
 
-              {/* OFERTĂ REALIZATĂ + FIȘA — când plata_avans (nu confirmat) */}
-              {!isConfirmed&&(ev.st==="plata_avans")&&<>
+              {/* OFERTĂ REALIZATĂ — înlocuit de tab-uri */}
+              {false&&!isConfirmed&&(ev.st==="plata_avans")&&<>
                 {/* 0. Plăți */}
                 <div style={{marginBottom:14,display:"flex",gap:10}}>
                   <div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd?{st:"confirmat"}:{})});showToast(nd?"Avans încasat ✓ — eveniment confirmat":"Avans: neîncasat");}} style={{flex:1,padding:12,borderRadius:10,border:`2px solid ${ev.dp?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.dp?"rgba(34,197,94,.06)":"transparent",transition:"all .15s"}}>
@@ -5149,13 +5243,12 @@ function App() {
                 </div>
               </div>}
 
-              <div style={{display:"flex",gap:4,justifyContent:mob?"center":"flex-end",flexWrap:"wrap",marginTop:16,paddingTop:12,borderTop:`1px solid ${th.b}`}}>
+              {!(ev.st==="plata_avans"||isConfirmed)&&<div style={{display:"flex",gap:4,justifyContent:mob?"center":"flex-end",flexWrap:"wrap",marginTop:16,paddingTop:12,borderTop:`1px solid ${th.b}`}}>
                 <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",ev.id),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
                 {["asteptare","plata_avans","confirmat"].includes(ev.st)&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>}
                 {(isConfirmed||ev.st==="plata_avans")&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",ev.id),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>}
-                {p.e&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("form",ev.id),80);}} style={sty.bg}><IcEdit s={13}/> Editează</button>}
                 {p.d&&<button onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
-              </div>
+              </div>}
             </div>
           </div>
         </div>;
