@@ -4840,7 +4840,39 @@ function App() {
       {modal==="finance"&&(()=>{
         if(!mData) return null;
         const ev=mData;
-        const upd=(patch)=>setEvs(p=>p.map(e=>e.id===ev.id?{...e,...patch}:e));
+        // Auto-calculates shares on every update — no "Aplică" needed
+        const calcShares=(e)=>{
+          const C=e.cursLei||CURS_DEFAULT;const isP=e.cat==="private";
+          const svcT=Object.entries(e.svcp||{}).reduce((s,[k,v])=>s+(e.svc?.[k]?v:0),0);
+          const tot=(e.fee||0)+svcT;const d=e.dep||0;const r=tot-d;
+          const avF=e.avFirma??(e.payType==="firma");const rF=e.restFirma??(e.payType==="firma");
+          const impV=Math.round(((avF?d:0)+(rF?r:0))*0.01*100)/100;
+          const fc={...DEFAULT_FIXED_COSTS,...(e.fixedCosts||{})};
+          const fcL=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0);
+          const fcE=fcL/C;const fc16=rF?Math.round(fcE*0.16*100)/100:0;
+          const net=Math.max(0,tot-impV-fcE-fc16);
+          const f5=Math.round(net*0.05*100)/100;const dF=net-f5;
+          const d16=rF?Math.round(dF*0.16*100)/100:0;const dD=dF-d16;
+          const lPct=isP?0.02:0.01;
+          const lAmt=(e.leadId||e.leadCustom)?Math.round(dD*lPct*100)/100:0;
+          const aAmt=e.adminId?Math.round(dD*0.02*100)/100:0;
+          const sAmt=Math.round(dD*0.02*100)/100;
+          const stAmt=e.stageId?Math.round(dD*0.02*100)/100:0;
+          const pool=Math.max(0,dD-lAmt-aAmt-sAmt-stAmt);
+          const sh={};
+          MEMBERS.forEach(m=>{sh[m.id]=isP?Math.round(pool*(SPLIT_PRIVATE[m.id]||0)/100*100)/100:Math.round(pool/5*100)/100;});
+          if(e.leadId&&!e.leadCustom)sh[e.leadId]=(sh[e.leadId]||0)+lAmt;
+          if(e.adminId)sh[e.adminId]=(sh[e.adminId]||0)+aAmt;
+          sh["m1"]=(sh["m1"]||0)+sAmt;
+          if(e.stageId)sh[e.stageId]=(sh[e.stageId]||0)+stAmt;
+          const out={};Object.entries(sh).forEach(([k,v])=>{out[k]=Math.round(v*100)/100;});
+          return out;
+        };
+        const upd=(patch)=>setEvs(p=>p.map(e=>{
+          if(e.id!==ev.id)return e;
+          const ne={...e,...patch};
+          return {...ne,sp:calcShares(ne)};
+        }));
         const CURS=ev.cursLei||CURS_DEFAULT;
         const isPrivate=ev.cat==="private";
         // Partial firmă: avans și/sau rest separat
@@ -5067,9 +5099,8 @@ function App() {
 
               {/* Split per membru */}
               <div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{marginBottom:8}}>
                   <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Total per membru</div>
-                  <button onClick={()=>{const sp={};MEMBERS.forEach(m=>{sp[m.id]=Math.round(shares[m.id]*100)/100;});upd({sp});showToast("Split aplicat ✓");}} style={{...sty.b,fontSize:10,padding:"3px 10px"}}>Aplică →</button>
                 </div>
                 {MEMBERS.map(m=>(
                   <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:`1px solid ${th.bl}`}}>
