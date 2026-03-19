@@ -3838,7 +3838,7 @@ function App() {
                   <div key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:7,marginBottom:3,cursor:"pointer",borderLeft:"3px solid #22c55e"}}
                     onMouseOver={e=>e.currentTarget.style.background=th.h}
                     onMouseOut={e=>e.currentTarget.style.background="transparent"}>
-                    <div><div style={{fontSize:12,fontWeight:600}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</div><div style={{fontSize:10,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</div></div>
+                    <div><div style={{fontSize:12,fontWeight:600}}>{ev.type||"—"}</div><div style={{fontSize:10,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</div></div>
                     <div style={{textAlign:"right",flexShrink:0,marginLeft:8}}><div style={{fontSize:11,fontWeight:600}}>{fD(ev.date)}</div><div style={{fontSize:10,color:th.tm}}>în {dU(ev.date)}z</div></div>
                   </div>
                 )}
@@ -3899,18 +3899,17 @@ function App() {
                 <table style={{width:"100%"}}>
                   <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
                     {(p.d||p.e)&&<th style={{padding:"9px 12px",width:36}}><input type="checkbox" checked={fEvs.length>0&&fEvs.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=fEvs.map(e=>e.id);const all=fEvs.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}
-                    {["Client","Dată","Locație","Sumă","Status"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
+                    {["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
                   </tr></thead>
                   <tbody>{fEvs.map(ev=>
                     <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer",background:selectedEvIds.includes(ev.id)?th.ab:"transparent"}}
                       onMouseOver={e=>{if(!selectedEvIds.includes(ev.id))e.currentTarget.style.background=th.h}}
                       onMouseOut={e=>{if(!selectedEvIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
                       {(p.d||p.e)&&<td style={{padding:"9px 12px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedEvIds.includes(ev.id)} onChange={()=>setSelectedEvIds(s=>s.includes(ev.id)?s.filter(x=>x!==ev.id):[...s,ev.id])} style={{cursor:"pointer"}}/></td>}
-                      <td style={{padding:"9px 12px"}}><div style={{fontSize:12,fontWeight:600}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</div></td>
                       <td style={{padding:"9px 12px",fontSize:11}}>{fD(ev.date)}</td>
-                      <td style={{padding:"9px 12px",fontSize:11}}>{ev.venue}{ev.city?", "+ev.city:""}</td>
-                      <td style={{padding:"9px 12px",fontSize:12,fontWeight:600}}>{ev.fee?f$(ev.fee):"—"}</td>
-                      <td style={{padding:"9px 12px"}} onClick={e=>e.stopPropagation()}><BadgeStatusSelect s={ev.st} th={th} evId={ev.id} onStatusChange={(id,st)=>{updSt(id,st);}}/></td>
+                      <td style={{padding:"9px 12px"}}><div style={{fontSize:12,fontWeight:600}}>{ev.type||"—"}</div></td>
+                      <td style={{padding:"9px 12px",fontSize:11}}>{ev.cn||(ev.cat==="private"?"Privat":"Public")||"—"}</td>
+                      <td style={{padding:"9px 12px",fontSize:11}}>{[ev.venue,ev.city].filter(Boolean).join(", ")||"—"}</td>
                     </tr>
                   )}</tbody>
                 </table>
@@ -3922,16 +3921,16 @@ function App() {
               <div style={{...sty.cd,padding:0,overflow:"hidden",marginBottom:20}}>
                 {viitoare.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Niciun eveniment confirmat viitor</div>}
                 {viitoare.length>0&&<table style={{width:"100%"}}>
-                  <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>{(p.d||p.e)&&<th style={{padding:"10px 14px",width:36}}><input type="checkbox" checked={viitoare.length>0&&viitoare.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=viitoare.map(e=>e.id);const all=viitoare.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}{["Ofertă","Dată","Locație","Sumă"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}{p.e&&<th style={{width:44}}/>}</tr></thead>
+                  <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>{(p.d||p.e)&&<th style={{padding:"10px 14px",width:36}}><input type="checkbox" checked={viitoare.length>0&&viitoare.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=viitoare.map(e=>e.id);const all=viitoare.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}{["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}{p.e&&<th style={{width:44}}/>}</tr></thead>
                   <tbody>{viitoare.map((ev,i)=>
                     <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:i<viitoare.length-1?`1px solid ${th.bl}`:"none",cursor:"pointer",background:selectedEvIds.includes(ev.id)?th.ab:"transparent"}}
                       onMouseOver={e=>{if(!selectedEvIds.includes(ev.id))e.currentTarget.style.background=th.h}}
                       onMouseOut={e=>{if(!selectedEvIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
                       {(p.d||p.e)&&<td style={{padding:"10px 14px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedEvIds.includes(ev.id)} onChange={()=>setSelectedEvIds(s=>s.includes(ev.id)?s.filter(x=>x!==ev.id):[...s,ev.id])} style={{cursor:"pointer"}}/></td>}
-                      <td style={{padding:"10px 14px"}}><div style={{fontSize:13,fontWeight:700}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</div><div style={{fontSize:10,color:th.tm}}>{ev.cat==="private"?"ZGV":"PHASER"}</div></td>
                       <td style={{padding:"10px 14px",fontSize:11}}>{fD(ev.date)}<div style={{fontSize:10,color:"#22c55e",fontWeight:600}}>în {dU(ev.date)} zile</div></td>
+                      <td style={{padding:"10px 14px"}}><div style={{fontSize:13,fontWeight:700}}>{ev.type||"—"}</div></td>
+                      <td style={{padding:"10px 14px",fontSize:11}}>{ev.cn||(ev.cat==="private"?"Privat":"Public")||"—"}</td>
                       <td style={{padding:"10px 14px",fontSize:11,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</td>
-                      <td style={{padding:"10px 14px",fontSize:13,fontWeight:700}}>{f$(ev.fee)}</td>
                       {p.e&&<td style={{padding:"10px 14px"}} onClick={e=>e.stopPropagation()}><button onClick={()=>openModal("form",ev.id)} style={{padding:4,borderRadius:4,border:`1px solid ${th.b}`,background:"transparent",color:th.tm,cursor:"pointer"}}><IcEdit s={13}/></button></td>}
                     </tr>
                   )}</tbody>
@@ -3942,16 +3941,16 @@ function App() {
               <div style={{...sty.cd,padding:0,overflow:"hidden"}}>
                 {trecute.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Niciun eveniment trecut</div>}
                 {trecute.length>0&&<table style={{width:"100%"}}>
-                  <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>{(p.d||p.e)&&<th style={{padding:"10px 14px",width:36}}><input type="checkbox" checked={trecute.length>0&&trecute.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=trecute.map(e=>e.id);const all=trecute.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}{["Ofertă","Dată","Locație","Sumă"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}</tr></thead>
+                  <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>{(p.d||p.e)&&<th style={{padding:"10px 14px",width:36}}><input type="checkbox" checked={trecute.length>0&&trecute.every(e=>selectedEvIds.includes(e.id))} onChange={()=>{const ids=trecute.map(e=>e.id);const all=trecute.every(e=>selectedEvIds.includes(e.id));setSelectedEvIds(all?selectedEvIds.filter(id=>!ids.includes(id)):[...new Set([...selectedEvIds,...ids])]);}} style={{cursor:"pointer"}}/></th>}{["Data","Tipul evenimentului","Specificul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}</tr></thead>
                   <tbody>{trecute.map((ev,i)=>
                     <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:i<trecute.length-1?`1px solid ${th.bl}`:"none",cursor:"pointer",opacity:.7,background:selectedEvIds.includes(ev.id)?th.ab:"transparent"}}
                       onMouseOver={e=>{e.currentTarget.style.opacity="1";if(!selectedEvIds.includes(ev.id))e.currentTarget.style.background=th.h}}
                       onMouseOut={e=>{e.currentTarget.style.opacity=".7";if(!selectedEvIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
                       {(p.d||p.e)&&<td style={{padding:"10px 14px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedEvIds.includes(ev.id)} onChange={()=>setSelectedEvIds(s=>s.includes(ev.id)?s.filter(x=>x!==ev.id):[...s,ev.id])} style={{cursor:"pointer"}}/></td>}
-                      <td style={{padding:"10px 14px"}}><div style={{fontSize:13,fontWeight:600}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</div></td>
                       <td style={{padding:"10px 14px",fontSize:11}}>{fD(ev.date)}</td>
+                      <td style={{padding:"10px 14px"}}><div style={{fontSize:13,fontWeight:600}}>{ev.type||"—"}</div></td>
+                      <td style={{padding:"10px 14px",fontSize:11}}>{ev.cn||(ev.cat==="private"?"Privat":"Public")||"—"}</td>
                       <td style={{padding:"10px 14px",fontSize:11,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</td>
-                      <td style={{padding:"10px 14px",fontSize:13,fontWeight:700}}>{f$(ev.fee)}</td>
                     </tr>
                   )}</tbody>
                 </table>}
@@ -4581,26 +4580,39 @@ function App() {
               const totAdmin=paid.reduce((s,e)=>s+memberDetail(e,finMember).admin,0);
               const totSocial=paid.reduce((s,e)=>s+memberDetail(e,finMember).social,0);
               const totStage=paid.reduce((s,e)=>s+memberDetail(e,finMember).stage,0);
-              const EvRow=({ev,isPaid})=>{
-                const d=memberDetail(ev,finMember);
-                if(d.total<=0) return null;
-                return <div style={{padding:"12px 14px",borderRadius:10,background:th.h,border:`1px solid ${isPaid?"rgba(34,197,94,.2)":th.bl}`,marginBottom:8,cursor:"pointer"}} onClick={()=>openModal("detail",ev.id)}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                    <div style={{flex:1,minWidth:0,paddingRight:10}}>
-                      <div style={{fontSize:13,fontWeight:600}}>{ev.cn||ev.name||"Eveniment"}</div>
-                      <div style={{fontSize:11,color:th.tm}}>{fD2(ev.date)} · {ev.cat==="private"?"Privat":"Public"} · Total: {fv2((ev.fee||0))}</div>
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontSize:16,fontWeight:800,color:isPaid?"#22c55e":"#f59e0b"}}>{fv2(d.total)}</div>
-                      <div style={{fontSize:9,color:th.tm}}>{isPaid?"✅ primit":"⏳ în așteptare"}</div>
-                    </div>
+              const totBaseAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).base,0);
+              const totLeadAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).lead,0);
+              const totAdminAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).admin,0);
+              const totSocialAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).social,0);
+              const totStageAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).stage,0);
+              const ROLES=[{k:"base",l:"🎵 Cantat",c:"#a5b4fc",bg:"rgba(99,102,241,.15)"},{k:"lead",l:"⭐ Lead",c:"#fbbf24",bg:"rgba(245,158,11,.15)"},{k:"admin",l:"🗂 Admin",c:"#fbbf24",bg:"rgba(245,158,11,.15)"},{k:"social",l:"📱 Social Media Mgr",c:"#c4b5fd",bg:"rgba(139,92,246,.15)"},{k:"stage",l:"🎭 Stage Mgr",c:"#fbbf24",bg:"rgba(245,158,11,.15)"}];
+              const RoleSection=({roleKey,roleLabel,roleColor,roleBg,tot})=>{
+                const evsForRole=allEvs.filter(ev=>{const d=memberDetail(ev,finMember);return d[roleKey]>0;});
+                if(evsForRole.length===0) return null;
+                return <div style={{...sty.cd,marginBottom:16,border:`1px solid ${roleBg.replace(".15",".3")}`}}>
+                  <div style={{fontSize:11,color:roleColor,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span>{roleLabel}</span>
+                    <span style={{fontSize:14,fontWeight:800}}>{fv2(tot)}</span>
                   </div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                    {d.base>0&&<span style={{fontSize:11,padding:"3px 10px",borderRadius:12,background:"rgba(99,102,241,.15)",color:"#a5b4fc"}}>🎵 Cantat: {fv2(d.base)}</span>}
-                    {d.lead>0&&<span style={{fontSize:11,padding:"3px 10px",borderRadius:12,background:"rgba(245,158,11,.15)",color:"#fbbf24"}}>⭐ Lead: {fv2(d.lead)}</span>}
-                    {d.admin>0&&<span style={{fontSize:11,padding:"3px 10px",borderRadius:12,background:"rgba(245,158,11,.15)",color:"#fbbf24"}}>🗂 Admin: {fv2(d.admin)}</span>}
-                    {d.social>0&&<span style={{fontSize:11,padding:"3px 10px",borderRadius:12,background:"rgba(139,92,246,.15)",color:"#c4b5fd"}}>📱 Social Media Mgr: {fv2(d.social)}</span>}
-                    {d.stage>0&&<span style={{fontSize:11,padding:"3px 10px",borderRadius:12,background:"rgba(245,158,11,.15)",color:"#fbbf24"}}>🎭 Stage Mgr: {fv2(d.stage)}</span>}
+                  <div style={{overflow:"auto"}}>
+                    <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+                      <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
+                        {["Data","Tipul","Specificul","Descriere","Suma","Status"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>{evsForRole.map(ev=>{
+                        const d=memberDetail(ev,finMember); const amt=d[roleKey];
+                        if(amt<=0) return null;
+                        const spec=ev.cn||(ev.cat==="private"?"Privat":"Public")||"—";
+                        return <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer"}} onMouseOver={e=>e.currentTarget.style.background=th.h} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                          <td style={{padding:"8px 10px"}}>{fD2(ev.date)}</td>
+                          <td style={{padding:"8px 10px"}}>{ev.type||"—"}</td>
+                          <td style={{padding:"8px 10px",color:th.tm}}>{spec}</td>
+                          <td style={{padding:"8px 10px",fontSize:11,color:th.tm,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={ev.desc||""}>{ev.desc||"—"}</td>
+                          <td style={{padding:"8px 10px",fontWeight:700,color:roleColor}}>{fv2(amt)}</td>
+                          <td style={{padding:"8px 10px",fontSize:10,color:ev.restPaid?"#22c55e":"#f59e0b"}}>{ev.restPaid?"✅ primit":"⏳ în așteptare"}</td>
+                        </tr>;
+                      })}</tbody>
+                    </table>
                   </div>
                 </div>;
               };
@@ -4655,14 +4667,7 @@ function App() {
                     </div>}
                   </div>
                 </div>}
-                {waiting.length>0&&<div style={{marginBottom:16}}>
-                  <div style={{fontSize:11,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>⏳ Confirmate — în așteptarea plății</div>
-                  {waiting.map(ev=><EvRow key={ev.id} ev={ev} isPaid={false}/>)}
-                </div>}
-                {paid.length>0&&<div>
-                  <div style={{fontSize:11,color:"#22c55e",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>✅ Evenimente plătite</div>
-                  {paid.map(ev=><EvRow key={ev.id} ev={ev} isPaid={true}/>)}
-                </div>}
+                {ROLES.map(r=><RoleSection key={r.k} roleKey={r.k} roleLabel={r.l} roleColor={r.c} roleBg={r.bg} tot={{base:totBaseAll,lead:totLeadAll,admin:totAdminAll,social:totSocialAll,stage:totStageAll}[r.k]}/>)}
                 {allEvs.length===0&&<div style={{padding:40,textAlign:"center",color:th.tm,fontSize:13}}>Niciun eveniment confirmat încă</div>}
               </div>;
             }
@@ -4692,6 +4697,18 @@ function App() {
                   })}
                 </div>
               </div>
+
+            {/* Cheltuieli generale — scad din profit net */}
+            <div style={{...sty.cd,marginTop:16,border:genExp.length>0?`1px solid rgba(239,68,68,.3)`:"none"}}>
+              <div style={{marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                <div style={{fontSize:13,fontWeight:600}}>Cheltuieli generale</div>
+                {genExp.length>0&&<button onClick={()=>{if(window.confirm("Ștergi toate cheltuielile generale? Profitul net va fi recalculat.")){setGE([]);showToast("Cheltuieli generale șterse");}}} style={{padding:"5px 12px",fontSize:11,borderRadius:7,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer",fontWeight:600}}>Șterge toate</button>}
+              </div>
+              <p style={{fontSize:11,color:th.tm,marginBottom:10}}>Cheltuieli neprevăzute (asigurări, etc.) — scad din Profit net</p>
+              {genExp.length===0&&<div style={{padding:20,textAlign:"center",color:th.tm,fontSize:11}}>Nicio cheltuială generală</div>}
+              {genExp.length>0&&<table style={{width:"100%",fontSize:12}}><thead><tr style={{borderBottom:`1px solid ${th.b}`}}><th style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Perioadă</th><th style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Descriere</th><th style={{padding:"8px 10px",textAlign:"right",fontSize:9,color:th.tm,textTransform:"uppercase"}}>Sumă</th><th style={{width:36}}/></tr></thead><tbody>{genExp.map((g,i)=><tr key={g.id||i} style={{borderBottom:`1px solid ${th.bl}`}}><td style={{padding:"8px 10px"}}>{g.d||"—"}</td><td style={{padding:"8px 10px",color:th.tm}}>{g.desc||"—"}</td><td style={{padding:"8px 10px",textAlign:"right",fontWeight:600,color:"#ef4444"}}>-{f$((g.a||0))}</td><td style={{padding:"4px"}}><button onClick={()=>{setGE(genExp.filter((_,j)=>j!==i));showToast("Cheltuială ștearsă");}} style={{padding:4,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer"}}>✕</button></td></tr>)}</tbody></table>}
+              <button onClick={()=>{const d=prompt("Perioadă (ex: 2025-01 sau descriere):");const desc=prompt("Descriere:");const a=Number(prompt("Sumă €:")||0);if(d!==null&&a)setGE([...genExp,{id:uid(),d,desc:desc||"",a}]);}} style={{...sty.bg,fontSize:11,padding:"5px 10px",marginTop:10}}>+ Adaugă</button>
+            </div>
 
             <div style={{...sty.cd,marginTop:16}}>
               <div style={{marginBottom:12}}>
@@ -4838,6 +4855,7 @@ function App() {
         const isConfirmed = ev.st==="confirmat";
         const updEv = (patch)=>setEvs(p=>p.map(e=>e.id===ev.id?{...e,...patch}:e));
         const canToggleAvans = ["plata_avans","confirmat"].includes(ev.st);
+        const SVC_LABELS = {sunet:"Sistem sunet",lumini:"Sistem lumini",ecran:"Ecran LED",scena:"Scenă/Podium",dj:"DJ"};
         return <div style={{position:"fixed",inset:0,background:th.ov,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={closeModal}>
           <div style={{background:th.c,border:`1px solid ${th.b}`,borderRadius:mob?0:14,width:mob?"100%":600,maxHeight:mob?"100vh":"88vh",height:mob?"100vh":"auto",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{padding:"18px 22px",borderBottom:`1px solid ${th.b}`}}>
@@ -4848,7 +4866,7 @@ function App() {
                     <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:th.ab,color:th.tm,fontWeight:600}}>{isP?"Privat (ZGV)":"Public (PHASER)"}</span>
                     {ev.type&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:th.ab,color:th.tm}}>{ev.type}</span>}
                   </div>
-                  <div style={{fontSize:18,fontWeight:700,marginBottom:2}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</div>
+                  <div style={{fontSize:18,fontWeight:700,marginBottom:2}}>{isConfirmed?ev.type:((ev.offerNr?"O"+ev.offerNr:"???")+" · "+(ev.type||""))}</div>
                   <div style={{fontSize:11,color:th.tm}}>{fD(ev.date)} · {ev.venue}{ev.city?", "+ev.city:""}</div>
                   {(ev.responsabilPrincipal||(ev.responsabili||[]).length>0)&&<div style={{fontSize:10,color:th.tm,marginTop:4}}>Preluat: {ev.responsabilPrincipal||"—"} {(ev.responsabili||[]).length>0&&` · ${(ev.responsabili||[]).filter(r=>r.nume||r.rol).map(r=>r.nume+(r.rol?" ("+r.rol+")":"")).join(", ")}`}</div>}
                 </div>
@@ -4857,11 +4875,61 @@ function App() {
             </div>
             <div style={{padding:"16px 22px"}} onClick={e=>e.stopPropagation()}>
 
-              {/* OFERTĂ REALIZATĂ + FIȘA — când confirmat sau plata_avans */}
-              {(isConfirmed||ev.st==="plata_avans")&&<>
-                {/* 0. Plăți — doar când confirmat */}
-                {isConfirmed&&<div style={{marginBottom:14,display:"flex",gap:10}}>
-                  <div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd&&ev.st==="plata_avans"?{st:"confirmat"}:{})});showToast(nd?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");}} style={{flex:1,padding:12,borderRadius:10,border:`2px solid ${ev.dp?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.dp?"rgba(34,197,94,.06)":"transparent",transition:"all .15s"}}>
+              {/* VISTA SIMPLIFICATĂ — când eveniment confirmat: doar ce e, locație, servicii, fișă, client */}
+              {isConfirmed&&<>
+                {/* 1. Ce e + Locație */}
+                <div style={{marginBottom:16,padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div><div style={{fontSize:9,color:th.tm,textTransform:"uppercase",marginBottom:2}}>Tip eveniment</div><div style={{fontSize:15,fontWeight:700}}>{ev.type||"—"}</div></div>
+                    <div><div style={{fontSize:9,color:th.tm,textTransform:"uppercase",marginBottom:2}}>Locație</div><div style={{fontSize:13,fontWeight:600}}>{ev.venue||"—"}{ev.city?", "+ev.city:""}</div></div>
+                  </div>
+                </div>
+                {/* 2. Servicii */}
+                {ev.svc&&Object.keys(ev.svc).some(k=>ev.svc[k])&&<div style={{marginBottom:16,padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+                  <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Servicii</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {["sunet","lumini","ecran","scena","dj"].filter(k=>ev.svc?.[k]).map(k=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12}}>{SVC_LABELS[k]||k}</span><span style={{fontSize:12,fontWeight:600}}>{fFmt(ev.svcp?.[k]||0,ev.valuta)}</span></div>)}
+                  </div>
+                </div>}
+                {/* 3. Fișa evenimentului */}
+                <div style={{marginBottom:16,padding:16,borderRadius:10,background:th.h,border:`2px solid #22c55e`}}>
+                  <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12,color:"#22c55e",display:"flex",alignItems:"center",gap:6}}>
+                    <IcDoc s={14}/> Fișa evenimentului
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing tehnic</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                      {[{l:"Load In",v:ev.li,i:"📦"},{l:"Soundcheck",v:ev.sc,i:"🎛"},{l:"Show Start",v:ev.ss,i:"🎤"},{l:"Load Out",v:ev.lo,i:"🚐"}].map((x,i)=>
+                        <div key={i} style={{padding:10,borderRadius:8,background:th.c,textAlign:"center",border:`1px solid ${th.b}`}}>
+                          <div style={{fontSize:14,marginBottom:3}}>{x.i}</div>
+                          <div style={{fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{x.l}</div>
+                          <div style={{fontSize:15,fontWeight:800,color:x.v?th.t:th.tm}}>{x.v||"—"}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:9,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing show</div>
+                    <div style={{padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
+                      {(ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs : Array(ev.rep||1).fill(ev.repDur||45)).map((d,i)=><span key={i} style={{padding:"4px 10px",borderRadius:6,background:th.ab,fontSize:11,fontWeight:600,marginRight:6,marginBottom:4,display:"inline-block"}}>R{i+1}: {d} min</span>)}
+                      {(!ev.repDurs||ev.repDurs.length===0)&&(!ev.rep||ev.rep<2)&&<span style={{fontSize:11,color:th.tm}}>{(ev.rep||1)} repriză × {(ev.repDur||45)} min</span>}
+                    </div>
+                  </div>
+                </div>
+                {/* 4. Client */}
+                <div style={{marginBottom:16,padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
+                  <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Client</div>
+                  <div style={{fontSize:14,fontWeight:600}}>{ev.cn||"—"}</div>
+                  {ev.cp&&<div style={{fontSize:11,color:th.ts,marginTop:2}}>{ev.cp}</div>}
+                  {ev.ce&&<div style={{fontSize:11,color:th.ts}}>{ev.ce}</div>}
+                </div>
+              </>}
+
+              {/* OFERTĂ REALIZATĂ + FIȘA — când plata_avans (nu confirmat) */}
+              {!isConfirmed&&(ev.st==="plata_avans")&&<>
+                {/* 0. Plăți */}
+                <div style={{marginBottom:14,display:"flex",gap:10}}>
+                  <div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd?{st:"confirmat"}:{})});showToast(nd?"Avans încasat ✓ — eveniment confirmat":"Avans: neîncasat");}} style={{flex:1,padding:12,borderRadius:10,border:`2px solid ${ev.dp?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.dp?"rgba(34,197,94,.06)":"transparent",transition:"all .15s"}}>
                     <div style={{fontSize:18,marginBottom:4}}>{ev.dp?"✅":"⬜"}</div>
                     <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Platit avans</div>
                     <div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep||0,ev.valuta)}</div>
@@ -4871,8 +4939,7 @@ function App() {
                     <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Platit integral</div>
                     <div style={{fontSize:14,fontWeight:700,color:ev.restPaid?"#22c55e":"#ef4444"}}>{fFmt(Math.max(0,(ev.fee||0)+svc-(ev.dep||0)),ev.valuta)}</div>
                   </div>
-                </div>}
-                {/* 1. Ofertă realizată — read-only, fără media/playlist */}
+                </div>
                 <div style={{marginBottom:16,padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`,opacity:0.95}}>
                   <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Ofertă realizată</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -4944,8 +5011,8 @@ function App() {
                   </div>
               </>}
 
-              {/* Dacă NU e confirmat — arată info basic */}
-              {!isConfirmed&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+              {/* Dacă NU e confirmat și NU e plata_avans — arată info basic (oferta/asteptare) */}
+              {!isConfirmed&&ev.st!=="plata_avans"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
                 <div style={{padding:12,borderRadius:7,background:th.h}}>
                   <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",marginBottom:5}}>Client</div>
                   <div style={{fontSize:13,fontWeight:600}}>{ev.cn||"—"}</div>
@@ -4958,25 +5025,8 @@ function App() {
                 </div>
               </div>}
 
-              <div style={{display:"flex",gap:5,justifyContent:mob?"center":"flex-end",flexWrap:"wrap",marginTop:8}}>
+              <div style={{display:"flex",gap:8,justifyContent:mob?"center":"flex-end",flexWrap:"wrap",marginTop:16,paddingTop:12,borderTop:`1px solid ${th.b}`}}>
                 <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",ev.id),80);}} style={sty.b}><IcFile s={13}/> Ofertă</button>
-                <button onClick={()=>{
-                  const printWin = window.open("","_blank","width=820,height=1000");
-                  if(!printWin){alert("Blocatorul de pop-up a blocat fereastra. Permiteți pop-up-urile pentru acest site și încercați din nou.");return;}
-                  closeModal();
-                  setTimeout(()=>{
-                    openModal("oferta",ev.id);
-                    setTimeout(()=>{
-                      const offerEl = document.getElementById("offer-print-content");
-                      if(!offerEl){printWin.close();return;}
-                      const iframeRepl=(html)=>{return html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi,function(m){var s=(m.match(/src="([^"]*)"/)||[])[1]||'';var vid=(s.match(/embed\/([^"?&\/]+)/)||[])[1]||'';if(!vid)return '';return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';});};
-                      const absImgSrc=(html)=>{const base=window.location.href; return html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi,function(_,rest,src){if(!src||src.startsWith('data:')||/^https?:\/\//i.test(src))return '<img'+rest+' src="'+src+'"'; try{return '<img'+rest+' src="'+new URL(src,base).href+'"';}catch(e){return '<img'+rest+' src="'+src+'"';}});};
-                      let pHtml=absImgSrc(iframeRepl(offerEl.innerHTML));
-                      printWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${window.location.href}"><title>O${ev.offerNr||"?"} (Event ${ev.date?ev.date.split('-').reverse().join('-'):""})</title><style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f4f4;padding:32px}@media print{body{padding:0;background:#f4f4f4}@page{margin:0.5cm}}img{max-width:100%;height:auto}.print-break{break-before:page!important;page-break-before:always!important}</style></head><body>${pHtml}<script>window.onload=function(){setTimeout(function(){window.print();},800);}<\/script></body></html>`);
-                      printWin.document.close();
-                    }, 400);
-                  }, 80);
-                }} style={{...sty.bg,background:"#fbbf24",color:"#111",borderColor:"#fbbf24",fontWeight:700}}>↑ Trimite PDF</button>
                 {(isConfirmed||ev.st==="plata_avans")&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",ev.id),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>}
                 {p.e&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("form",ev.id),80);}} style={sty.bg}><IcEdit s={13}/> Editează</button>}
                 {p.d&&<button onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
