@@ -1378,6 +1378,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   const [localSt, setLocalSt] = useState(evStatus);
   const [playlistSearch, setPlaylistSearch] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [linkState, setLinkState] = useState({url:null, show:false, loading:false, copied:false});
   const [contractFields, setContractFields] = useState({
     nr:"", dataSemnare:"", clientNume:ev.cn||"", clientEmail:ev.ce||"", clientTel:ev.cp||"",
     jud:"", mun:"", str:"", nr2:"", ap:"", ciSeria:"", ciNr:"", cnp:"",
@@ -1400,7 +1401,13 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     onStatusChange(ev.id, k);
   };
 
-  const getPdfFilename = (kind) => kind==="fisa" ? `Fisa-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf` : kind==="contract" ? `Contract-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf` : `Oferta-O${ev.offerNr||"?"}-${(ev.date||"").split("-").reverse().join("-")||"event"}.pdf`;
+  const getPdfFilename = (kind) => {
+    const dateStr = (ev.date||"").split("-").reverse().join("-") || "event";
+    const evType = (ev.type||"Event").replace(/\s+/g,"-");
+    if (kind==="fisa")     return `Fisa-${evType}-${dateStr}.pdf`;
+    if (kind==="contract") return `Contract-O${ev.offerNr||"?"}-${dateStr}.pdf`;
+    return `Oferta-O${ev.offerNr||"?"}-${dateStr}.pdf`;
+  };
 
   const getContractHtmlForWorker = () => {
     const el = document.getElementById("contract-print-content");
@@ -1717,6 +1724,35 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     } catch(e) { if(e?.name!=="AbortError") { showToast&&showToast("Eroare la distribuire"); console.error(e); } }
     setPdfLoading(false);
   };
+
+  const handleGetOfferLink = async () => {
+    // Dacă avem deja link-ul generat, toggle panelul
+    if (linkState.url) { setLinkState(s=>({...s, show:!s.show})); return; }
+    const sb = typeof getSbClient==="function" ? getSbClient() : null;
+    if (!sb) { showToast&&showToast("Link partajabil necesită Supabase configurat.","error"); return; }
+    setLinkState(s=>({...s, loading:true}));
+    try {
+      let html;
+      if (tab==="contract") html = getContractHtmlForWorker();
+      else html = getOfferHtmlForWorker();
+      const fid = uid();
+      const prefix = tab==="contract" ? "contract" : "offer";
+      const path = `${prefix}-${fid}.html`;
+      const { error } = await sb.storage.from("fisa-public").upload(path, html, {contentType:"text/html; charset=utf-8", upsert:true});
+      if (error) throw error;
+      const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
+      setLinkState({url:publicUrl, show:true, loading:false, copied:false});
+      showToast&&showToast("Link generat ✓");
+    } catch(e) {
+      const raw=(e?.message||"").trim();
+      const msg=/bucket not found/i.test(raw)
+        ? "Bucket „fisa-public" lipsă în Supabase. Dashboard → Storage → New bucket: id „fisa-public", Public."
+        : ("Eroare: "+(raw||"Upload eșuat"));
+      showToast&&showToast(msg,"error");
+      setLinkState(s=>({...s, loading:false}));
+    }
+  };
+
   const copyOffer = async () => {
     const lines = ["PHASER MUSIC SRL","═══════════════════════════════","","OFERTĂ",""];
     if(ev.desc) lines.push(ev.desc,"");
@@ -1763,46 +1799,27 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             <button onClick={handleDownloadPdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
               {pdfLoading?"⏳":"⬇"} Descarcă PDF
             </button>
-            {tab==="fisa" ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/> : <button onClick={handleSharePdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#fbbf24",color:"#111",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
-              {pdfLoading?"⏳":"📤"} Distribuie
-            </button>}
-            <button onClick={()=>{
-              const printWin = window.open("","_blank","width=820,height=1000");
-              if(!printWin){alert("Blocatorul de pop-up a blocat fereastra. Permiteți pop-up-urile pentru acest site și încercați din nou.");return;}
-              let pHtml; const iframeRepl=(html)=>{return html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi,function(m){var s=(m.match(/src="([^"]*)"/)||[])[1]||'';var vid=(s.match(/embed\/([^"?&\/]+)/)||[])[1]||'';if(!vid)return '';return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';});};
-              const absImgSrc=(html)=>{const base=window.location.href; return html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi,function(_,rest,src){if(!src||src.startsWith('data:')||/^https?:\/\//i.test(src))return '<img'+rest+' src="'+src+'"'; try{return '<img'+rest+' src="'+new URL(src,base).href+'"';}catch(e){return '<img'+rest+' src="'+src+'"';}});};
-              if(tab==="fisa"){
-                pHtml = absImgSrc(getFisaBodyHtmlForWorker(ev));
-              } else if(tab==="contract"){
-                const contractEl=document.getElementById("contract-print-content");
-                if(!contractEl){printWin.close();return;}
-                const clone=contractEl.cloneNode(true);
-                clone.querySelectorAll("input").forEach(inp=>{const span=document.createElement("span");span.style.cssText="border:none;border-bottom:1.5px solid #999;padding:1px 4px;font-size:13px;font-family:Georgia,serif;background:rgba(255,249,196,.6);color:#111";span.textContent=inp.value||inp.placeholder||"___";inp.parentNode.replaceChild(span,inp);});
-                pHtml=absImgSrc(clone.innerHTML);
-              } else {
-                const offerEl = document.getElementById("offer-print-content");
-                if(!offerEl){printWin.close();return;}
-                pHtml=absImgSrc(iframeRepl(offerEl.innerHTML));
-                if(!isPriv){
-                  const riderEl=document.getElementById("rider-print-content");
-                  const pkEl=document.getElementById("presskit-print-content");
-                  if(riderEl){pHtml+='<div class="print-break"></div>'+iframeRepl(riderEl.innerHTML);}
-                  if(pkEl){pHtml+='<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);}
-                }
-              }
-              const printTitle = tab==="fisa" ? "Fisa" : tab==="contract" ? "Contract" : ("O"+(ev.offerNr||"?"));
-              const printDate = ev.date ? ev.date.split('-').reverse().join('-') : "";
-              printWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${window.location.href}"><title>${printTitle} (${printDate})</title><style>
-                *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
-                body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f4f4;padding:32px}
-                @media print{body{padding:0;background:#f4f4f4}@page{margin:0.5cm}}
-                img{max-width:100%;height:auto}
-                .print-break{break-before:page!important;page-break-before:always!important}
-              </style></head><body>${pHtml}<script>window.onload=function(){setTimeout(function(){window.print();},800);}<\/script></body></html>`);
-              printWin.document.close();
-            }} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.4)",background:"transparent",color:"rgba(255,255,255,.9)",fontWeight:600,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-              ↑ Print
-            </button>
+            {tab==="fisa"
+              ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/>
+              : <div style={{position:"relative"}}>
+                  <button onClick={handleGetOfferLink} disabled={pdfLoading||linkState.loading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:linkState.show?"#2563eb":"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||linkState.loading)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||linkState.loading)?0.7:1}}>
+                    {linkState.loading?"⏳":"🔗"} Link
+                  </button>
+                  {linkState.show&&<><div style={{position:"fixed",inset:0,zIndex:49}} onClick={()=>setLinkState(s=>({...s,show:false}))}/><div style={{position:"absolute",top:"calc(100% + 10px)",right:0,background:"#1a1a1a",borderRadius:12,padding:14,width:mob?280:300,zIndex:50,boxShadow:"0 12px 32px rgba(0,0,0,.6)",border:"1px solid rgba(255,255,255,.12)"}}>
+                    <div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Link partajabil</div>
+                    <div style={{display:"flex",gap:6,marginBottom:10}}>
+                      <input value={linkState.url} readOnly onClick={e=>e.target.select()} style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"rgba(255,255,255,.6)",fontSize:10,fontFamily:"monospace",minWidth:0}}/>
+                      <button onClick={async()=>{try{await navigator.clipboard.writeText(linkState.url);}catch(e){const ta=document.createElement("textarea");ta.value=linkState.url;ta.style.cssText="position:fixed;opacity:0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}setLinkState(s=>({...s,copied:true}));setTimeout(()=>setLinkState(s=>({...s,copied:false})),2000);}} style={{padding:"6px 10px",borderRadius:6,border:"none",background:linkState.copied?"#22c55e":"#333",color:"#fff",fontSize:11,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap",fontWeight:600}}>
+                        {linkState.copied?"✓":"📋"}
+                      </button>
+                    </div>
+                    <a href={"https://wa.me/?text="+encodeURIComponent(linkState.url)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",borderRadius:8,background:"#25d366",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none",width:"100%"}}>
+                      <span style={{fontSize:16}}>💬</span> Trimite pe WhatsApp
+                    </a>
+                    <button onClick={()=>setLinkState(s=>({...s,show:false}))} style={{marginTop:8,width:"100%",padding:"5px",borderRadius:6,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"rgba(255,255,255,.4)",fontSize:11,cursor:"pointer"}}>Închide</button>
+                  </div></> }
+                </div>
+            }
             <button onClick={onClose} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={18}/></button>
           </div>
         </div>
@@ -2312,36 +2329,50 @@ function FisaPdfButton({ ev, showToast }) {
 // FisaLinkButton — generează link partajabil pentru fișa evenimentului (Supabase Storage)
 function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient }) {
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const handleCopyLink = async () => {
+  const [linkState, setLinkState] = useState({url:null, show:false, copied:false});
+  const handleGetLink = async () => {
+    if (linkState.url) { setLinkState(s=>({...s, show:!s.show})); return; }
     const sb = getSbClient?.();
-    if (!sb) { showToast?.("Link partajabil necesită Supabase. Configurează bucket-ul fisa-public."); return; }
+    if (!sb) { showToast?.(“Link partajabil necesită Supabase. Configurează bucket-ul fisa-public.”); return; }
     setLoading(true);
     try {
       const html = buildFisaHtml(ev);
       const fid = uid();
       const path = `fisa-${fid}.html`;
-      const { error } = await sb.storage.from("fisa-public").upload(path, html, { contentType: "text/html; charset=utf-8", upsert: true });
+      const { error } = await sb.storage.from(“fisa-public”).upload(path, html, { contentType: “text/html; charset=utf-8”, upsert: true });
       if (error) throw error;
-      const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
-      await navigator.clipboard.writeText(publicUrl);
-      setCopied(true); setTimeout(()=>setCopied(false), 2500);
-      showToast?.("Link copiat în clipboard ✓ Trimite-l oricui.");
+      const { data: { publicUrl } } = sb.storage.from(“fisa-public”).getPublicUrl(path);
+      setLinkState({url:publicUrl, show:true, copied:false});
+      showToast?.(“Link generat ✓”);
     } catch (e) {
-      console.error(e);
-      const raw = (e?.message || e?.error_description || "").trim();
-      const bucketMissing = /bucket not found/i.test(raw);
-      const msg = bucketMissing
-        ? "Bucket „fisa-public” nu există în Supabase. Dashboard → Storage → New bucket: id „fisa-public”, Public. Sau rulează secțiunea 3b din supabase-setup.sql (proiectul Phaser)."
-        : ("Eroare: " + (raw || "Upload eșuat."));
-      showToast?.(msg, "error");
+      const raw = (e?.message || e?.error_description || “”).trim();
+      const msg = /bucket not found/i.test(raw)
+        ? “Bucket „fisa-public” nu există în Supabase. Dashboard → Storage → New bucket: id „fisa-public”, Public.”
+        : (“Eroare: “ + (raw || “Upload eșuat.”));
+      showToast?.(msg, “error”);
     }
     setLoading(false);
   };
   return (
-    <button onClick={handleCopyLink} disabled={pdfLoading||loading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||loading)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||loading)?0.7:1}}>
-      {loading?"⏳":copied?"✓":"🔗"} {copied?"Copiat!":"Copiază link"}
-    </button>
+    <div style={{position:”relative”}}>
+      <button onClick={handleGetLink} disabled={pdfLoading||loading} style={{padding:”8px 16px”,borderRadius:8,border:”none”,background:linkState.show?”#2563eb”:”#3b82f6”,color:”#fff”,fontWeight:700,fontSize:12,cursor:(pdfLoading||loading)?”wait”:”pointer”,display:”flex”,alignItems:”center”,gap:6,opacity:(pdfLoading||loading)?0.7:1}}>
+        {loading?”⏳”:”🔗”} Link
+      </button>
+      {linkState.show&&<><div style={{position:”fixed”,inset:0,zIndex:49}} onClick={()=>setLinkState(s=>({...s,show:false}))}/>
+      <div style={{position:”absolute”,top:”calc(100% + 10px)”,right:0,background:”#1a1a1a”,borderRadius:12,padding:14,width:300,zIndex:50,boxShadow:”0 12px 32px rgba(0,0,0,.6)”,border:”1px solid rgba(255,255,255,.12)”}}>
+        <div style={{fontSize:10,color:”rgba(255,255,255,.5)”,marginBottom:8,fontWeight:600,textTransform:”uppercase”,letterSpacing:1}}>Link partajabil</div>
+        <div style={{display:”flex”,gap:6,marginBottom:10}}>
+          <input value={linkState.url} readOnly onClick={e=>e.target.select()} style={{flex:1,padding:”6px 8px”,borderRadius:6,border:”1px solid rgba(255,255,255,.15)”,background:”rgba(255,255,255,.06)”,color:”rgba(255,255,255,.6)”,fontSize:10,fontFamily:”monospace”,minWidth:0}}/>
+          <button onClick={async()=>{try{await navigator.clipboard.writeText(linkState.url);}catch(e){const ta=document.createElement(“textarea”);ta.value=linkState.url;ta.style.cssText=”position:fixed;opacity:0”;document.body.appendChild(ta);ta.select();document.execCommand(“copy”);document.body.removeChild(ta);}setLinkState(s=>({...s,copied:true}));setTimeout(()=>setLinkState(s=>({...s,copied:false})),2000);}} style={{padding:”6px 10px”,borderRadius:6,border:”none”,background:linkState.copied?”#22c55e”:”#333”,color:”#fff”,fontSize:11,cursor:”pointer”,flexShrink:0,fontWeight:600}}>
+            {linkState.copied?”✓”:”📋”}
+          </button>
+        </div>
+        <a href={“https://wa.me/?text=”+encodeURIComponent(linkState.url)} target=”_blank” rel=”noreferrer” style={{display:”flex”,alignItems:”center”,justifyContent:”center”,gap:8,padding:”10px 16px”,borderRadius:8,background:”#25d366”,color:”#fff”,fontWeight:700,fontSize:13,textDecoration:”none”,width:”100%”}}>
+          <span style={{fontSize:16}}>💬</span> Trimite pe WhatsApp
+        </a>
+        <button onClick={()=>setLinkState(s=>({...s,show:false}))} style={{marginTop:8,width:”100%”,padding:”5px”,borderRadius:6,border:”1px solid rgba(255,255,255,.1)”,background:”transparent”,color:”rgba(255,255,255,.4)”,fontSize:11,cursor:”pointer”}}>Închide</button>
+      </div></> }
+    </div>
   );
 }
 
@@ -5714,11 +5745,13 @@ function App() {
                         <div onClick={()=>{const nd=!ev.dp;updEv({dp:nd,...(nd&&ev.st==="plata_avans"?{st:"confirmat"}:{})});showToast(nd?(ev.st==="plata_avans"?"Avans încasat ✓ — confirmat":"Avans: încasat ✓"):"Avans: neîncasat");}} style={{padding:12,borderRadius:10,background:th.h,textAlign:"center",cursor:"pointer",border:`2px solid ${ev.dp?"#22c55e":th.b}`,transition:"border-color .15s"}}>
                           <div style={{fontSize:9,color:th.tm,textTransform:"uppercase",marginBottom:4}}>Avans {ev.dp?"✓":""}</div>
                           <div style={{fontSize:16,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(dep,v)}</div>
+                          {avFirma&&ev.cursLei&&dep>0&&<div style={{fontSize:9,color:"#f59e0b",marginTop:1}}>{Math.round(dep*ev.cursLei).toLocaleString("ro-RO")} lei</div>}
                           <div style={{fontSize:9,color:ev.dp?"#22c55e":"#ef4444",marginTop:2}}>{ev.dp?"Încasat":"Neîncasat · click"}</div>
                         </div>
                         <div onClick={()=>{updEv({restPaid:!ev.restPaid});showToast(ev.restPaid?"Rest: neplătit":"Rest: plătit integral ✓");}} style={{padding:12,borderRadius:10,background:th.h,textAlign:"center",cursor:"pointer",border:`2px solid ${ev.restPaid?"#22c55e":th.b}`,transition:"border-color .15s"}}>
                           <div style={{fontSize:9,color:th.tm,textTransform:"uppercase",marginBottom:4}}>Rest {ev.restPaid?"✓":""}</div>
                           <div style={{fontSize:16,fontWeight:700,color:ev.restPaid?"#22c55e":th.t}}>{fFmt(rest,v)}</div>
+                          {restFirma&&ev.cursLei&&rest>0&&<div style={{fontSize:9,color:"#f59e0b",marginTop:1}}>{Math.round(rest*ev.cursLei).toLocaleString("ro-RO")} lei</div>}
                           <div style={{fontSize:9,color:ev.restPaid?"#22c55e":"#f59e0b",marginTop:2}}>{ev.restPaid?"Plătit integral":"Neîncasat · click"}</div>
                         </div>
                       </div>
@@ -6029,6 +6062,13 @@ function App() {
         if(ev.stageId){ roleBonus[ev.stageId]=(roleBonus[ev.stageId]||0)+stageAmt; }
         const shares={};
         MEMBERS.forEach(m=>{ shares[m.id]=(baseShares[m.id]||0)+(roleBonus[m.id]||0); });
+        // Rotunjire distribuție: pe firmă → 1€, altfel → 50€
+        const roundUnit=(avFirma||restFirma)?1:50;
+        const roundedShares={};
+        MEMBERS.forEach(m=>{const s=shares[m.id]||0;roundedShares[m.id]=Math.round(s/roundUnit)*roundUnit;});
+        const roundedPoolTotal=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
+        const roundingAdjFond=Math.round((pool-roundedPoolTotal)*100)/100;
+        const hasRounding=Math.abs(roundingAdjFond)>0.001;
 
         const fv=(v)=>v.toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+(isLei?" lei":"€");
         const fvl=(v)=>Math.round(v).toLocaleString("ro-RO")+" lei";
@@ -6106,7 +6146,7 @@ function App() {
                   {/* Curs BNR */}
                   <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                     <span style={{fontSize:11,color:th.tm}}>Curs 1€ =</span>
-                    <input type="number" min={1} max={100} step={0.01} defaultValue={ev.cursLei||5} key={ev.id+"_curs"} onBlur={e=>{const v=parseFloat(e.target.value)||5;upd({cursLei:v});}} style={{...sty.i,width:70,padding:5,fontSize:12}} placeholder="5.00"/>
+                    <input type="number" min={1} max={100} step={0.01} defaultValue={ev.cursLei||5} key={ev.id+"_curs_"+(ev.cursLei||5)} onBlur={e=>{const v=parseFloat(e.target.value)||5;upd({cursLei:v});}} style={{...sty.i,width:70,padding:5,fontSize:12}} placeholder="5.00"/>
                     <span style={{fontSize:11,color:th.tm}}>lei</span>
                     <button onClick={()=>fetchBnr()} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:7,border:`1px solid ${th.b}`,background:"transparent",color:"#f59e0b",fontSize:11,cursor:"pointer",fontWeight:600}}>↻ BNR azi</button>
                     {(avFirma||restFirma)&&<div style={{fontSize:10,color:th.tm,width:"100%",marginTop:2}}>
@@ -6261,7 +6301,10 @@ function App() {
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <div style={{width:26,height:26,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:th.bg,flexShrink:0}}>{m.n[0]}</div>
                       <span style={{fontSize:12,flex:1}}>{m.n.split(" ")[0]}</span>
-                      <div style={{textAlign:"right",fontSize:13,fontWeight:700}}>{fv(total)}</div>
+                      <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:13,fontWeight:700}}>{hasRounding?fv(roundedShares[m.id]):fv(total)}</div>
+                      {hasRounding&&roundedShares[m.id]!==total&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{fv(total)}</div>}
+                    </div>
                     </div>
                     {hasRol&&<div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:4,marginLeft:34,fontSize:11,color:th.tm}}>
                       <span>Parte cantat: {fv(baseDisp)}</span>
@@ -6269,6 +6312,10 @@ function App() {
                     </div>}
                   </div>
                 );})}
+                {hasRounding&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:roundingAdjFond>0?"rgba(34,197,94,.08)":"rgba(245,158,11,.08)",border:`1px solid ${roundingAdjFond>0?"rgba(34,197,94,.3)":"rgba(245,158,11,.3)"}`,fontSize:11,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{color:th.tm}}>📐 Rotunjire la {roundUnit}€ · ajustare fond</span>
+                  <strong style={{color:roundingAdjFond>0?"#22c55e":"#f59e0b"}}>{roundingAdjFond>0?"+":""}{fv(roundingAdjFond)}</strong>
+                </div>}
               </div>
 
 
