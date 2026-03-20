@@ -1738,7 +1738,8 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       const fid = uid();
       const prefix = tab==="contract" ? "contract" : "offer";
       const path = `${prefix}-${fid}.html`;
-      const { error } = await sb.storage.from("fisa-public").upload(path, html, {contentType:"text/html; charset=utf-8", upsert:true});
+      const blob = new Blob([html], { type: "text/html; charset=utf-8" });
+      const { error } = await sb.storage.from("fisa-public").upload(path, blob, {contentType:"text/html; charset=utf-8", upsert:true});
       if (error) throw error;
       const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
       setLinkState({url:publicUrl, show:true, loading:false, copied:false});
@@ -2339,7 +2340,8 @@ function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient }) {
       const html = buildFisaHtml(ev);
       const fid = uid();
       const path = `fisa-${fid}.html`;
-      const { error } = await sb.storage.from("fisa-public").upload(path, html, { contentType: "text/html; charset=utf-8", upsert: true });
+      const blob = new Blob([html], { type: "text/html; charset=utf-8" });
+      const { error } = await sb.storage.from("fisa-public").upload(path, blob, { contentType: "text/html; charset=utf-8", upsert: true });
       if (error) throw error;
       const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
       setLinkState({url:publicUrl, show:true, copied:false});
