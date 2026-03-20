@@ -244,7 +244,7 @@ const getSvcCostBreakdown = (ev, prices) => {
   const hasNonDjSvc = !!(svc.sunet || svc.lumini || svc.ecran || svc.scena);
   const techCount = hasNonDjSvc ? 2 : (svc.dj ? 1 : 0);
   const tehnicRate = p.tehnicPerService ?? 120;
-  const supplPer = p.tehnicExtraPerService ?? 30;
+  const supplPer = p.tehnicExtraPerService ?? 40;
   if(hasNonDjSvc){
     out.push({k:"tehnic2Auto",label:"Tehnic nr.2 (automat)",cost:Math.round(tehnicRate*100)/100});
   }
@@ -274,7 +274,7 @@ const validatePw = (pw) => {
   return null;
 };
 const SPLIT_PRIVATE = {m1:24,m2:19,m3:19,m4:19,m5:19}; // Carina 24%, restul 19% fiecare
-const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100,technicianExtra:0}; // lei — technicianExtra = ore/servicii tehnice suplimentare (înainte în „Tehnic extra” din cost furnizori)
+const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100}; // lei
 const CURS_DEFAULT = 5; // 1€ = 5 lei
 const calcFond7 = (ev) => {
   const CURS = ev.cursLei||CURS_DEFAULT;
@@ -282,9 +282,10 @@ const calcFond7 = (ev) => {
   const onFirma = ev.payType==="firma";
   const taxVenit = onFirma ? fee*0.01 : 0;
   const fc = ev.fixedCosts||DEFAULT_FIXED_COSTS;
-  const fcEur = ((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0)+(fc.technicianExtra||0))/CURS;
+  const fcEur = ((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0))/CURS;
   const netAfterFixed = Math.max(0, fee - taxVenit - fcEur);
-  return Math.round(netAfterFixed*0.07*100)/100;
+  const pct = Math.min(100, Math.max(0, Number(ev.fondDupCheltPct ?? 7)));
+  return Math.round(netAfterFixed*pct/100*100)/100;
 };
 
 const USERS = [
@@ -503,7 +504,7 @@ const loadTemplates = () => {
       const d = JSON.parse(s);
       if (d && typeof d === "object") {
         d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
-        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:30 };
+        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 };
         return d;
       }
     }
@@ -515,7 +516,7 @@ const loadTemplates = () => {
     riderStagePlot: { image: null, notes: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
     poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
-    servicePrices: { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:30 }
+    servicePrices: { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 }
   };
 };
 // Versiuni rider — phaser_rider_versions: [{ id, ts, label, data }]
@@ -4657,7 +4658,7 @@ function App() {
                 <label style={sty.l}>Prețuri servicii extra — furnizori</label>
                 <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Prețurile salvate aici se folosesc la oferte noi. Costurile cu furnizorii se scad în finanțe când evenimentul e confirmat.</p>
                 <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
-                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic nr.2 automat / pers. (€)",def:120},{k:"tehnicExtraPerService",l:"Supliment tehnic podium·lumini·LED (€/serv./pers.)",def:30}].map(({k,l,def})=>(
+                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic nr.2 automat / pers. (€)",def:120},{k:"tehnicExtraPerService",l:"Supliment tehnic podium·lumini·LED (€/serv./pers.)",def:40}].map(({k,l,def})=>(
                     <div key={k}><label style={{...sty.l,fontSize:10}}>{l}</label><input type="number" value={(templates.servicePrices||{})[k]??def} onChange={e=>{const v=e.target.value;saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));}} style={sty.i} placeholder={String(def)}/></div>
                   ))}
                 </div>
@@ -5176,7 +5177,7 @@ function App() {
               const avF=ev.avFirma??(ev.payType==="firma"); const rF=ev.restFirma??(ev.payType==="firma");
               const taxV=Math.round(((avF?dep:0)+(rF?rest:0))*0.01*100)/100;
               const fc={...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{})};
-              const fcE=((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0)+(fc.technicianExtra||0))/C;
+              const fcE=((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0))/C;
               const fc16=rF?Math.round(fcE*0.16*100)/100:0;
               const net=Math.max(0,fee-taxV-fcE-fc16);
               const f7=Math.round(net*0.07*100)/100;
@@ -5719,7 +5720,7 @@ function App() {
           const avF=e.avFirma??(e.payType==="firma");const rF=e.restFirma??(e.payType==="firma");
           const impV=Math.round(((avF?d:0)+(rF?r:0))*0.01*100)/100;
           const fc={...DEFAULT_FIXED_COSTS,...(e.fixedCosts||{})};
-          const fcL=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0)+(fc.technicianExtra||0);
+          const fcL=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0);
           const fcE=fcL/C;const fc16=rF?Math.round(fcE*0.16*100)/100:0;
           const net=Math.max(0,tot-impV-fcE-fc16);
           const f5=Math.round(net*0.05*100)/100;const dF=net-f5;
@@ -5765,7 +5766,7 @@ function App() {
 
         // 2. Cheltuieli fixe (lei → €)
         const fc={...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{})};
-        const fcLeiTotal=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0)+(fc.technicianExtra||0);
+        const fcLeiTotal=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0);
         const fcEur=fcLeiTotal/CURS;
         // Dacă restul e pe firmă, logistica se bruttifică cu 16% dividende
         const fc16=restFirma?Math.round(fcEur*0.16*100)/100:0;
@@ -5774,8 +5775,9 @@ function App() {
         // 3. Net după cheltuieli fixe
         const netDupaFixed=Math.max(0,netDupaTax-fcEurEffective);
 
-        // 4. Fond 7%
-        const fond7=Math.round(netDupaFixed*0.07*100)/100;
+        // 4. Fond după cheltuieli (implicit 7%, editabil pe eveniment)
+        const fondDupCheltPct=Math.min(100,Math.max(0,Number(ev.fondDupCheltPct??7)));
+        const fond7=Math.round(netDupaFixed*fondDupCheltPct/100*100)/100;
         const dupaFond=netDupaFixed-fond7;
 
         // 5. Dividende 16% pe profit — doar când restul e pe firmă
@@ -5878,7 +5880,18 @@ function App() {
                     <div style={{fontSize:9,color:ev.restPaid?"#22c55e":"#f59e0b",marginTop:2}}>{ev.restPaid?"Plătit integral":"Neîncasat · click"}</div>
                   </div>
                 </div>
-                {ev.dp&&ev.restPaid&&<div style={{fontSize:10,color:"#22c55e",fontWeight:600,textAlign:"center",marginTop:6}}>✓ Eveniment plătit integral — 7% fond activ</div>}
+                {ev.dp&&ev.restPaid&&<div style={{fontSize:10,color:"#22c55e",fontWeight:600,textAlign:"center",marginTop:6}}>✓ Eveniment plătit integral — {fondDupCheltPct}% fond activ</div>}
+              </div>
+
+              {/* Fond după cheltuieli — procent din net (după logistică), standard 7% */}
+              <div style={{padding:"12px 14px",borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Fond după cheltuieli</div>
+                <div style={{fontSize:11,color:th.ts,marginBottom:10,lineHeight:1.4}}>Procent din <strong>netul după logistică</strong> (vezi „Net după cheltuieli” în distribuție). Implicit 7%.</div>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <input type="number" min={0} max={100} step={0.5} value={ev.fondDupCheltPct==null?7:ev.fondDupCheltPct} onChange={e=>{const raw=e.target.value;const v=raw===""?7:Math.min(100,Math.max(0,Number(raw)||0));upd({fondDupCheltPct:v});}} style={{...sty.i,width:72,padding:8,fontSize:14,textAlign:"right"}}/>
+                  <span style={{fontSize:13,color:th.tm}}>%</span>
+                  <span style={{fontSize:12,color:th.tm,flex:1,minWidth:120}}>→ {fv(fond7)} reținut pentru fond</span>
+                </div>
               </div>
 
               {/* Cheltuieli fixe editabile */}
@@ -5887,7 +5900,7 @@ function App() {
                   <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Cheltuieli fixe logistică</div>
                   <button onClick={()=>upd({fixedCosts:{...DEFAULT_FIXED_COSTS}})} style={{...sty.bg,fontSize:9,padding:"2px 8px"}}>Reset</button>
                 </div>
-                {[{k:"technician",l:"Tehnician (bază)"},{k:"technicianExtra",l:"Tehnic suplimentar"},{k:"equipment",l:"Scule"},{k:"soundman",l:"Sunetist"},{k:"transport",l:"Transport"}].map(({k,l})=>(
+                {[{k:"technician",l:"Tehnician (bază)"},{k:"equipment",l:"Scule"},{k:"soundman",l:"Sunetist"},{k:"transport",l:"Transport"}].map(({k,l})=>(
                   <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                     <span style={{fontSize:12,flex:1}}>{l}</span>
                     <div style={{display:"flex",alignItems:"center",gap:4}}>
@@ -5916,7 +5929,7 @@ function App() {
                   <Row l={`Cheltuieli fixe (${fvl(fcLeiTotal)})`} v={"-"+fv(fcEur)} c="#ef4444"/>
                   {fc16>0&&<Row l="16% div. pe logistică (pe firmă)" v={"-"+fv(fc16)} c="#ef4444"/>}
                   <Row l="Net după cheltuieli" v={fv(netDupaFixed)} bold/>
-                  <Row l="Fond 7%" v={"-"+fv(fond7)} c="#6366f1"/>
+                  <Row l={`Fond (${fondDupCheltPct}%)`} v={"-"+fv(fond7)} c="#6366f1"/>
                   {restFirma&&<Row l="Dividende 16% (pe rest)" v={"-"+fv(div16)} c="#ef4444"/>}
                   {(ev.leadId||ev.leadCustom)&&<Row l={`Lead ${isPrivate?"2%":"1%"} — ${leadName}`} v={"-"+fv(leadAmt)} c="#f59e0b"/>}
                   {ev.adminId&&<Row l={`Administrator 2% — ${MEMBERS.find(m=>m.id===ev.adminId)?.short||""}`} v={"-"+fv(adminAmt)} c="#f59e0b"/>}
@@ -5936,7 +5949,7 @@ function App() {
                   {svcCost>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Cost servicii tehnice (furnizori)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(svcCost)}</span></div>}
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Logistică fixă ({fvl(fcLeiTotal)})</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(fcEur)}</span></div>
                   {fc16>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>16% div. logistică (pe firmă)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(fc16)}</span></div>}
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Fond trupă (7%)</span><span style={{color:"#6366f1",fontWeight:600}}>-{fv(fond7)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Fond trupă ({fondDupCheltPct}%)</span><span style={{color:"#6366f1",fontWeight:600}}>-{fv(fond7)}</span></div>
                   {restFirma&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:th.tm}}>Dividende trupă 16% (pe rest)</span><span style={{color:"#ef4444",fontWeight:600}}>-{fv(div16)}</span></div>}
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:12,borderTop:`1px solid ${th.b}`,paddingTop:6,marginTop:2}}><span style={{fontWeight:600}}>Total reținut</span><span style={{color:"#ef4444",fontWeight:700}}>-{fv(impVenit+svcCost+fcEurEffective+fond7+div16)}</span></div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}><span style={{fontWeight:600,color:"#22c55e"}}>Net trupă</span><span style={{color:"#22c55e",fontWeight:700}}>{fv(pool)}</span></div>
@@ -6012,7 +6025,7 @@ function App() {
                     <span style={{color:ev.dp?"#a5b4fc":th.tm,fontWeight:ev.dp?600:400}}>{fv(dep)}{!ev.dp?<span style={{fontSize:9}}> · neîncasat</span>:null}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
-                    <span style={{color:th.tm}}>7% net {ev.restPaid?"✓":""}</span>
+                    <span style={{color:th.tm}}>{fondDupCheltPct}% net {ev.restPaid?"✓":""}</span>
                     <span style={{color:ev.restPaid?"#a5b4fc":th.tm,fontWeight:ev.restPaid?600:400}}>{fv(fond7)}{!ev.restPaid?<span style={{fontSize:9}}> · după plata integrală</span>:null}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:13,borderTop:"1px solid rgba(99,102,241,.2)",paddingTop:6,marginTop:2}}>
