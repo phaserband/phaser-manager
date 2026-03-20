@@ -246,6 +246,15 @@ ${svcHtml?`<div style="margin-bottom:16px"><div style="font-size:9px;color:#888;
 <div style="font-size:10px;color:#999;margin-top:24px;text-align:center">PHASER · Fișa evenimentului · O${ev.offerNr||"?"} · ${ev.date||""}</div>
 </body></html>`;
 };
+// Regex [^ASCII] pe șiruri JS poate sparge emoji în perechi surrogate; iterăm pe code point-uri.
+const encodeHtmlCodePoints = (raw) => {
+  let out = "";
+  for (const ch of raw) {
+    const cp = ch.codePointAt(0);
+    out += cp <= 0x7f ? ch : `&#${cp};`;
+  }
+  return out;
+};
 const getFisaBodyHtmlForWorker = (ev) => { const full = buildFisaHtml(ev); const m = full.match(/<body[^>]*>([\s\S]*?)<\/body>/i); return m ? m[1] : full; };
 
 const FISA_EXTRA_TYPES = [
@@ -1735,7 +1744,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       let rawHtml;
       if (tab==="contract") rawHtml = getContractHtmlForWorker();
       else rawHtml = getOfferHtmlForWorker();
-      const html = rawHtml.replace(/[^\u0000-\u007F]/gu, c => `&#${c.codePointAt(0)};`);
+      const html = encodeHtmlCodePoints(rawHtml);
       const prefix = tab==="contract" ? "contract" : "offer";
       const path = `${prefix}-${ev.id}.html`;
       const blob = new Blob([html], { type: "text/html; charset=utf-8" });
@@ -2344,7 +2353,7 @@ function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient, updEv }) {
     setLoading(true);
     try {
       const rawHtml = buildFisaHtml(ev);
-      const html = rawHtml.replace(/[^\u0000-\u007F]/gu, c => `&#${c.codePointAt(0)};`);
+      const html = encodeHtmlCodePoints(rawHtml);
       const path = `fisa-${ev.id}.html`;
       const blob = new Blob([html], { type: "text/html; charset=utf-8" });
       const { error } = await sb.storage.from("fisa-public").upload(path, blob, { contentType: "text/html; charset=utf-8", upsert: true });
@@ -4192,34 +4201,6 @@ function App() {
 
   const sbW = mob ? 0 : (sbMode==="full"?220:56);
 
-  // Swipe refs — must be before any early return
-  const appTouchStart = useRef(null);
-  const appTouchStartY = useRef(null);
-
-  const handleAppTouchStart = (e) => {
-    appTouchStart.current = e.touches[0].clientX;
-    appTouchStartY.current = e.touches[0].clientY;
-  };
-
-  const handleAppTouchEnd = (e) => {
-    if(appTouchStart.current === null) return;
-    const startX = appTouchStart.current;
-    const dx = e.changedTouches[0].clientX - startX;
-    const dy = Math.abs(e.changedTouches[0].clientY - appTouchStartY.current);
-    appTouchStart.current = null;
-    if(Math.abs(dx) < 50 || Math.abs(dx) < dy * 1.5) return;
-    if(!mob && dx > 0 && startX < 80 && sbMode === "mini") { setSbMode("full"); return; }
-    if(!mob && dx < 0 && sbMode === "full") { setSbMode("mini"); return; }
-    if(modal || (!mob && sbMode === "full")) return;
-    const allNav = ["acasa","events","offers","docs","tasks","calendar",
-      ...(p.f?["finances"]:[]),
-      ...(user?.memberId?["contul"]:[])
-    ];
-    const i = allNav.indexOf(tab);
-    if(dx < 0 && i < allNav.length - 1) setTab(allNav[i + 1]);
-    if(dx > 0 && i > 0) setTab(allNav[i - 1]);
-  };
-
   if(authLoading) return (
     <div style={{minHeight:"100vh",background:"#0c0c0c",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{color:"#333",fontSize:13,fontFamily:"system-ui"}}>Se încarcă...</div>
@@ -4465,8 +4446,6 @@ function App() {
   return (
     <div
       style={{display:"flex",height:"100vh",height:"100dvh",minHeight:"-webkit-fill-available",fontFamily:"'Inter',system-ui,sans-serif",background:th.bg,color:th.t,overflow:"hidden"}}
-      onTouchStart={handleAppTouchStart}
-      onTouchEnd={handleAppTouchEnd}
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:${th.b};border-radius:3px}input,select,textarea{font-family:inherit}input:focus,select:focus,textarea:focus{outline:none;border-color:${th.tm}!important}select.modernSel{appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer;border-radius:8px;border:1px solid ${th.b};background-color:${th.i};color:${th.t};font-size:13px;transition:border-color .15s,box-shadow .15s}select.modernSel:hover{border-color:${th.tm}}select.modernSel:focus{box-shadow:0 0 0 2px ${th.ab}}@keyframes su{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}button:hover{opacity:.85}table{border-collapse:collapse}`}</style>
 
@@ -6370,14 +6349,6 @@ function App() {
         templates={templates}
         showToast={showToast}
       />})()}
-
-      {/* Swipe indicator dots — mobile only */}
-      {mob&&(()=>{
-        const allNav=["acasa","events","offers","docs","tasks","calendar",...(p.f?["finances"]:[]),...(user?.memberId?["contul"]:[])];
-        return <div style={{position:"fixed",bottom:10,left:"50%",transform:"translateX(-50%)",display:"flex",gap:5,zIndex:500,pointerEvents:"none"}}>
-          {allNav.map(id=><div key={id} style={{width:id===tab?20:5,height:5,borderRadius:3,background:id===tab?"rgba(255,255,255,.9)":"rgba(255,255,255,.2)",transition:"all .25s"}}/>)}
-        </div>;
-      })()}
 
       {showChangePw&&user&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={()=>{setShowChangePw(false);setChPwNew("");setChPwConf("");setChPwErr("");}}>
         <div style={{background:th.c,borderRadius:14,border:`1px solid ${th.b}`,padding:24,width:mob?"90%":360}} onClick={e=>e.stopPropagation()}>

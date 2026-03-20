@@ -1704,34 +1704,6 @@ export default function App() {
 
   const sbW = sbMode==="full"?220:56;
 
-  // Swipe refs — must be before any early return
-  const appTouchStart = useRef(null);
-  const appTouchStartY = useRef(null);
-
-  const handleAppTouchStart = (e) => {
-    appTouchStart.current = e.touches[0].clientX;
-    appTouchStartY.current = e.touches[0].clientY;
-  };
-
-  const handleAppTouchEnd = (e) => {
-    if(appTouchStart.current === null) return;
-    const startX = appTouchStart.current;
-    const dx = e.changedTouches[0].clientX - startX;
-    const dy = Math.abs(e.changedTouches[0].clientY - appTouchStartY.current);
-    appTouchStart.current = null;
-    if(Math.abs(dx) < 50 || Math.abs(dx) < dy * 1.5) return;
-    if(dx > 0 && startX < 80 && sbMode === "mini") { setSbMode("full"); return; }
-    if(dx < 0 && sbMode === "full") { setSbMode("mini"); return; }
-    if(modal || sbMode === "full") return;
-    const allNav = ["acasa","events","offers","tasks","calendar",
-      ...(p.f?["finances"]:[]),
-      ...(p.pk?["presskit"]:[])
-    ];
-    const i = allNav.indexOf(tab);
-    if(dx < 0 && i < allNav.length - 1) setTab(allNav[i + 1]);
-    if(dx > 0 && i > 0) setTab(allNav[i - 1]);
-  };
-
   if(!user) return (
     <div style={{minHeight:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:"#0c0c0c",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",gap:24}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -1782,8 +1754,6 @@ export default function App() {
   return (
     <div
       style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:th.bg,color:th.t,overflow:"hidden"}}
-      onTouchStart={handleAppTouchStart}
-      onTouchEnd={handleAppTouchEnd}
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:${th.b};border-radius:3px}input,select,textarea{font-family:inherit}input:focus,select:focus,textarea:focus{outline:none;border-color:${th.tm}!important}@keyframes su{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}button:hover{opacity:.85}table{border-collapse:collapse}`}</style>
 
@@ -2298,14 +2268,6 @@ export default function App() {
         onClose={cm}
         sty={sty}
       />}
-
-      {/* Swipe indicator dots — mobile only */}
-      {mob&&(()=>{
-        const allNav=["acasa","events","offers","tasks","calendar",...(p.f?["finances"]:[]),...(p.pk?["presskit"]:[])];
-        return <div style={{position:"fixed",bottom:10,left:"50%",transform:"translateX(-50%)",display:"flex",gap:5,zIndex:500,pointerEvents:"none"}}>
-          {allNav.map(id=><div key={id} style={{width:id===tab?20:5,height:5,borderRadius:3,background:id===tab?"rgba(255,255,255,.9)":"rgba(255,255,255,.2)",transition:"all .25s"}}/>)}
-        </div>;
-      })()}
 
       <AIChatWidget th={th} evs={evs} tasks={tasks} mob={mob}/>
       <Toast message={toast.message} visible={toast.visible}/>
