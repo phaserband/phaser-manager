@@ -107,12 +107,18 @@ DROP POLICY IF EXISTS "fisa_public_read" ON storage.objects;
 CREATE POLICY "fisa_public_read" ON storage.objects
   FOR SELECT USING (bucket_id = 'fisa-public');
 
--- Userii autentificați pot uploada
+-- Upload / actualizare: aplicația folosește doar cheia anon (fără login Supabase).
+-- INSERT + UPDATE sunt necesare pentru upload(..., { upsert: true }).
+-- Risc: oricine cu URL + anon key poate scrie în acest bucket — acceptabil pentru HTML-uri
+-- de fișă partajabilă; nu pune aici date sensibile.
 DROP POLICY IF EXISTS "fisa_auth_insert" ON storage.objects;
-CREATE POLICY "fisa_auth_insert" ON storage.objects
-  FOR INSERT WITH CHECK (
-    bucket_id = 'fisa-public' AND auth.role() = 'authenticated'
-  );
+DROP POLICY IF EXISTS "fisa_public_insert" ON storage.objects;
+CREATE POLICY "fisa_public_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'fisa-public');
+
+DROP POLICY IF EXISTS "fisa_public_update" ON storage.objects;
+CREATE POLICY "fisa_public_update" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'fisa-public');
 
 -- ─────────────────────────────────────────────
 -- 4. Curăță tabele vechi

@@ -96,7 +96,7 @@
 <body>
   <div id="root"><div class="loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0a0a0c;color:#e5e5e5;font-family:system-ui;font-size:15px;font-weight:500;gap:12px;padding:24px"><span>Se încarcă Phaser Manager...</span><span style="font-size:11px;color:#888">Dacă rămâne negru, deschide http://localhost:8080</span></div></div>
   <script type="text/babel" data-presets="env,react">
-const { useState, useEffect, useMemo, useRef, useId } = React;
+const { useState, useEffect, useMemo, useRef, useId, useCallback } = React;
 
 /* Structură: HOOKS | CONSTANTS | STORAGE | ICONS | COMPONENTS | FEATURES | MAIN APP */
 
@@ -329,15 +329,15 @@ const MEMBERS = [
   {id:"m4",n:"Arnold Birta",  short:"Arni",  r:"Tobe",   email:"arnold@phaser.ro"},
   {id:"m5",n:"Sebastian Bârzeianu",short:"Sebi",r:"Chitară",email:"sebi@phaser.ro"}
 ];
-const FURNIZOR_EMAIL = "furnizor@phaser.ro";
-const ADMIN_EMAIL = "raczradurr@gmail.com";
-// Validare parolă — minim 8 caractere, literă mare, literă mică, cifră
-const validatePw = (pw) => {
-  if(!pw||pw.length<8) return "Minim 8 caractere";
-  if(!/[A-Z]/.test(pw)) return "Trebuie cel puțin o literă MARE (ex: A-Z)";
-  if(!/[a-z]/.test(pw)) return "Trebuie cel puțin o literă mică (ex: a-z)";
-  if(!/[0-9]/.test(pw)) return "Trebuie cel puțin o cifră (0-9)";
-  return null;
+const LS_SESSION_MEMBER = "phaser_session_member";
+const sessionUserFromStorage = () => {
+  try {
+    const mid = localStorage.getItem(LS_SESSION_MEMBER);
+    if (!mid) return null;
+    const m = MEMBERS.find(x => x.id === mid);
+    if (!m) return null;
+    return { id: mid, n: m.short || m.n.split(" ")[0], rl: "membru", memberId: mid };
+  } catch (e) { return null; }
 };
 const SPLIT_PRIVATE = {m1:24,m2:19,m3:19,m4:19,m5:19}; // Carina 24%, restul 19% fiecare
 const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100}; // lei
@@ -472,7 +472,7 @@ const RIDER_TEHNIC = {
 // STORAGE & SCHEMA
 // ═══════════════════════════════════════════════════════════════════════════════
 const PHASER_V = 3;
-const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genExp", annualCosts: "phaser_annualCosts", gigsPerYear: "phaser_gigsPerYear", templates: "phaser_templates", riderVersions: "phaser_rider_versions", pressKitVersions: "phaser_presskit_versions", playlistVersions: "phaser_playlist_versions", creative: "phaser_creative", memberProfiles: "phaser_member_profiles" };
+const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genExp", annualCosts: "phaser_annualCosts", gigsPerYear: "phaser_gigsPerYear", templates: "phaser_templates", riderVersions: "phaser_rider_versions", pressKitVersions: "phaser_presskit_versions", playlistVersions: "phaser_playlist_versions", creative: "phaser_creative", memberProfiles: "phaser_member_profiles", bandNotifications: "phaser_band_notifications" };
 const SUPABASE_URL = "https://qtiosqtcrqgmlkwcrnpu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aW9zcXRjcnFnbWxrd2NybnB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNTY2MzEsImV4cCI6MjA4ODkzMjYzMX0.VR4MZArOnsc-DuLF3H3ZH-0PyfnBANyMiv8i31vxBnA";
 const SUPABASE_CFG = (()=>{ try { const s=localStorage.getItem("phaser_supabase_cfg"); const fromLs=s?JSON.parse(s):{}; return { url: fromLs.url||SUPABASE_URL, key: fromLs.key||SUPABASE_ANON_KEY }; } catch(e){ return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY }; } })();
@@ -487,22 +487,10 @@ const getSbClient = () => {
     return _sbClient;
   } catch(e) { return null; }
 };
-// Mapează un utilizator Supabase Auth la profilul din aplicație (rol + memberId)
-const mapSbUserToAppUser = (sbUser, memberProfilesData) => {
-  if (!sbUser?.email) return null;
-  const email = sbUser.email.toLowerCase();
-  const mem = MEMBERS.find(m => {
-    const pe = (memberProfilesData?.[m.id]?.email || "").toLowerCase();
-    const de = (m.email || "").toLowerCase();
-    return (pe && pe === email) || (de && de === email);
-  });
-  if (mem) return { id: "u3", n: mem.short || mem.n.split(" ")[0], rl: email===ADMIN_EMAIL?"admin":"membru", memberId: mem.id };
-  if (email === FURNIZOR_EMAIL) return { id: "u4", n: "Furnizor", rl: "furnizor" };
-  return null;
-};
 const migrate = (data, key) => { if (!data) return data; if (Array.isArray(data)) return data; if (data._v === PHASER_V) return data; if (typeof data._v !== "number") data._v = 1; while (data._v < PHASER_V) { data._v++; } return data; };
 const loadEvs = () => { try { const s = localStorage.getItem(LS_KEYS.evs); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadTasks = () => { try { const s = localStorage.getItem(LS_KEYS.tasks); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
+const loadBandNotifications = () => { try { const s = localStorage.getItem(LS_KEYS.bandNotifications); if (!s) return []; const d = JSON.parse(s); return Array.isArray(d) ? d : []; } catch(e){ return []; } };
 const loadGenExp = () => { try { const s = localStorage.getItem(LS_KEYS.genExp); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const DEFAULT_ANNUAL_COSTS = [{id:"ac1",n:"Contabilă",a:4200,v:"lei"},{id:"ac2",n:"Google Workspace",a:960,v:"eur"},{id:"ac3",n:"ING",a:480,v:"lei"},{id:"ac4",n:"Sala de repetiții",a:2160,v:"lei"},{id:"ac5",n:"Internet",a:360,v:"lei"}];
 const loadAnnualCosts = () => { try { const s = localStorage.getItem(LS_KEYS.annualCosts); if (s) { const d = JSON.parse(s); return Array.isArray(d) && d.length>0 ? d : [...DEFAULT_ANNUAL_COSTS]; } } catch(e){} return [...DEFAULT_ANNUAL_COSTS]; };
@@ -696,7 +684,7 @@ function Toast({message, visible, variant}) {
 }
 
 // ─── Tasks (Notion-style) ───
-const fullTask = (text, prio="medium") => ({id:uid(),text,done:false,taskStatus:"in_proces",priority:prio,cr:new Date().toISOString().split("T")[0],due:"",subtasks:[],notes:"",tags:[],chats:[],uploads:[]});
+const fullTask = (text, prio="medium") => ({id:uid(),text,done:false,taskStatus:"in_proces",priority:prio,cr:new Date().toISOString().split("T")[0],due:"",assignedTo:"",subtasks:[],notes:"",tags:[],chats:[],uploads:[]});
 const toggleInTree = (tasks, id) => tasks.map(t=>t.id===id?{...t,done:!t.done,taskStatus:!t.done?"done":"in_proces"}:{...t,subtasks:toggleInTree(t.subtasks||[],id)});
 const delInTree = (tasks, id) => tasks.filter(t=>t.id!==id).map(t=>({...t,subtasks:delInTree(t.subtasks||[],id)}));
 const addSubInTree = (tasks, parentId, sub) => tasks.map(t=>t.id===parentId?{...t,subtasks:[...(t.subtasks||[]),sub]}:{...t,subtasks:addSubInTree(t.subtasks||[],parentId,sub)});
@@ -704,8 +692,9 @@ const updInTree = (tasks, id, upd) => tasks.map(t=>t.id===id?(typeof upd==="func
 
 const delMultipleInTree = (tasks, ids) => tasks.filter(t=>!ids.includes(t.id)).map(t=>({...t,subtasks:delMultipleInTree(t.subtasks||[],ids)}));
 
-function TasksView({ tasks, setTasks, th, sty, mob, compact=false }) {
+function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMemberId, onNotifyAssign }) {
   const [newText, setNewText] = useState("");
+  const [newAssignee, setNewAssignee] = useState("");
   const [newPrio, setNewPrio] = useState("medium");
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [viewMode, setViewMode] = useState("list"); // list | calendar | kanban
@@ -720,10 +709,18 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false }) {
   const TSL = {in_proces:"În proces",in_lucru:"În lucru",done:"Done"};
   const TSC = {in_proces:"#6366f1",in_lucru:"#f59e0b",done:"#22c55e"};
 
+  const assignLabel = (aid) => { const m = MEMBERS.find(x=>x.id===aid); return m ? "@"+m.short : ""; };
   const add = () => {
     if(!newText.trim()) return;
-    setTasks(p=>[...p,fullTask(newText.trim(),newPrio)]);
+    const t = fullTask(newText.trim(),newPrio);
+    if(newAssignee){
+      t.assignedTo = newAssignee;
+      if(onNotifyAssign && newAssignee !== currentMemberId)
+        onNotifyAssign({ taskId:t.id, taskText:t.text, toMemberId:newAssignee, fromMemberId:currentMemberId });
+    }
+    setTasks(p=>[...p,t]);
     setNewText("");
+    setNewAssignee("");
   };
   const toggle = id => setTasks(p=>toggleInTree(p,id));
   const del = id => setTasks(p=>delInTree(p,id));
@@ -789,7 +786,21 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false }) {
         <div onClick={()=>toggleExpanded(t.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"16px 20px",cursor:"pointer",flexWrap:"wrap"}}>
           {showSelect&&<div onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={()=>setSelectedIds(s=>s.includes(t.id)?s.filter(x=>x!==t.id):[...s,t.id])} style={{cursor:"pointer",width:16,height:16}}/></div>}
           <div onClick={e=>{e.stopPropagation();toggle(t.id);}} style={{width:20,height:20,borderRadius:5,border:`2px solid ${PC[t.priority||"medium"]}`,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isDone?th.b:"transparent"}}>{isDone&&<IcCheck s={12}/>}</div>
-          <div style={{flex:1,minWidth:120,fontSize:16,fontWeight:500,textDecoration:isDone?"line-through":undefined,color:isDone?th.tm:th.t,lineHeight:1.4}}>{t.text}</div>
+          <div style={{flex:1,minWidth:120,fontSize:16,fontWeight:500,textDecoration:isDone?"line-through":undefined,color:isDone?th.tm:th.t,lineHeight:1.4}}>
+            {t.text}
+            {!!t.assignedTo&&<span style={{display:"block",fontSize:12,color:th.a,fontWeight:600,marginTop:4}}>{assignLabel(t.assignedTo)}</span>}
+          </div>
+          <select value={t.assignedTo||""} onChange={e=>{
+            e.stopPropagation();
+            const prev = t.assignedTo||"";
+            const next = e.target.value;
+            updTask(t.id,{ assignedTo: next });
+            if(onNotifyAssign && next && next !== currentMemberId && next !== prev)
+              onNotifyAssign({ taskId:t.id, taskText:t.text, toMemberId:next, fromMemberId:currentMemberId });
+          }} onClick={e=>e.stopPropagation()} className="modernSel" style={{...sty.i,padding:"6px 22px 6px 8px",fontSize:11,borderRadius:8,border:`1px solid ${th.b}`,width:"auto",minWidth:96,cursor:"pointer"}} title="Desemnat">
+            <option value="">@ —</option>
+            {MEMBERS.map(m=><option key={m.id} value={m.id}>@{m.short}</option>)}
+          </select>
           <select value={t.priority||"medium"} onChange={e=>{e.stopPropagation();updTask(t.id,{priority:e.target.value});}} onClick={e=>e.stopPropagation()} className="modernSel" style={{...sty.i,padding:"6px 24px 6px 10px",fontSize:12,borderRadius:8,border:`1px solid ${PC[t.priority||"medium"]}`,background:PC[t.priority||"medium"]+"15",color:PC[t.priority||"medium"],fontWeight:600,width:"auto",minWidth:90,cursor:"pointer"}}>
             <option value="high">Urgent</option><option value="medium">Normal</option><option value="low">Low</option>
           </select>
@@ -800,7 +811,20 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false }) {
           <button onClick={e=>{e.stopPropagation();del(t.id);}} style={{padding:4,border:"none",background:"transparent",color:th.tm,cursor:"pointer",opacity:.7}}><IcTrash s={12}/></button>
         </div>
         {ex&&<div style={{padding:"20px 24px 24px 60px",borderTop:`1px solid ${th.bl}`,background:th.bg==="#09090b"?"rgba(255,255,255,.02)":"rgba(0,0,0,.02)"}}>
-          <div style={{display:"flex",gap:10,marginTop:12,marginBottom:12,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:10,marginTop:12,marginBottom:12,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:th.tm,fontWeight:600}}>Desemnat</span>
+              <select value={t.assignedTo||""} onChange={e=>{
+                const prev = t.assignedTo||"";
+                const next = e.target.value;
+                updTask(t.id,{ assignedTo: next });
+                if(onNotifyAssign && next && next !== currentMemberId && next !== prev)
+                  onNotifyAssign({ taskId:t.id, taskText:t.text, toMemberId:next, fromMemberId:currentMemberId });
+              }} className="modernSel" style={{...sty.i,padding:"10px 14px",fontSize:13,borderRadius:10,minWidth:120}}>
+                <option value="">— Nimeni</option>
+                {MEMBERS.map(m=><option key={m.id} value={m.id}>@{m.short}</option>)}
+              </select>
+            </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <input type="date" value={t.due||""} onChange={e=>updTask(t.id,{due:e.target.value})} style={{...sty.i,padding:"12px 14px",fontSize:14,borderRadius:10}}/>
               <span style={{fontSize:13,color:th.tm}}>📅 Deadline</span>
@@ -854,9 +878,13 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false }) {
         <button onClick={()=>setViewMode("calendar")} style={{padding:"12px 20px",borderRadius:10,border:"none",fontSize:15,fontWeight:viewMode==="calendar"?600:500,cursor:"pointer",background:viewMode==="calendar"?th.c:"transparent",color:viewMode==="calendar"?th.t:th.tm,boxShadow:viewMode==="calendar"?"0 1px 3px rgba(0,0,0,.06)":"none",transition:"all .15s"}}>Calendar</button>
       </div>}
 
-      <div style={{display:"flex",gap:12,marginBottom:24}}>
+      <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap",alignItems:"stretch"}}>
         <input value={newText} onChange={e=>setNewText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
-          style={{...sty.i,flex:1,padding:"18px 22px",fontSize:17,borderRadius:12,border:`2px solid ${th.bl}`}} placeholder="Ce ai de făcut? Scrie aici și apasă Enter..."/>
+          style={{...sty.i,flex:"1 1 200px",padding:"18px 22px",fontSize:17,borderRadius:12,border:`2px solid ${th.bl}`}} placeholder="Ce ai de făcut? Scrie aici și apasă Enter..."/>
+        {!compact && <select value={newAssignee} onChange={e=>setNewAssignee(e.target.value)} className="modernSel" style={{...sty.i,width:140,padding:"18px 32px 18px 16px",fontSize:14,borderRadius:12,border:`2px solid ${th.bl}`}} title="Desemnează pe cineva (notificare)">
+          <option value="">@ —</option>
+          {MEMBERS.map(m=><option key={m.id} value={m.id}>@{m.short}</option>)}
+        </select>}
         {!compact && <select value={newPrio} onChange={e=>setNewPrio(e.target.value)} className="modernSel" style={{...sty.i,width:150,padding:"18px 36px 18px 18px",fontSize:15,borderRadius:12,border:`2px solid ${th.bl}`}}>
           <option value="high">Urgent</option><option value="medium">Normal</option><option value="low">Low</option>
         </select>}
@@ -887,8 +915,19 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false }) {
                         {!compact&&<div onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={()=>setSelectedIds(s=>s.includes(t.id)?s.filter(x=>x!==t.id):[...s,t.id])} style={{cursor:"pointer",width:16,height:16}}/></div>}
                         <div onClick={e=>{e.stopPropagation();toggle(t.id);}} style={{width:20,height:20,borderRadius:5,border:`2px solid ${TSC[taskStatus(t)]}`,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:taskStatus(t)==="done"?th.b:"transparent",marginTop:2}}>{taskStatus(t)==="done"&&<IcCheck s={12}/>}</div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:16,fontWeight:600,textDecoration:taskStatus(t)==="done"?"line-through":undefined,color:taskStatus(t)==="done"?th.tm:th.t,lineHeight:1.4}}>{t.text}</div>
+                          <div style={{fontSize:16,fontWeight:600,textDecoration:taskStatus(t)==="done"?"line-through":undefined,color:taskStatus(t)==="done"?th.tm:th.t,lineHeight:1.4}}>{t.text}{t.assignedTo&&<span style={{fontSize:12,color:th.a,marginLeft:8}}>{assignLabel(t.assignedTo)}</span>}</div>
                           <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                            <select value={t.assignedTo||""} onChange={e=>{
+                              e.stopPropagation();
+                              const prev = t.assignedTo||"";
+                              const next = e.target.value;
+                              updTask(t.id,{ assignedTo: next });
+                              if(onNotifyAssign && next && next !== currentMemberId && next !== prev)
+                                onNotifyAssign({ taskId:t.id, taskText:t.text, toMemberId:next, fromMemberId:currentMemberId });
+                            }} onClick={e=>e.stopPropagation()} className="modernSel" style={{...sty.i,padding:"8px 24px 8px 10px",fontSize:12,borderRadius:8,border:`1px solid ${th.b}`}} title="@ desemnat">
+                              <option value="">@ —</option>
+                              {MEMBERS.map(m=><option key={m.id} value={m.id}>@{m.short}</option>)}
+                            </select>
                             <select value={t.priority||"medium"} onChange={e=>{e.stopPropagation();updTask(t.id,{priority:e.target.value});}} onClick={e=>e.stopPropagation()} className="modernSel" style={{...sty.i,padding:"8px 28px 8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${th.b}`}}>
                               <option value="high">Urgent</option><option value="medium">Normal</option><option value="low">Low</option>
                             </select>
@@ -1755,9 +1794,12 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       showToast&&showToast("Link generat ✓");
     } catch(e) {
       const raw=(e?.message||"").trim();
-      const msg=/bucket not found/i.test(raw)
-        ? "Bucket 'fisa-public' lipsă în Supabase. Dashboard → Storage → New bucket: id 'fisa-public', Public."
-        : ("Eroare: "+(raw||"Upload eșuat"));
+      let msg = "Eroare: "+(raw||"Upload eșuat");
+      if (/bucket not found/i.test(raw)) {
+        msg = "Bucket 'fisa-public' lipsă în Supabase. Dashboard → Storage → New bucket: id 'fisa-public', Public.";
+      } else if (/row-level security|rls/i.test(raw)) {
+        msg = "Supabase blochează upload-ul (RLS). Rulează supabase-fix-fisa-rls.sql în SQL Editor.";
+      }
       showToast&&showToast(msg,"error");
       setLinkState(s=>({...s, loading:false}));
     }
@@ -2365,9 +2407,12 @@ function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient, updEv }) {
       showToast?.("Link generat ✓");
     } catch (e) {
       const raw = (e?.message || e?.error_description || "").trim();
-      const msg = /bucket not found/i.test(raw)
-        ? "Bucket 'fisa-public' nu exista in Supabase. Dashboard -> Storage -> New bucket: id 'fisa-public', Public."
-        : ("Eroare: " + (raw || "Upload esuat."));
+      let msg = "Eroare: " + (raw || "Upload esuat.");
+      if (/bucket not found/i.test(raw)) {
+        msg = "Bucket 'fisa-public' nu exista in Supabase. Dashboard -> Storage -> New bucket: id 'fisa-public', Public.";
+      } else if (/row-level security|rls/i.test(raw)) {
+        msg = "Supabase blochează upload-ul (RLS). Rulează în SQL Editor fișierul supabase-fix-fisa-rls.sql din proiect.";
+      }
       showToast?.(msg, "error");
     }
     setLoading(false);
@@ -3715,29 +3760,7 @@ function AIChatWidget(props) {
 function App() {
   const [themeMode, setThemeMode] = useState(gTheme());
   const [systemTheme, setSystemTheme] = useState(getSystemTheme);
-  const [user, setUser]   = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginEmailErr, setLoginEmailErr] = useState("");
-  const [pendingEmail, setPendingEmail] = useState(null); // email validat → trece la pasul parolă
-  const [loginMode, setLoginMode] = useState("signin");   // "signin" | "signup"
-  const [pwInput, setPwInput] = useState("");
-  const [pwConfirm, setPwConfirm] = useState("");
-  const [pwError, setPwError] = useState("");
-  const [pwLoading, setPwLoading] = useState(false);
-  const [pwResetSent, setPwResetSent] = useState(false);
-  // ─── AUTH FLOW NOU ───
-  const [authStep, setAuthStep] = useState("role"); // "role"|"method"|"signup"|"login"|"pending"
-  const [loginRole, setLoginRole] = useState(null); // "membru"|"furnizor"
-  const [signupForm, setSignupForm] = useState({prenume:"",nume:"",email:"",nickname:"",password:"",confirm:""});
-  const [signupAvatarFile, setSignupAvatarFile] = useState(null);
-  const [signupAvatarPreview, setSignupAvatarPreview] = useState(null);
-  const [sfErr, setSfErr] = useState(""); // eroare formular signup
-  const [pendingRequests, setPendingRequests] = useState([]); // admin: cereri în așteptare
-  const [showChangePw, setShowChangePw] = useState(false);
-  const [chPwNew, setChPwNew] = useState("");
-  const [chPwConf, setChPwConf] = useState("");
-  const [chPwErr, setChPwErr] = useState("");
+  const [user, setUser]   = useState(() => sessionUserFromStorage());
   const [sbMode, setSbMode] = useState("full");
   const [tab, setTab]     = useState("acasa");
   const [evs, setEvs]     = useLocalStorageState(LS_KEYS.evs, loadEvs);
@@ -3745,6 +3768,7 @@ function App() {
   const [annualCosts, setAC] = useLocalStorageState(LS_KEYS.annualCosts, loadAnnualCosts);
   const [gigsPerYear, setGigsPerYear] = useLocalStorageState(LS_KEYS.gigsPerYear, ()=>12);
   const [tasks, setTasks] = useLocalStorageState(LS_KEYS.tasks, loadTasks);
+  const [bandNotifications, setBandNotifications] = useLocalStorageState(LS_KEYS.bandNotifications, loadBandNotifications);
   const [finMember, setFinMember] = useState(null);
   const [templates, setTemplates] = useState(loadTemplates);
   const { modal, payload, openModal, closeModal } = useModal();
@@ -3785,6 +3809,18 @@ function App() {
   const { toast, showToast } = useToasts();
   const saveMemberProfile = (memberId, data) => { setMemberProfiles(p=>{ const n={...p,[memberId]:{...(p[memberId]||{}),...data}}; try{localStorage.setItem(LS_KEYS.memberProfiles,JSON.stringify(n));}catch(e){} return n; }); };
 
+  const onNotifyAssign = useCallback(({ taskId, taskText, toMemberId, fromMemberId }) => {
+    if (!toMemberId || toMemberId === fromMemberId) return;
+    const fromM = MEMBERS.find(m => m.id === fromMemberId);
+    const fromName = fromM ? (fromM.short || fromM.n) : "Cineva";
+    setBandNotifications(prev => {
+      const idx = prev.findIndex(n => !n.read && n.taskId === taskId && n.memberId === toMemberId);
+      const entry = { id: idx >= 0 ? prev[idx].id : uid(), ts: Date.now(), memberId: toMemberId, taskId, title: (taskText || "Task").slice(0, 200), fromMemberId, fromName, read: false };
+      if (idx >= 0) { const copy = [...prev]; copy[idx] = entry; return copy; }
+      return [entry, ...prev].slice(0, 300);
+    });
+  }, [setBandNotifications]);
+
   // ─── SUPABASE CLOUD SYNC ───
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
   const [syncErrorMsg, setSyncErrorMsg] = useState("");
@@ -3819,6 +3855,7 @@ function App() {
           if(Array.isArray(remote.playlistVersions)){ setPlaylistVersions(remote.playlistVersions); try{localStorage.setItem(LS_KEYS.playlistVersions,JSON.stringify(remote.playlistVersions));}catch(e){} }
           if(remote.creative){ try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(remote.creative));}catch(e){} }
           if(remote.memberProfiles){ setMemberProfiles(remote.memberProfiles); try{localStorage.setItem(LS_KEYS.memberProfiles,JSON.stringify(remote.memberProfiles));}catch(e){} }
+          if(Array.isArray(remote.bandNotifications)){ setBandNotifications(remote.bandNotifications); try{localStorage.setItem(LS_KEYS.bandNotifications,JSON.stringify(remote.bandNotifications));}catch(e){} }
           localStorage.setItem("phaser_sync_ts",String(remote._ts));
           showToast("☁️ Date sincronizate din cloud");
         }
@@ -3841,6 +3878,7 @@ function App() {
       const syncData={
         evs,tasks,genExp,annualCosts,gigsPerYear,templates,
         riderVersions,pressKitVersions,playlistVersions,memberProfiles,
+        bandNotifications,
         creative:loadCreative(),
         _ts:ts
       };
@@ -3860,7 +3898,7 @@ function App() {
           setSyncStatus("error");
         });
     },2000);
-  },[evs,tasks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,playlistVersions,memberProfiles]);
+  },[evs,tasks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,playlistVersions,memberProfiles,bandNotifications]);
 
   // ─── GOOGLE CALENDAR STATE ───
   const [gcalToken, setGcalToken] = useState(() => {
@@ -3869,49 +3907,6 @@ function App() {
     return (t && exp > Date.now()) ? t : null;
   });
   const tokenClientRef = useRef(null);
-
-  // ─── SUPABASE AUTH — restaurare sesiune la pornire ───
-  useEffect(() => {
-    const sb = getSbClient();
-    if (!sb) { setAuthLoading(false); return; }
-
-    // Rezolvă userul din Supabase auth + member_profiles
-    const resolveUser = async (sbUser) => {
-      if (!sbUser) return null;
-      // 1. Încearcă maparea pe MEMBERS hardcoded (pentru membrii existenți)
-      const profiles = loadMemberProfiles();
-      const appUser = mapSbUserToAppUser(sbUser, profiles);
-      if (appUser) return appUser;
-      // 2. Caută în member_profiles (pentru useri noi)
-      try {
-        const { data: prof } = await sb.from("member_profiles").select("*").eq("user_id", sbUser.id).maybeSingle();
-        if (prof) {
-          if (prof.status === "pending") { setAuthStep("pending"); return null; }
-          if (prof.status === "approved") {
-            return { id: sbUser.id, n: prof.nickname||prof.prenume, rl: prof.role||"membru", memberId: null, profileData: prof };
-          }
-        }
-      } catch(e) {}
-      return null;
-    };
-
-    sb.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const appUser = await resolveUser(session.user);
-        if (appUser) setUser(appUser);
-      }
-      setAuthLoading(false);
-    }).catch(() => setAuthLoading(false));
-
-    const { data: { subscription } } = sb.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_OUT") { setUser(null); setAuthStep("role"); return; }
-      if (session?.user) {
-        const appUser = await resolveUser(session.user);
-        if (appUser) setUser(appUser);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   useEffect(() => {
     const tryInit = () => {
@@ -4188,6 +4183,7 @@ function App() {
     return {evs:evMatches.slice(0,8),tasks:taskMatches.slice(0,6),parsedDate};
   },[globalSearch,evs,tasks]);
 
+  const unreadNotifCount = bandNotifications.filter(n => n.memberId === user?.memberId && !n.read).length;
   const navItems = [
     {id:"acasa",    Ic:IcDash,  l:"Acasă"},
     {id:"events",   Ic:IcMusic, l:"Evenimente"},
@@ -4196,98 +4192,19 @@ function App() {
     {id:"tasks",    Ic:IcTask,  l:"Tasks",    badge:activeTaskCount},
     {id:"calendar", Ic:IcCal,   l:"Calendar"},
     ...(p.f?[{id:"finances", Ic:IcMoney, l:"Finanțe"}]:[]),
-    ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu"}]:[]),
+    ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu", badge: unreadNotifCount}]:[]),
   ];
 
   const sbW = mob ? 0 : (sbMode==="full"?220:56);
 
-  if(authLoading) return (
-    <div style={{minHeight:"100vh",background:"#0c0c0c",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{color:"#333",fontSize:13,fontFamily:"system-ui"}}>Se încarcă...</div>
-    </div>
-  );
-
   if(!user) {
-    // ─── Reset complet auth ───
-    const resetAuth = () => {
-      setAuthStep("role"); setLoginRole(null);
-      setLoginEmail(""); setLoginEmailErr(""); setPendingEmail(null);
-      setPwInput(""); setPwConfirm(""); setPwError(""); setPwResetSent(false);
-      setSignupForm({prenume:"",nume:"",email:"",nickname:"",password:"",confirm:""});
-      setSignupAvatarFile(null); setSignupAvatarPreview(null); setSfErr("");
+    const pickMember = (mid) => {
+      const m = MEMBERS.find(x => x.id === mid);
+      if (!m) return;
+      try { localStorage.setItem(LS_SESSION_MEMBER, mid); } catch (e) {}
+      setUser({ id: mid, n: m.short || m.n.split(" ")[0], rl: "membru", memberId: mid });
     };
-    // ─── Login cu email+parolă ───
-    const doLogin = async () => {
-      const em = loginEmail.trim().toLowerCase();
-      if(!em){ setLoginEmailErr("Introdu emailul"); return; }
-      if(!pwInput.trim()){ setPwError("Introdu parola"); return; }
-      setPwError(""); setPwLoading(true);
-      const sb = getSbClient();
-      if(!sb){ setPwError("Supabase nu e configurat"); setPwLoading(false); return; }
-      try {
-        const { error } = await sb.auth.signInWithPassword({ email: em, password: pwInput });
-        if(error) setPwError("Email sau parolă incorectă");
-      } catch(e){ setPwError(String(e?.message||e)); }
-      setPwLoading(false);
-    };
-    // ─── Resetare parolă ───
-    const doResetPw = async () => {
-      const em = loginEmail.trim().toLowerCase();
-      if(!em){ setLoginEmailErr("Introdu emailul mai întâi"); return; }
-      const sb = getSbClient(); if(!sb) return;
-      setPwLoading(true);
-      const { error } = await sb.auth.resetPasswordForEmail(em, { redirectTo: window.location.href });
-      if(!error) setPwResetSent(true); else setPwError(error.message||"Eroare");
-      setPwLoading(false);
-    };
-    // ─── Signup cont nou ───
-    const doSignup = async () => {
-      const { prenume, nume, email, nickname, password, confirm } = signupForm;
-      if(!prenume.trim()){ setSfErr("Prenumele e obligatoriu"); return; }
-      if(!nume.trim()){ setSfErr("Numele e obligatoriu"); return; }
-      const em = email.trim().toLowerCase();
-      if(!em.includes("@")){ setSfErr("Email invalid"); return; }
-      const vErr = validatePw(password);
-      if(vErr){ setSfErr(vErr); return; }
-      if(password !== confirm){ setSfErr("Parolele nu coincid"); return; }
-      setSfErr(""); setPwLoading(true);
-      const sb = getSbClient();
-      if(!sb){ setSfErr("Supabase nu e configurat"); setPwLoading(false); return; }
-      try {
-        const { data, error } = await sb.auth.signUp({ email: em, password });
-        if(error){
-          if(error.message?.toLowerCase().includes("already")) setSfErr("Email deja înregistrat — folosește 'Mă autentific'");
-          else setSfErr(error.message||"Eroare");
-          setPwLoading(false); return;
-        }
-        const userId = data.user?.id;
-        if(!userId){ setSfErr("Eroare la creare cont"); setPwLoading(false); return; }
-        let avatar_url = null;
-        if(signupAvatarFile){
-          const ext = signupAvatarFile.name.split(".").pop()||"jpg";
-          const path = `${userId}/avatar.${ext}`;
-          const { error: upErr } = await sb.storage.from("avatars").upload(path, signupAvatarFile, { upsert: true });
-          if(!upErr){ const { data: urlD } = sb.storage.from("avatars").getPublicUrl(path); avatar_url = urlD?.publicUrl||null; }
-        }
-        const isKnown = MEMBERS.some(m=>(m.email||"").toLowerCase()===em) || em===FURNIZOR_EMAIL || em===ADMIN_EMAIL;
-        const status = isKnown ? "approved" : "pending";
-        const role = loginRole==="furnizor" ? "furnizor" : (em===ADMIN_EMAIL ? "admin" : "membru");
-        await sb.from("member_profiles").insert({
-          user_id: userId, prenume: prenume.trim(), nume: nume.trim(),
-          nickname: nickname.trim()||null, email: em, avatar_url, role, status
-        });
-        if(status === "pending") setAuthStep("pending");
-      } catch(e){ setSfErr(String(e?.message||e)); }
-      setPwLoading(false);
-    };
-
     const aB = {minHeight:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:"#0c0c0c",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",gap:24};
-    const aC = {width:"100%",maxWidth:320,animation:"up .4s ease both"};
-    const aI = {width:"100%",padding:14,background:"#161616",border:"1px solid #222",borderRadius:10,color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none"};
-    const aBt = {width:"100%",padding:14,background:"#fff",color:"#000",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer"};
-    const aBo = {width:"100%",padding:14,background:"transparent",color:"#888",border:"1px solid #282828",borderRadius:10,fontSize:14,fontWeight:500,cursor:"pointer"};
-    const aBk = {padding:"6px 12px",marginBottom:16,border:"1px solid #282828",background:"transparent",color:"#666",cursor:"pointer",fontSize:11,borderRadius:8,fontFamily:"inherit"};
-
     return (
       <div style={aB}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -4296,141 +4213,18 @@ function App() {
           <div style={{fontSize:9,color:"#666",letterSpacing:4,textTransform:"uppercase",marginTop:16}}>Band Manager</div>
         </div>
         <div style={{width:40,height:1,background:"#222"}}/>
-
-        {authStep==="role"&&<div style={aC}>
+        <div style={{width:"100%",maxWidth:360,animation:"up .4s ease .08s both"}}>
+          <div style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:2,marginBottom:14,textAlign:"center"}}>Cine folosește aplicația?</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <button onClick={()=>{setLoginRole("membru");setAuthStep("method");}} style={{width:"100%",padding:"20px 18px",background:"#161616",color:"#fff",border:"1px solid #303030",borderRadius:12,fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:12,letterSpacing:.3}}>
-              <span style={{fontSize:22}}>🎸</span> Membru
-            </button>
-            <button onClick={()=>{setLoginRole("furnizor");setAuthStep("login");setLoginEmail(FURNIZOR_EMAIL);}} style={{width:"100%",padding:"20px 18px",background:"#161616",color:"#fff",border:"1px solid #303030",borderRadius:12,fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:12,letterSpacing:.3}}>
-              <span style={{fontSize:22}}>🏢</span> Furnizor
-            </button>
-          </div>
-        </div>}
-
-        {authStep==="method"&&<div style={aC}>
-          <button onClick={()=>setAuthStep("role")} style={aBk}>← Înapoi</button>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <button onClick={()=>setAuthStep("login")} style={{width:"100%",padding:"20px 18px",background:"#161616",color:"#fff",border:"1px solid #303030",borderRadius:12,fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
-              <span style={{fontSize:22}}>🔑</span> Autentificare
-            </button>
-            <button onClick={()=>setAuthStep("signup")} style={{width:"100%",padding:"20px 18px",background:"#161616",color:"#fff",border:"1px solid #303030",borderRadius:12,fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
-              <span style={{fontSize:22}}>✨</span> Cont nou
-            </button>
-          </div>
-        </div>}
-
-        {authStep==="login"&&<div style={aC}>
-          <button onClick={()=>{setAuthStep(loginRole==="furnizor"?"role":"method");setLoginEmail(loginRole==="furnizor"?"":loginEmail);setPwInput("");setPwError("");setPwResetSent(false);}} style={aBk}>← Înapoi</button>
-          <div style={{marginBottom:20}}>
-            <div style={{fontSize:9,color:"#666",letterSpacing:3,textTransform:"uppercase",marginBottom:4}}>{loginRole==="furnizor"?"Furnizor":"Membru"}</div>
-            <div style={{fontSize:20,fontWeight:700,color:"#fff"}}>Bine ai venit</div>
-          </div>
-          {pwResetSent ? (
-            <div style={{padding:16,borderRadius:10,background:"rgba(34,197,94,.08)",border:"1px solid rgba(34,197,94,.2)",fontSize:13,color:"#22c55e",lineHeight:1.6,textAlign:"center"}}>
-              ✓ Verifică emailul — ți-am trimis un link de resetare.
-              <button onClick={()=>setPwResetSent(false)} style={{display:"block",margin:"10px auto 0",padding:"6px 14px",border:"1px solid #22c55e",background:"transparent",color:"#22c55e",borderRadius:8,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>← Înapoi</button>
-            </div>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div>
-                <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Email</label>
-                <input type="email" value={loginEmail} autoFocus={loginRole!=="furnizor"}
-                  onChange={e=>{setLoginEmail(e.target.value);setLoginEmailErr("");}}
-                  readOnly={loginRole==="furnizor"}
-                  placeholder="emailul-tau@gmail.com"
-                  style={{...aI,border:`1px solid ${loginEmailErr?"#ef4444":"#222"}`,opacity:loginRole==="furnizor"?0.5:1}}
-                  onKeyDown={e=>e.key==="Enter"&&document.getElementById("pw-inp")?.focus()}/>
-                {loginEmailErr&&<div style={{fontSize:12,color:"#ef4444",marginTop:4}}>{loginEmailErr}</div>}
-              </div>
-              <div>
-                <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Parolă</label>
-                <input id="pw-inp" type="password" value={pwInput} autoFocus={loginRole==="furnizor"}
-                  onChange={e=>{setPwInput(e.target.value);setPwError("");}}
-                  placeholder="••••••••"
-                  style={{...aI,border:`1px solid ${pwError?"#ef4444":"#222"}`}}
-                  onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
-              </div>
-              {pwError&&<div style={{fontSize:12,color:"#ef4444",padding:"8px 12px",background:"rgba(239,68,68,.08)",borderRadius:8,border:"1px solid rgba(239,68,68,.2)"}}>{pwError}</div>}
-              <button onClick={doLogin} disabled={pwLoading} style={{...aBt,marginTop:4}}>
-                {pwLoading?"Se procesează...":"Intră →"}
+            {MEMBERS.map(m => (
+              <button key={m.id} type="button" onClick={()=>pickMember(m.id)} style={{width:"100%",padding:"18px 20px",background:"#161616",color:"#fff",border:"1px solid #303030",borderRadius:12,fontSize:16,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",letterSpacing:.2}}>
+                <span style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:22}}>🎸</span> {m.short}</span>
+                <span style={{fontSize:12,color:"#666",fontWeight:500}}>{m.r}</span>
               </button>
-              <button onClick={doResetPw} disabled={pwLoading} style={{padding:6,border:"none",background:"transparent",color:"#444",fontSize:11,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",textAlign:"center"}}>Am uitat parola</button>
-            </div>
-          )}
-        </div>}
-
-        {authStep==="signup"&&<div style={{...aC,maxWidth:400,overflowY:"auto",maxHeight:"80vh"}}>
-          <button onClick={()=>{setAuthStep("method");setSfErr("");}} style={aBk}>← Înapoi</button>
-          <div style={{marginBottom:20}}>
-            <div style={{fontSize:9,color:"#666",letterSpacing:3,textTransform:"uppercase",marginBottom:4}}>Cont nou</div>
-            <div style={{fontSize:20,fontWeight:700,color:"#fff"}}>Creează-ți contul</div>
-            <div style={{fontSize:11,color:"#444",marginTop:3}}>Adminul va aproba cererea ta</div>
+            ))}
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:4}}>
-              <div style={{width:64,height:64,borderRadius:"50%",background:"#1a1a1a",border:"1px solid #282828",overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>
-                {signupAvatarPreview ? <img src={signupAvatarPreview} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : "👤"}
-              </div>
-              <div>
-                <div style={{fontSize:12,color:"#888",marginBottom:6}}>Poză de profil <span style={{color:"#555"}}>(opțional)</span></div>
-                <label style={{padding:"6px 12px",background:"#1a1a1a",border:"1px solid #282828",borderRadius:8,fontSize:11,color:"#888",cursor:"pointer"}}>
-                  Alege imagine
-                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
-                    const f=e.target.files[0]; if(!f) return;
-                    setSignupAvatarFile(f);
-                    const r=new FileReader(); r.onload=ev=>setSignupAvatarPreview(ev.target.result); r.readAsDataURL(f);
-                  }}/>
-                </label>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <div style={{flex:1}}>
-                <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Prenume *</label>
-                <input value={signupForm.prenume} onChange={e=>setSignupForm(f=>({...f,prenume:e.target.value}))} placeholder="Ion" style={aI} autoFocus/>
-              </div>
-              <div style={{flex:1}}>
-                <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Nume *</label>
-                <input value={signupForm.nume} onChange={e=>setSignupForm(f=>({...f,nume:e.target.value}))} placeholder="Popescu" style={aI}/>
-              </div>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Nickname <span style={{color:"#444"}}>(opțional)</span></label>
-              <input value={signupForm.nickname} onChange={e=>setSignupForm(f=>({...f,nickname:e.target.value}))} placeholder="Ex: Ionu'" style={aI}/>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Email *</label>
-              <input type="email" value={signupForm.email} onChange={e=>setSignupForm(f=>({...f,email:e.target.value}))} placeholder="emailul-tau@gmail.com" style={aI}/>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Parolă *</label>
-              <input type="password" value={signupForm.password} onChange={e=>setSignupForm(f=>({...f,password:e.target.value}))} placeholder="Minim 8 car., literă mare, cifră" style={aI}/>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:"#888",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Confirmă parola *</label>
-              <input type="password" value={signupForm.confirm} onChange={e=>{setSignupForm(f=>({...f,confirm:e.target.value}));setSfErr("");}} placeholder="Repetă parola" style={aI} onKeyDown={e=>e.key==="Enter"&&doSignup()}/>
-            </div>
-            <div style={{padding:"8px 12px",borderRadius:7,background:"rgba(255,255,255,.03)",fontSize:11,color:"#444",lineHeight:1.7}}>
-              Cerințe parolă: minim 8 caractere · o literă MARE · o literă mică · o cifră
-            </div>
-            {sfErr&&<div style={{fontSize:12,color:"#ef4444",padding:"8px 12px",background:"rgba(239,68,68,.08)",borderRadius:8,border:"1px solid rgba(239,68,68,.2)"}}>{sfErr}</div>}
-            <button onClick={doSignup} disabled={pwLoading} style={{...aBt,marginTop:4}}>
-              {pwLoading?"Se procesează...":"Trimite cererea →"}
-            </button>
-          </div>
-        </div>}
-
-        {authStep==="pending"&&<div style={{...aC,textAlign:"center"}}>
-          <div style={{fontSize:48,marginBottom:16}}>⏳</div>
-          <div style={{fontSize:20,fontWeight:700,color:"#fff",marginBottom:8}}>Cerere trimisă!</div>
-          <div style={{fontSize:13,color:"#555",lineHeight:1.7,marginBottom:20}}>
-            Contul tău a fost creat.<br/>
-            Adminul va aproba cererea ta în curând.<br/>
-            Vei putea accesa aplicația după aprobare.
-          </div>
-          <button onClick={resetAuth} style={{...aBo,width:"auto",padding:"8px 20px",fontSize:12}}>← Înapoi la login</button>
-        </div>}
-
+          <p style={{fontSize:11,color:"#555",textAlign:"center",marginTop:20,lineHeight:1.6}}>Datele sunt comune pentru trupă. Notificările pentru task-uri apar în <strong style={{color:"#888"}}>Contul meu</strong> pentru membrul desemnat.</p>
+        </div>
       </div>
     );
   }
@@ -4494,8 +4288,8 @@ function App() {
           </button>
         </div>
         <div style={{padding:"8px 12px 14px",display:"flex",flexDirection:"column",gap:4}}>
-          <button onClick={async()=>{const sb=getSbClient();if(sb) await sb.auth.signOut();setUser(null);}} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
-            <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · <span style={{textTransform:"uppercase",fontSize:9,letterSpacing:1}}>{user.rl}</span></span>}
+          <button onClick={()=>{ try{localStorage.removeItem(LS_SESSION_MEMBER);}catch(e){} setUser(null); }} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
+            <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · schimbă membru</span>}
           </button>
           {/* Sync status — bulinuță subtilă */}
           <div title={syncStatus==="synced"?"Date sincronizate în cloud":syncStatus==="syncing"?"Se sincronizează...":syncStatus==="error"?(syncErrorMsg||"Eroare sincronizare"):"Așteptând..."} style={{display:"flex",alignItems:"center",gap:6,padding:"2px 14px 8px"}}>
@@ -4516,10 +4310,10 @@ function App() {
           </button>
         ))}
         {/* Logout compact */}
-        <button className="mob-bottom-nav-btn" onClick={async()=>{const sb=getSbClient();if(sb)await sb.auth.signOut();setUser(null);}}
+        <button className="mob-bottom-nav-btn" onClick={()=>{ try{localStorage.removeItem(LS_SESSION_MEMBER);}catch(e){} setUser(null); }}
           style={{color:th.sbt,minWidth:48}}>
           <IcOut s={18}/>
-          <span className="nav-lbl" style={{opacity:.55}}>Ieșire</span>
+          <span className="nav-lbl" style={{opacity:.55}}>Schimbă</span>
         </button>
       </nav>
 
@@ -4635,7 +4429,7 @@ function App() {
             </div>
 
             <div style={{...sty.cd,padding:20}}>
-              <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={true}/>
+              <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={true} currentMemberId={user.memberId} onNotifyAssign={onNotifyAssign}/>
             </div>
           </div>}
 
@@ -5175,7 +4969,7 @@ function App() {
               <p style={{color:th.tm,fontSize:15,marginTop:8}}>{tasks.filter(t=>!t.done).length} active · {tasks.filter(t=>t.done).length} finalizate</p>
             </div>
             <div style={{...sty.cd,maxWidth:720,padding:32,borderRadius:16,border:`1px solid ${th.bl}`}}>
-              <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={false}/>
+              <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={false} currentMemberId={user.memberId} onNotifyAssign={onNotifyAssign}/>
             </div>
           </div>}
 
