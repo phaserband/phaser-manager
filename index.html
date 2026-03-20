@@ -2333,44 +2333,44 @@ function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient }) {
   const handleGetLink = async () => {
     if (linkState.url) { setLinkState(s=>({...s, show:!s.show})); return; }
     const sb = getSbClient?.();
-    if (!sb) { showToast?.(“Link partajabil necesită Supabase. Configurează bucket-ul fisa-public.”); return; }
+    if (!sb) { showToast?.("Link partajabil necesita Supabase. Configureaza bucket-ul fisa-public."); return; }
     setLoading(true);
     try {
       const html = buildFisaHtml(ev);
       const fid = uid();
       const path = `fisa-${fid}.html`;
-      const { error } = await sb.storage.from(“fisa-public”).upload(path, html, { contentType: “text/html; charset=utf-8”, upsert: true });
+      const { error } = await sb.storage.from("fisa-public").upload(path, html, { contentType: "text/html; charset=utf-8", upsert: true });
       if (error) throw error;
-      const { data: { publicUrl } } = sb.storage.from(“fisa-public”).getPublicUrl(path);
+      const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
       setLinkState({url:publicUrl, show:true, copied:false});
-      showToast?.(“Link generat ✓”);
+      showToast?.("Link generat ✓");
     } catch (e) {
-      const raw = (e?.message || e?.error_description || “”).trim();
+      const raw = (e?.message || e?.error_description || "").trim();
       const msg = /bucket not found/i.test(raw)
-        ? “Bucket „fisa-public” nu există în Supabase. Dashboard → Storage → New bucket: id „fisa-public”, Public.”
-        : (“Eroare: “ + (raw || “Upload eșuat.”));
-      showToast?.(msg, “error”);
+        ? "Bucket 'fisa-public' nu exista in Supabase. Dashboard -> Storage -> New bucket: id 'fisa-public', Public."
+        : ("Eroare: " + (raw || "Upload eșuat."));
+      showToast?.(msg, "error");
     }
     setLoading(false);
   };
   return (
-    <div style={{position:”relative”}}>
-      <button onClick={handleGetLink} disabled={pdfLoading||loading} style={{padding:”8px 16px”,borderRadius:8,border:”none”,background:linkState.show?”#2563eb”:”#3b82f6”,color:”#fff”,fontWeight:700,fontSize:12,cursor:(pdfLoading||loading)?”wait”:”pointer”,display:”flex”,alignItems:”center”,gap:6,opacity:(pdfLoading||loading)?0.7:1}}>
-        {loading?”⏳”:”🔗”} Link
+    <div style={{position:"relative"}}>
+      <button onClick={handleGetLink} disabled={pdfLoading||loading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:linkState.show?"#2563eb":"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||loading)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||loading)?0.7:1}}>
+        {loading?"⏳":"🔗"} Link
       </button>
-      {linkState.show&&<><div style={{position:”fixed”,inset:0,zIndex:49}} onClick={()=>setLinkState(s=>({...s,show:false}))}/>
-      <div style={{position:”absolute”,top:”calc(100% + 10px)”,right:0,background:”#1a1a1a”,borderRadius:12,padding:14,width:300,zIndex:50,boxShadow:”0 12px 32px rgba(0,0,0,.6)”,border:”1px solid rgba(255,255,255,.12)”}}>
-        <div style={{fontSize:10,color:”rgba(255,255,255,.5)”,marginBottom:8,fontWeight:600,textTransform:”uppercase”,letterSpacing:1}}>Link partajabil</div>
-        <div style={{display:”flex”,gap:6,marginBottom:10}}>
-          <input value={linkState.url} readOnly onClick={e=>e.target.select()} style={{flex:1,padding:”6px 8px”,borderRadius:6,border:”1px solid rgba(255,255,255,.15)”,background:”rgba(255,255,255,.06)”,color:”rgba(255,255,255,.6)”,fontSize:10,fontFamily:”monospace”,minWidth:0}}/>
-          <button onClick={async()=>{try{await navigator.clipboard.writeText(linkState.url);}catch(e){const ta=document.createElement(“textarea”);ta.value=linkState.url;ta.style.cssText=”position:fixed;opacity:0”;document.body.appendChild(ta);ta.select();document.execCommand(“copy”);document.body.removeChild(ta);}setLinkState(s=>({...s,copied:true}));setTimeout(()=>setLinkState(s=>({...s,copied:false})),2000);}} style={{padding:”6px 10px”,borderRadius:6,border:”none”,background:linkState.copied?”#22c55e”:”#333”,color:”#fff”,fontSize:11,cursor:”pointer”,flexShrink:0,fontWeight:600}}>
-            {linkState.copied?”✓”:”📋”}
+      {linkState.show&&<><div style={{position:"fixed",inset:0,zIndex:49}} onClick={()=>setLinkState(s=>({...s,show:false}))}/>
+      <div style={{position:"absolute",top:"calc(100% + 10px)",right:0,background:"#1a1a1a",borderRadius:12,padding:14,width:300,zIndex:50,boxShadow:"0 12px 32px rgba(0,0,0,.6)",border:"1px solid rgba(255,255,255,.12)"}}>
+        <div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Link partajabil</div>
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          <input value={linkState.url} readOnly onClick={e=>e.target.select()} style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"rgba(255,255,255,.6)",fontSize:10,fontFamily:"monospace",minWidth:0}}/>
+          <button onClick={async()=>{try{await navigator.clipboard.writeText(linkState.url);}catch(e){const ta=document.createElement("textarea");ta.value=linkState.url;ta.style.cssText="position:fixed;opacity:0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}setLinkState(s=>({...s,copied:true}));setTimeout(()=>setLinkState(s=>({...s,copied:false})),2000);}} style={{padding:"6px 10px",borderRadius:6,border:"none",background:linkState.copied?"#22c55e":"#333",color:"#fff",fontSize:11,cursor:"pointer",flexShrink:0,fontWeight:600}}>
+            {linkState.copied?"✓":"📋"}
           </button>
         </div>
-        <a href={“https://wa.me/?text=”+encodeURIComponent(linkState.url)} target=”_blank” rel=”noreferrer” style={{display:”flex”,alignItems:”center”,justifyContent:”center”,gap:8,padding:”10px 16px”,borderRadius:8,background:”#25d366”,color:”#fff”,fontWeight:700,fontSize:13,textDecoration:”none”,width:”100%”}}>
+        <a href={"https://wa.me/?text="+encodeURIComponent(linkState.url)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",borderRadius:8,background:"#25d366",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none",width:"100%"}}>
           <span style={{fontSize:16}}>💬</span> Trimite pe WhatsApp
         </a>
-        <button onClick={()=>setLinkState(s=>({...s,show:false}))} style={{marginTop:8,width:”100%”,padding:”5px”,borderRadius:6,border:”1px solid rgba(255,255,255,.1)”,background:”transparent”,color:”rgba(255,255,255,.4)”,fontSize:11,cursor:”pointer”}}>Închide</button>
+        <button onClick={()=>setLinkState(s=>({...s,show:false}))} style={{marginTop:8,width:"100%",padding:"5px",borderRadius:6,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"rgba(255,255,255,.4)",fontSize:11,cursor:"pointer"}}>Închide</button>
       </div></> }
     </div>
   );
