@@ -41,6 +41,55 @@
       button { touch-action: manipulation; }
       .table-scroll-mob { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -16px; padding: 0 16px; }
       .table-scroll-mob table { min-width: 520px; }
+      /* Bottom nav bar */
+      .mob-bottom-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        z-index: 300;
+        height: 60px;
+        padding-bottom: env(safe-area-inset-bottom);
+        border-top: 1px solid rgba(255,255,255,.08);
+        background: var(--nav-bg, #111);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        align-items: stretch;
+      }
+      .mob-bottom-nav::-webkit-scrollbar { display: none; }
+      .mob-bottom-nav-btn {
+        flex: 1;
+        min-width: 56px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-family: inherit;
+        padding: 6px 4px 4px;
+        position: relative;
+        transition: opacity .15s;
+      }
+      .mob-bottom-nav-btn span.nav-lbl { font-size: 9px; font-weight: 600; letter-spacing: .2px; }
+      .mob-bottom-nav-badge {
+        position: absolute; top: 6px; right: calc(50% - 14px);
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #f59e0b;
+      }
+    }
+    @media (min-width: 768px) {
+      .mob-bottom-nav { display: none !important; }
+    }
+    /* Scrollbar ascuns pe mobil pretutindeni */
+    @media (max-width: 767px) {
+      * { -webkit-tap-highlight-color: transparent; }
+      ::-webkit-scrollbar { display: none; }
+      /* Fă toate taburile scrollabile orizontal fără scrollbar */
+      .mob-tab-scroll { display: flex; overflow-x: auto; gap: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; }
+      .mob-tab-scroll::-webkit-scrollbar { display: none; }
     }
   </style>
 </head>
@@ -4082,7 +4131,7 @@ function App() {
     ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu"}]:[]),
   ];
 
-  const sbW = sbMode==="full"?220:56;
+  const sbW = mob ? 0 : (sbMode==="full"?220:56);
 
   // Swipe refs — must be before any early return
   const appTouchStart = useRef(null);
@@ -4100,9 +4149,9 @@ function App() {
     const dy = Math.abs(e.changedTouches[0].clientY - appTouchStartY.current);
     appTouchStart.current = null;
     if(Math.abs(dx) < 50 || Math.abs(dx) < dy * 1.5) return;
-    if(dx > 0 && startX < 80 && sbMode === "mini") { setSbMode("full"); return; }
-    if(dx < 0 && sbMode === "full") { setSbMode("mini"); return; }
-    if(modal || sbMode === "full") return;
+    if(!mob && dx > 0 && startX < 80 && sbMode === "mini") { setSbMode("full"); return; }
+    if(!mob && dx < 0 && sbMode === "full") { setSbMode("mini"); return; }
+    if(modal || (!mob && sbMode === "full")) return;
     const allNav = ["acasa","events","offers","docs","tasks","calendar",
       ...(p.f?["finances"]:[]),
       ...(user?.memberId?["contul"]:[])
@@ -4362,8 +4411,8 @@ function App() {
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:${th.b};border-radius:3px}input,select,textarea{font-family:inherit}input:focus,select:focus,textarea:focus{outline:none;border-color:${th.tm}!important}select.modernSel{appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer;border-radius:8px;border:1px solid ${th.b};background-color:${th.i};color:${th.t};font-size:13px;transition:border-color .15s,box-shadow .15s}select.modernSel:hover{border-color:${th.tm}}select.modernSel:focus{box-shadow:0 0 0 2px ${th.ab}}@keyframes su{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}button:hover{opacity:.85}table{border-collapse:collapse}`}</style>
 
-      {/* SIDEBAR — urmărește tema day/night */}
-      <div style={{width:sbW,background:th.sb,borderRight:`1px solid ${th.sbb}`,display:"flex",flexDirection:"column",flexShrink:0,transition:"width .25s ease",overflow:"hidden"}}>
+      {/* SIDEBAR — ascuns complet pe mobil, vizibil pe desktop */}
+      <div style={{width:sbW,background:th.sb,borderRight:mob?"none":`1px solid ${th.sbb}`,display:mob?"none":"flex",flexDirection:"column",flexShrink:0,transition:"width .25s ease",overflow:"hidden"}}>
         <div style={{padding:sbMode==="full"?(mob?"14px 12px":"18px 16px"):(mob?"12px":"10px"),borderBottom:`1px solid ${th.sbb}`,display:"flex",alignItems:"center",justifyContent:sbMode==="mini"?"center":"space-between",minHeight:mob?56:62}}>
           {sbMode==="full"&&<Logo height={mob?24:28} dark={effectiveTheme==="light"}/>}
           <button onClick={()=>setSbMode(sbMode==="full"?"mini":"full")} style={{padding:mob?12:8,border:"none",background:sbMode==="mini"?(effectiveTheme==="light"?"rgba(0,0,0,.08)":"rgba(255,255,255,.08)"):"transparent",color:th.sbt,cursor:"pointer",flexShrink:0,borderRadius:8,minWidth:mob?44:undefined,minHeight:mob?44:undefined,display:"flex",alignItems:"center",justifyContent:"center"}} title={sbMode==="mini"?"Deschide meniu":"Închide meniu"}>
@@ -4418,9 +4467,27 @@ function App() {
         </div>
       </div>
 
+      {/* MOBILE BOTTOM NAV — vizibil doar pe mobil prin CSS */}
+      <nav className="mob-bottom-nav" style={{background:th.sb,borderTopColor:th.sbb}}>
+        {navItems.map(it=>(
+          <button key={it.id} className="mob-bottom-nav-btn" onClick={()=>setTab(it.id)}
+            style={{color:tab===it.id?th.a:th.sbt}}>
+            {it.badge>0&&<span className="mob-bottom-nav-badge"/>}
+            <it.Ic s={tab===it.id?20:18}/>
+            <span className="nav-lbl" style={{opacity:tab===it.id?1:.65}}>{it.l}</span>
+          </button>
+        ))}
+        {/* Logout compact */}
+        <button className="mob-bottom-nav-btn" onClick={async()=>{const sb=getSbClient();if(sb)await sb.auth.signOut();setUser(null);}}
+          style={{color:th.sbt,minWidth:48}}>
+          <IcOut s={18}/>
+          <span className="nav-lbl" style={{opacity:.55}}>Ieșire</span>
+        </button>
+      </nav>
+
       {/* MAIN */}
       <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",position:"relative"}}>
-        <div style={{flex:1,minHeight:0,overflow:"auto",padding:mob?"14px 16px 24px":"22px 36px 22px 44px",paddingLeft:sbMode==="mini"?(mob?56:52):(mob?16:44),paddingBottom:mob?"max(24px, env(safe-area-inset-bottom))":"22px"}}>
+        <div style={{flex:1,minHeight:0,overflow:"auto",padding:mob?"14px 16px 80px":"22px 36px 22px 44px",paddingLeft:mob?16:(sbMode==="mini"?52:44),paddingBottom:mob?"max(80px, calc(60px + env(safe-area-inset-bottom)))":"22px"}}>
 
           {/* GLOBAL SEARCH — mereu vizibil */}
           <div style={{position:"relative",marginBottom:16,maxWidth:mob?"100%":400}}>
@@ -4468,15 +4535,15 @@ function App() {
           {tab==="acasa"&&<div style={{animation:"su .3s ease"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
               <div>
-                <h1 style={{fontSize:mob?20:22,fontWeight:700,letterSpacing:"-0.5px"}}>Acasă</h1>
+                <h1 style={{fontSize:mob?18:22,fontWeight:700,letterSpacing:"-0.5px"}}>Acasă</h1>
                 <p style={{color:th.tm,fontSize:12,marginTop:2}}>Bun venit, {user.n}!</p>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:mob?6:8,flexWrap:"wrap"}}>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <IcCal s={16} style={{color:th.tm}}/>
-                  <input type="date" value={dashboardDateSearch} onChange={e=>setDashboardDateSearch(e.target.value)} style={{...sty.i,padding:"6px 10px",fontSize:12,maxWidth:150}} placeholder="Caută după dată"/>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",width:mob?"100%":undefined}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,flex:mob?1:undefined}}>
+                  <IcCal s={15} style={{color:th.tm,flexShrink:0}}/>
+                  <input type="date" value={dashboardDateSearch} onChange={e=>setDashboardDateSearch(e.target.value)} style={{...sty.i,padding:"6px 8px",fontSize:12,maxWidth:mob?"100%":150,flex:mob?1:undefined}} placeholder="Caută după dată"/>
                 </div>
-                {p.c&&<button onClick={()=>openModal("pick",null)} style={sty.b}><IcPlus s={14}/> Ofertă nouă</button>}
+                {p.c&&<button onClick={()=>openModal("pick",null)} style={{...sty.b,fontSize:12,padding:"7px 12px"}}><IcPlus s={13}/> Ofertă nouă</button>}
               </div>
             </div>
 
@@ -4537,10 +4604,10 @@ function App() {
           {/* EVENIMENTE — Viitoare + Trecute, fără filtre status */}
           {tab==="events"&&<div style={{animation:"su .3s ease"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-              <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px"}}>Evenimente</h1>
-              {p.c&&<div style={{display:"flex",gap:8}}>
-                <button onClick={()=>openModal("form",{cat:"private"})} style={{...sty.b,background:"transparent",border:`1px solid ${th.a}`,color:th.a}}><IcPlus s={14}/> Eveniment nou</button>
-                <button onClick={()=>openModal("pick",null)} style={sty.b}><IcPlus s={14}/> Ofertă nouă</button>
+              <h1 style={{fontSize:mob?18:22,fontWeight:700,letterSpacing:"-0.5px"}}>Evenimente</h1>
+              {p.c&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {!mob&&<button onClick={()=>openModal("form",{cat:"private"})} style={{...sty.b,background:"transparent",border:`1px solid ${th.a}`,color:th.a,fontSize:12,padding:"7px 12px"}}><IcPlus s={13}/> Eveniment nou</button>}
+                <button onClick={()=>openModal("pick",null)} style={{...sty.b,fontSize:12,padding:"7px 12px"}}><IcPlus s={13}/> Ofertă nouă</button>
               </div>}
             </div>
             {/* Search */}
@@ -4634,10 +4701,10 @@ function App() {
                 <label style={{...sty.bg,cursor:"pointer",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><IcFile s={14}/> Import JSON<input type="file" accept=".json,application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=="object")throw new Error("JSON invalid");if(Array.isArray(d.evs)){setEvs(d.evs);}if(Array.isArray(d.tasks)){setTasks(d.tasks);}if(Array.isArray(d.genExp)){setGE(d.genExp);}if(Array.isArray(d.annualCosts)){setAC(d.annualCosts);}if(typeof d.gigsPerYear==="number"&&d.gigsPerYear>0){setGigsPerYear(d.gigsPerYear);}if(d.templates){setTemplates(d.templates);try{localStorage.setItem(LS_KEYS.templates,JSON.stringify(d.templates));}catch(x){}}if(Array.isArray(d.riderVersions)){setRiderVersions(d.riderVersions);try{localStorage.setItem(LS_KEYS.riderVersions,JSON.stringify(d.riderVersions));}catch(x){}}if(Array.isArray(d.pressKitVersions)){setPressKitVersions(d.pressKitVersions);try{localStorage.setItem(LS_KEYS.pressKitVersions,JSON.stringify(d.pressKitVersions));}catch(x){}}if(d.creative){try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(d.creative));}catch(x){}}showToast("Date importate");}catch(err){showToast("Eroare: "+(err?.message||String(err)));}e.target.value="";};r.readAsText(f);}}/></label>
               </div>
             </div>
-            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+            <div className={mob?"mob-tab-scroll":""} style={{display:"flex",gap:6,marginBottom:16,flexWrap:mob?"nowrap":"wrap",overflowX:mob?"auto":"visible",paddingBottom:mob?4:0}}>
               {["rider","servicePrices","playlist","media","pressKitPublic"].map(s=>(
-                <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:docsSectTab===s?700:400,cursor:"pointer",background:docsSectTab===s?th.ab:"transparent",color:docsSectTab===s?th.t:th.tm}}>
-                  {{rider:"Rider",servicePrices:"💰 Prețuri servicii",playlist:"Playlist",media:"🎬 Media privat",pressKitPublic:"Press Kit Public"}[s]}
+                <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:docsSectTab===s?"none":`1px solid ${th.b}`,fontSize:12,fontWeight:docsSectTab===s?700:400,cursor:"pointer",background:docsSectTab===s?th.ab:"transparent",color:docsSectTab===s?th.t:th.tm,flexShrink:0,whiteSpace:"nowrap"}}>
+                  {{rider:"Rider",servicePrices:"💰 Prețuri",playlist:"🎵 Playlist",media:"🎬 Media",pressKitPublic:"Press Kit"}[s]}
                 </button>
               ))}
             </div>
@@ -5604,7 +5671,7 @@ function App() {
 
               {/* TAB-URI — doar confirmat: Fișa, Finanțe, Contract, Ofertă */}
               {isConfirmed&&<>
-                <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap",borderBottom:`1px solid ${th.b}`,paddingBottom:12}}>
+                <div className={mob?"mob-tab-scroll":""} style={{display:"flex",gap:4,marginBottom:16,flexWrap:mob?"nowrap":"wrap",borderBottom:`1px solid ${th.b}`,paddingBottom:12,overflowX:mob?"auto":"visible"}}>
                   <button type="button" onClick={()=>setDetailTab("fisa")} style={{padding:"6px 14px",borderRadius:7,border:detailTab==="fisa"?"none":`1px solid ${th.b}`,fontSize:12,fontWeight:detailTab==="fisa"?700:400,cursor:"pointer",background:detailTab==="fisa"?th.ab:"transparent",color:detailTab==="fisa"?th.t:th.t}}><IcDoc s={13}/> Fișa evenimentului</button>
                   <button type="button" onClick={()=>setDetailTab("finante")} style={{padding:"6px 14px",borderRadius:7,border:detailTab==="finante"?"none":`1px solid ${th.b}`,fontSize:12,fontWeight:detailTab==="finante"?700:400,cursor:"pointer",background:detailTab==="finante"?th.ab:"transparent",color:detailTab==="finante"?th.t:th.t}}><IcMoney s={13}/> Finanțe</button>
                   <button type="button" onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
@@ -5970,8 +6037,8 @@ function App() {
           <span style={{fontSize:12,fontWeight:bold?700:500,color:c||th.t}}>{v}</span>
         </div>;
 
-        return <div style={{position:"fixed",inset:0,background:th.ov,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100}} onClick={closeModal}>
-          <div style={{background:th.c,border:`1px solid ${th.b}`,borderRadius:14,width:mob?"95%":500,maxHeight:"92vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
+        return <div style={{position:"fixed",inset:0,background:th.ov,display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:1100}} onClick={closeModal}>
+          <div style={{background:th.c,border:mob?"none":`1px solid ${th.b}`,borderRadius:mob?"16px 16px 0 0":14,width:mob?"100%":500,maxHeight:mob?"92dvh":"92vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{padding:"16px 20px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
               <div style={{flex:1,display:"flex",alignItems:"center",gap:10}}>
                 {fromDetail&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("detail",ev.id),80);}} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:"transparent",color:th.t,fontSize:12,cursor:"pointer",fontWeight:600}}>← Înapoi</button>}
