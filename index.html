@@ -4254,6 +4254,7 @@ function App() {
     if (modal === "pick") return payload;
     if (modal === "pickEvent") return payload;
     if (modal === "calQuickAdd") return payload;
+    if (modal === "calDay") return typeof payload === "string" ? payload : null;
     if (modal === "calOcc") return typeof payload === "string" ? (calBlocks || []).find(b => b.id === payload) || null : payload;
     if (modal === "calTask") return typeof payload === "string" ? findTaskInTree(tasks, payload) || null : payload;
     return null;
@@ -4262,6 +4263,14 @@ function App() {
     if (modal === "calOcc" && !mData) closeModal();
     if (modal === "calTask" && !mData) closeModal();
   }, [modal, mData, closeModal]);
+  useEffect(()=>{
+    if (modal !== "calDay" || !mData) return;
+    const ds = mData;
+    const nEv = evs.filter(e => e.date === ds).length;
+    const nOcc = (calBlocks || []).filter(b => b.date === ds).length;
+    const nTask = collectTasksForDate(tasks, ds).length;
+    if (nEv + nOcc + nTask === 0) closeModal();
+  }, [modal, mData, evs, calBlocks, tasks, closeModal]);
   const [search, setSearch] = useState("");
   const [selectedEvIds, setSelectedEvIds] = useState([]);
   const [calM, setCalM]   = useState(new Date());
@@ -4274,6 +4283,8 @@ function App() {
   const [calNewOccTent, setCalNewOccTent] = useState(false);
   const [taskCalendarFocusId, setTaskCalendarFocusId] = useState(null);
   const consumeTaskCalendarFocus = useCallback(() => setTaskCalendarFocusId(null), []);
+  const calCellClickTimerRef = useRef(null);
+  useEffect(()=>()=>{ if (calCellClickTimerRef.current) clearTimeout(calCellClickTimerRef.current); }, []);
   const [dashboardDateSearch, setDashboardDateSearch] = useState("");
   useEffect(() => {
     setCalNewOccMember("");
@@ -5491,7 +5502,7 @@ function App() {
           {tab==="calendar"&&<div style={{animation:"su .3s ease",display:"flex",flexDirection:"column",gap:0,position:"relative",flex:1,minHeight:0,overflow:"hidden"}}>
             <div style={{flex:1,minWidth:0,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
             <h1 style={{fontSize:22,fontWeight:700,marginBottom:16,flexShrink:0}}>Calendar</h1>
-            <div style={{fontSize:11,color:th.tm,marginBottom:8,flexShrink:0,lineHeight:1.45}}>Oferte și evenimente; <strong style={{color:th.t}}>ocupări</strong> = cine e indisponibil. Linie continuă = sigur · <span style={{borderBottom:"1px dashed "+th.tm}}>întreruptă</span> = neconfirmat (?). <strong style={{color:th.t}}>Dublu-click</strong> pe o zi{p.c?"":" (cu permisiune creare)"}: ofertă / eveniment / ocupat / task. Alege o dată în câmpul de sus pentru rezumatul zilei.</div>
+            <div style={{fontSize:11,color:th.tm,marginBottom:8,flexShrink:0,lineHeight:1.45}}>Oferte și evenimente; <strong style={{color:th.t}}>ocupări</strong> = cine e indisponibil. Linie continuă = sigur · <span style={{borderBottom:"1px dashed "+th.tm}}>întreruptă</span> = neconfirmat (?). <strong style={{color:th.t}}>Click</strong> pe o zi cu intrări: rezumat în popup. <strong style={{color:th.t}}>Dublu-click</strong> pe o zi{p.c?"":" (cu permisiune creare)"}: adaugă ceva. Câmpul de sus: panou lateral cu detalii.</div>
             {(()=>{
               const y=calM.getFullYear(),m=calM.getMonth();
               const f=new Date(y,m,1).getDay(); const dn=new Date(y,m+1,0).getDate();
@@ -5545,8 +5556,8 @@ function App() {
                     const td=new Date().getDate()===d&&new Date().getMonth()===m&&new Date().getFullYear()===y;
                     const isSearchedDay=calDateSearch===ds;
                     const resp=(e)=>e.responsabilPrincipal||(e.responsabili&&e.responsabili[0]?.nume)||e.cn||"—";
-                    return <div key={d} onDoubleClick={()=>{if(p.c)openModal("calQuickAdd",{date:ds});else showToast("Dublu-click: adăugare în calendar (necesită permisiune de creare)","error");}} onDragOver={e=>{e.preventDefault();setCalDropDate(ds);}} onDragLeave={()=>setCalDropDate(null)} onDrop={e=>{e.preventDefault();setCalDropDate(null);if(calDragEvId){moveEvToDate(calDragEvId,ds);setCalDragEvId(null);}}}
-                      style={{minHeight:80,padding:4,borderRadius:6,border:isSearchedDay?`2px solid #3b82f6`:td?`2px solid ${th.a}`:calDropDate===ds?`2px solid ${th.a}`:hasStuff?`1px solid ${th.b}`:`1px solid ${th.bl}`,background:calDropDate===ds?th.ab:isSearchedDay?"rgba(59,130,246,0.08)":td?th.ab:dayOcc.length>0?"rgba(245,158,11,.06)":"transparent",display:"flex",flexDirection:"column",cursor:calDropDate===ds?"copy":"default"}}>
+                    return <div key={d} onClick={()=>{if(!hasStuff)return;if(calCellClickTimerRef.current)clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=setTimeout(()=>{calCellClickTimerRef.current=null;openModal("calDay",ds);},280);}} onDoubleClick={()=>{if(calCellClickTimerRef.current){clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=null;}if(p.c)openModal("calQuickAdd",{date:ds});else showToast("Dublu-click: adăugare în calendar (necesită permisiune de creare)","error");}} onDragOver={e=>{e.preventDefault();setCalDropDate(ds);}} onDragLeave={()=>setCalDropDate(null)} onDrop={e=>{e.preventDefault();setCalDropDate(null);if(calDragEvId){moveEvToDate(calDragEvId,ds);setCalDragEvId(null);}}}
+                      style={{minHeight:80,padding:4,borderRadius:6,border:isSearchedDay?`2px solid #3b82f6`:td?`2px solid ${th.a}`:calDropDate===ds?`2px solid ${th.a}`:hasStuff?`1px solid ${th.b}`:`1px solid ${th.bl}`,background:calDropDate===ds?th.ab:isSearchedDay?"rgba(59,130,246,0.08)":td?th.ab:dayOcc.length>0?"rgba(245,158,11,.06)":"transparent",display:"flex",flexDirection:"column",cursor:calDropDate===ds?"copy":hasStuff?"pointer":"default"}}>
                       <div style={{marginBottom:2}}>
                         <span style={{fontSize:12,fontWeight:isSearchedDay||td?800:hasStuff?600:400,color:isSearchedDay?"#3b82f6":td?th.t:hasStuff?th.t:th.tm}}>{d}</span>
                       </div>
@@ -6046,6 +6057,59 @@ function App() {
           <button type="button" onClick={closeModal} style={{...sty.bg,width:"100%",justifyContent:"center",marginTop:14}}>Anulează</button>
         </div>
       </div>}
+
+      {modal==="calDay"&&mData&&(()=>{
+        const ds=mData;
+        const dayEvs=evs.filter(e=>e.date===ds);
+        const dayOcc=(calBlocks||[]).filter(b=>b.date===ds);
+        const dayTasks=collectTasksForDate(tasks,ds);
+        if(!dayEvs.length&&!dayOcc.length&&!dayTasks.length)return null;
+        const occHueD=(mid)=>{const idx=MEMBERS.findIndex(x=>x.id===mid);const hues=["#6366f1","#f59e0b","#22c55e","#ec4899","#06b6d4","#a855f7"];return hues[(idx>=0?idx:0)%hues.length];};
+        const go=(fn)=>{closeModal();setTimeout(fn,50);};
+        const TPCd={high:"#ef4444",medium:"#f59e0b",low:"#22c55e"};
+        return <div style={{position:"fixed",inset:0,background:th.ov,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={closeModal}>
+          <div style={{background:th.c,border:`1px solid ${th.b}`,borderRadius:mob?0:14,width:mob?"100%":420,maxWidth:"100%",maxHeight:mob?"100vh":"85vh",overflow:"auto",boxShadow:"0 12px 40px rgba(0,0,0,.25)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"16px 20px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <h2 style={{fontSize:18,fontWeight:700,margin:0,color:th.t}}>{fD(ds)}</h2>
+                <div style={{fontSize:12,color:th.tm,marginTop:4}}>{dayEvs.length} eveniment{dayEvs.length!==1?"e":""} · {dayOcc.length} ocupare{dayOcc.length!==1?"i":""} · {dayTasks.length} task{dayTasks.length===1?"":"-uri"}</div>
+              </div>
+              <button type="button" onClick={closeModal} style={{padding:6,border:"none",background:"transparent",color:th.tm,cursor:"pointer"}}><IcX s={18}/></button>
+            </div>
+            <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
+              {dayEvs.length>0&&<>
+                <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:0.5}}>Oferte / evenimente</div>
+                {dayEvs.map(ev=><button key={ev.id} type="button" onClick={()=>go(()=>(ev.st==="confirmat"?openModal("detail",ev.id):openModal("oferta",ev.id)))} style={{textAlign:"left",padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,cursor:"pointer",width:"100%"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}><Badge s={ev.st} th={th}/><span style={{fontSize:13,fontWeight:700,color:th.t}}>{ev.offerNr!=null&&ev.offerNr!==""?"O"+ev.offerNr:"—"} · {ev.type}</span></div>
+                  <div style={{fontSize:11,color:th.tm}}>{ev.venue}{ev.city?", "+ev.city:""}</div>
+                </button>)}
+              </>}
+              {dayOcc.length>0&&<>
+                <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:0.5}}>Ocupat</div>
+                {dayOcc.map(b=>{
+                  const mem=MEMBERS.find(x=>x.id===b.memberId);
+                  const hue=occHueD(b.memberId);
+                  return <button key={b.id} type="button" onClick={()=>go(()=>openModal("calOcc",b.id))} style={{textAlign:"left",padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,borderLeft:`4px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",cursor:"pointer",width:"100%"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:th.t}}>{b.tentative?"? ":""}Ocupat: {mem?.short||mem?.n||"?"}</div>
+                    {b.note?<div style={{fontSize:11,color:th.tm,marginTop:4,whiteSpace:"pre-wrap"}}>{b.note}</div>:null}
+                  </button>;
+                })}
+              </>}
+              {dayTasks.length>0&&<>
+                <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:0.5}}>Tasks</div>
+                {dayTasks.map(t=>{
+                  const col=TPCd[t.priority||"medium"];
+                  const done=t.done||t.taskStatus==="done";
+                  return <button key={t.id} type="button" onClick={()=>go(()=>openModal("calTask",t.id))} style={{textAlign:"left",padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,borderLeft:`4px solid ${col}`,cursor:"pointer",width:"100%"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:th.t}}>{done?"✓ ":""}{t.text}</div>
+                  </button>;
+                })}
+              </>}
+              <button type="button" onClick={closeModal} style={{...sty.bg,width:"100%",marginTop:4}}>Închide</button>
+            </div>
+          </div>
+        </div>;
+      })()}
 
       {modal==="calOcc"&&mData&&(()=>{
         const b=mData;
