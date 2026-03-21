@@ -1465,18 +1465,39 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       return u.origin + u.pathname.replace(/\/[^/]+$/, "/");
     } catch (e) { return (typeof window !== "undefined" ? window.location.origin : "") + "/"; }
   };
-  /** background-image: url('assets/...') rămâne relativ la export HTML/PDF; îl facem absolut ca <img src>. */
+  /** background-image: url(...) rămâne relativ la export; îl facem absolut. innerHTML folosește &quot; în atributul style — trebuie acceptat, altfel path devine &quot;assets/... și URL-ul se strică. */
   const absolutizeCssUrlsInHtmlExport = (html, base) => {
-    let out = html.replace(/url\s*\(\s*(["'])([^"']*?)\1\s*\)/gi, (match, quote, path) => {
-      const p = String(path || "").trim();
-      if (!p || p.startsWith("data:") || /^https?:\/\//i.test(p) || p.startsWith("#")) return match;
-      try { return `url(${quote}${new URL(p, base).href}${quote})`; } catch (e) { return match; }
+    const normalizeCssUrlPath = (raw) => {
+      let p = String(raw || "")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#(?:0*34|[xX]22);/g, '"')
+        .replace(/&apos;|&#(?:0*39|[xX]27);/g, "'")
+        .replace(/&amp;/g, "&")
+        .trim();
+      while ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'")))
+        p = p.slice(1, -1).trim();
+      return p;
+    };
+    const absUrl = (p) => {
+      if (!p || p.startsWith("data:") || /^https?:\/\//i.test(p) || p.startsWith("#")) return null;
+      if (/^[a-z]+:/i.test(p) && !/^https?:/i.test(p)) return null;
+      try { return new URL(p, base).href; } catch (e) { return null; }
+    };
+    // Ghilimele reale sau entități HTML (&quot;), ca în serializarea atributului style
+    const quoted = /url\s*\(\s*(?:"|'|&quot;|&#(?:0*34|[xX]22);|&apos;|&#(?:0*39|[xX]27);)([\s\S]*?)(?:"|'|&quot;|&#(?:0*34|[xX]22);|&apos;|&#(?:0*39|[xX]27);)\s*\)/gi;
+    let out = html.replace(quoted, (match, inner) => {
+      const p = normalizeCssUrlPath(inner);
+      const href = absUrl(p);
+      if (!href) return match;
+      const safe = href.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      return `url('${safe}')`;
     });
-    out = out.replace(/url\s*\(\s*([^)"'\s][^)]*?)\s*\)/gi, (match, path) => {
-      const p = String(path || "").trim();
-      if (!p || p.startsWith("data:") || /^https?:\/\//i.test(p) || p.startsWith("#")) return match;
-      if (/^[a-z]+:/i.test(p) && !/^https?:/i.test(p)) return match;
-      try { return `url('${new URL(p, base).href}')`; } catch (e) { return match; }
+    out = out.replace(/url\s*\(\s*([^)"'\s][^)]*?)\s*\)/gi, (match, inner) => {
+      const p = normalizeCssUrlPath(inner);
+      const href = absUrl(p);
+      if (!href) return match;
+      const safe = href.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      return `url('${safe}')`;
     });
     return out;
   };
