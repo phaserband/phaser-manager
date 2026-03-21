@@ -576,7 +576,7 @@ const RIDER_TEHNIC = {
 // STORAGE & SCHEMA
 // ═══════════════════════════════════════════════════════════════════════════════
 const PHASER_V = 3;
-const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genExp", annualCosts: "phaser_annualCosts", gigsPerYear: "phaser_gigsPerYear", templates: "phaser_templates", riderVersions: "phaser_rider_versions", pressKitVersions: "phaser_presskit_versions", playlistVersions: "phaser_playlist_versions", creative: "phaser_creative", memberProfiles: "phaser_member_profiles", bandNotifications: "phaser_band_notifications" };
+const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genExp", annualCosts: "phaser_annualCosts", gigsPerYear: "phaser_gigsPerYear", templates: "phaser_templates", riderVersions: "phaser_rider_versions", pressKitVersions: "phaser_presskit_versions", playlistVersions: "phaser_playlist_versions", creative: "phaser_creative", memberProfiles: "phaser_member_profiles", bandNotifications: "phaser_band_notifications", calBlocks: "phaser_cal_blocks" };
 const SUPABASE_URL = "https://qtiosqtcrqgmlkwcrnpu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aW9zcXRjcnFnbWxrd2NybnB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNTY2MzEsImV4cCI6MjA4ODkzMjYzMX0.VR4MZArOnsc-DuLF3H3ZH-0PyfnBANyMiv8i31vxBnA";
 const SUPABASE_CFG = (()=>{ try { const s=localStorage.getItem("phaser_supabase_cfg"); const fromLs=s?JSON.parse(s):{}; return { url: fromLs.url||SUPABASE_URL, key: fromLs.key||SUPABASE_ANON_KEY }; } catch(e){ return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY }; } })();
@@ -617,6 +617,7 @@ const deleteStoredHtmlPagesForEventIds = async (eventIds) => {
 const migrate = (data, key) => { if (!data) return data; if (Array.isArray(data)) return data; if (data._v === PHASER_V) return data; if (typeof data._v !== "number") data._v = 1; while (data._v < PHASER_V) { data._v++; } return data; };
 const loadEvs = () => { try { const s = localStorage.getItem(LS_KEYS.evs); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadTasks = () => { try { const s = localStorage.getItem(LS_KEYS.tasks); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
+const loadCalBlocks = () => { try { const s = localStorage.getItem(LS_KEYS.calBlocks); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const loadBandNotifications = () => { try { const s = localStorage.getItem(LS_KEYS.bandNotifications); if (!s) return []; const d = JSON.parse(s); return Array.isArray(d) ? d : []; } catch(e){ return []; } };
 const loadGenExp = () => { try { const s = localStorage.getItem(LS_KEYS.genExp); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
 const DEFAULT_ANNUAL_COSTS = [{id:"ac1",n:"Contabilă",a:4200,v:"lei"},{id:"ac2",n:"Google Workspace",a:960,v:"eur"},{id:"ac3",n:"ING",a:480,v:"lei"},{id:"ac4",n:"Sala de repetiții",a:2160,v:"lei"},{id:"ac5",n:"Internet",a:360,v:"lei"}];
@@ -811,7 +812,59 @@ function Toast({message, visible, variant}) {
 }
 
 // ─── Tasks (Notion-style) ───
-const fullTask = (text, prio="medium") => ({id:uid(),text,done:false,taskStatus:"in_proces",priority:prio,cr:new Date().toISOString().split("T")[0],due:"",assignedTo:"",subtasks:[],notes:"",tags:[],chats:[],uploads:[]});
+const REPEAT_OPTS = [
+  { v: "none", l: "Fără repetare" },
+  { v: "daily", l: "Zilnic" },
+  { v: "weekly", l: "Săptămânal" },
+  { v: "monthly", l: "Lunar" },
+  { v: "yearly", l: "Anual" },
+];
+const addRepeatToDue = (fromStr, repeat) => {
+  if (!repeat || repeat === "none") return null;
+  let d;
+  if (fromStr && /^\d{4}-\d{2}-\d{2}$/.test(fromStr)) {
+    const [y, mo, da] = fromStr.split("-").map(Number);
+    d = new Date(y, mo - 1, da);
+  } else d = new Date();
+  if (repeat === "daily") d.setDate(d.getDate() + 1);
+  else if (repeat === "weekly") d.setDate(d.getDate() + 7);
+  else if (repeat === "monthly") d.setMonth(d.getMonth() + 1);
+  else if (repeat === "yearly") d.setFullYear(d.getFullYear() + 1);
+  else return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const findTaskInTree = (tasks, id) => {
+  for (const t of tasks || []) {
+    if (t.id === id) return t;
+    const x = findTaskInTree(t.subtasks || [], id);
+    if (x) return x;
+  }
+  return null;
+};
+const cloneTaskForRepeat = (t) => {
+  const rep = t.repeat;
+  if (!rep || rep === "none") return null;
+  const base = (t.due && /^\d{4}-\d{2}-\d{2}$/.test(t.due)) ? t.due : new Date().toISOString().split("T")[0];
+  const nextDue = addRepeatToDue(base, rep);
+  if (!nextDue) return null;
+  return {
+    id: uid(),
+    text: t.text,
+    done: false,
+    taskStatus: "in_proces",
+    priority: t.priority || "medium",
+    cr: new Date().toISOString().split("T")[0],
+    due: nextDue,
+    assignedTo: t.assignedTo || "",
+    repeat: rep,
+    subtasks: [],
+    notes: t.notes || "",
+    tags: [...(t.tags || [])],
+    chats: [],
+    uploads: [],
+  };
+};
+const fullTask = (text, prio="medium") => ({id:uid(),text,done:false,taskStatus:"in_proces",priority:prio,cr:new Date().toISOString().split("T")[0],due:"",assignedTo:"",repeat:"none",subtasks:[],notes:"",tags:[],chats:[],uploads:[]});
 const toggleInTree = (tasks, id) => tasks.map(t=>t.id===id?{...t,done:!t.done,taskStatus:!t.done?"done":"in_proces"}:{...t,subtasks:toggleInTree(t.subtasks||[],id)});
 const delInTree = (tasks, id) => tasks.filter(t=>t.id!==id).map(t=>({...t,subtasks:delInTree(t.subtasks||[],id)}));
 const addSubInTree = (tasks, parentId, sub) => tasks.map(t=>t.id===parentId?{...t,subtasks:[...(t.subtasks||[]),sub]}:{...t,subtasks:addSubInTree(t.subtasks||[],parentId,sub)});
@@ -823,6 +876,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
   const [newText, setNewText] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
   const [newPrio, setNewPrio] = useState("medium");
+  const [newRepeat, setNewRepeat] = useState("none");
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [viewMode, setViewMode] = useState("list"); // list | calendar | kanban
   const [selectedIds, setSelectedIds] = useState([]);
@@ -840,6 +894,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
   const add = () => {
     if(!newText.trim()) return;
     const t = fullTask(newText.trim(),newPrio);
+    t.repeat = newRepeat || "none";
     if(newAssignee){
       t.assignedTo = newAssignee;
       if(onNotifyAssign && newAssignee !== currentMemberId)
@@ -849,7 +904,24 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
     setNewText("");
     setNewAssignee("");
   };
-  const toggle = id => setTasks(p=>toggleInTree(p,id));
+  const applyDoneWithRepeat = (p, id, makeDone) => {
+    if (!makeDone) return updInTree(p, id, { done: false, taskStatus: "in_proces" });
+    const t = findTaskInTree(p, id);
+    if (!t || t.done) return p;
+    const isRoot = (p || []).some(x => x.id === id);
+    let next = updInTree(p, id, { done: true, taskStatus: "done" });
+    if (t.repeat && t.repeat !== "none" && isRoot) {
+      const c = cloneTaskForRepeat(t);
+      if (c) next = [c, ...next];
+    }
+    return next;
+  };
+  const toggle = id => setTasks(p => {
+    const t = findTaskInTree(p, id);
+    if (!t) return p;
+    if (t.done) return updInTree(p, id, { done: false, taskStatus: "in_proces" });
+    return applyDoneWithRepeat(p, id, true);
+  });
   const del = id => setTasks(p=>delInTree(p,id));
   const addSub = (parentId, txt) => { if(!txt.trim()) return; setTasks(p=>addSubInTree(p,parentId,fullTask(txt.trim(),"medium"))); };
   const updTask = (id, upd) => setTasks(p=>updInTree(p,id,upd));
@@ -898,7 +970,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
       const today=new Date(); const isToday=d.getDate()===today.getDate()&&d.getMonth()===today.getMonth()&&d.getFullYear()===today.getFullYear();
       return <div key={i} style={{minHeight:72,padding:6,borderRadius:8,border:`1px solid ${th.bl}`,background:dayTasks.length>0?th.ab:"transparent",opacity:isCurMonth?1:0.5}}>
         <div style={{fontSize:11,color:isToday?th.a:th.tm,marginBottom:2,fontWeight:isToday?700:600}}>{d.getDate()}</div>
-        {dayTasks.map(t=><div key={t.id} onClick={()=>toggleExpanded(t.id)} style={{fontSize:9,padding:"2px 4px",borderRadius:4,background:PC[t.priority||"medium"]+"33",marginBottom:2,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:`2px solid ${PC[t.priority||"medium"]}`}}>{t.text}</div>)}
+        {dayTasks.map(t=><div key={t.id} onClick={()=>toggleExpanded(t.id)} style={{fontSize:9,padding:"2px 4px",borderRadius:4,background:PC[t.priority||"medium"]+"33",marginBottom:2,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:`2px solid ${PC[t.priority||"medium"]}`}}>{(t.repeat&&t.repeat!=="none"?"🔁 ":"")}{t.text}</div>)}
       </div>;
     });
   };
@@ -932,6 +1004,9 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
             <option value="high">Urgent</option><option value="medium">Normal</option><option value="low">Low</option>
           </select>
           <input type="date" value={t.due||""} onChange={e=>{e.stopPropagation();updTask(t.id,{due:e.target.value});}} onClick={e=>e.stopPropagation()} style={{...sty.i,padding:"6px 10px",fontSize:12,borderRadius:8,border:`1px solid ${th.b}`,width:"auto",minWidth:130,cursor:"pointer"}} title="Deadline"/>
+          <select value={t.repeat||"none"} onChange={e=>{e.stopPropagation();updTask(t.id,{repeat:e.target.value});}} onClick={e=>e.stopPropagation()} className="modernSel" style={{...sty.i,padding:"6px 22px 6px 8px",fontSize:11,borderRadius:8,maxWidth:130}} title="Repetare la bifare done">
+            {REPEAT_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
           {(t.tags||[]).length>0&&<span style={{fontSize:11,color:th.tm}}>{(t.tags||[]).slice(0,2).map(tg=><span key={tg}>#{tg} </span>)}</span>}
           {subs.length>0&&<span style={{fontSize:12,color:th.tm,fontWeight:500}}>{doneSubs}/{subs.length}</span>}
           <span style={{fontSize:14,color:th.tm,fontWeight:400,transition:"transform .2s",transform:ex?"rotate(90deg)":"rotate(0)"}}>▶</span>
@@ -952,9 +1027,12 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
                 {MEMBERS.map(m=><option key={m.id} value={m.id}>@{m.short}</option>)}
               </select>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <input type="date" value={t.due||""} onChange={e=>updTask(t.id,{due:e.target.value})} style={{...sty.i,padding:"12px 14px",fontSize:14,borderRadius:10}}/>
               <span style={{fontSize:13,color:th.tm}}>📅 Deadline</span>
+              <select value={t.repeat||"none"} onChange={e=>updTask(t.id,{repeat:e.target.value})} className="modernSel" style={{...sty.i,padding:"10px 14px",fontSize:13,borderRadius:10,minWidth:160}} title="La bifare finalizat, se creează copie cu următoarea dată (doar task principal)">
+                {REPEAT_OPTS.map(o=><option key={o.v} value={o.v}>Repetare: {o.l}</option>)}
+              </select>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               {(t.tags||[]).map(tag=><span key={tag} style={{fontSize:12,padding:"6px 12px",borderRadius:10,background:th.ab,color:th.t,display:"flex",alignItems:"center",gap:6}}>{tag}<button onClick={()=>remTag(t.id,tag)} style={{padding:0,border:"none",background:"transparent",cursor:"pointer",fontSize:12,color:th.tm}}>×</button></span>)}
@@ -1015,6 +1093,9 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
         {!compact && <select value={newPrio} onChange={e=>setNewPrio(e.target.value)} className="modernSel" style={{...sty.i,width:150,padding:"18px 36px 18px 18px",fontSize:15,borderRadius:12,border:`2px solid ${th.bl}`}}>
           <option value="high">Urgent</option><option value="medium">Normal</option><option value="low">Low</option>
         </select>}
+        {!compact && <select value={newRepeat} onChange={e=>setNewRepeat(e.target.value)} className="modernSel" style={{...sty.i,minWidth:160,padding:"18px 32px 18px 16px",fontSize:14,borderRadius:12,border:`2px solid ${th.bl}`}} title="După bifare done, apare din nou cu următoarea dată">
+          {REPEAT_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+        </select>}
         <button onClick={add} style={{...sty.b,padding:"18px 24px",flexShrink:0,borderRadius:12,fontWeight:600,fontSize:15}}><IcPlus s={18}/></button>
       </div>
 
@@ -1029,7 +1110,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
           <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:16,minHeight:400}}>
             {(["in_proces","in_lucru","done"]).map(col=>{
               const colTasks = col==="done" ? done : active.filter(t=>taskStatus(t)===col);
-              return <div key={col} onDragOver={e=>{e.preventDefault();setKanbanDragCol(col);}} onDragLeave={()=>setKanbanDragCol(null)} onDrop={e=>{e.preventDefault();setKanbanDragCol(null);const id=e.dataTransfer.getData("taskId");if(id){updTask(id,{taskStatus:col,done:col==="done"});}}}
+              return <div key={col} onDragOver={e=>{e.preventDefault();setKanbanDragCol(col);}} onDragLeave={()=>setKanbanDragCol(null)} onDrop={e=>{e.preventDefault();setKanbanDragCol(null);const id=e.dataTransfer.getData("taskId");if(id){setTasks(p=>col==="done"?applyDoneWithRepeat(p,id,true):updInTree(p,id,{taskStatus:col,done:false}));}}}
                 style={{background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:14,padding:18,border:`2px dashed ${kanbanDragCol===col?TSC[col]:th.bl}`,minHeight:220,transition:"all .2s"}}>
                 <div style={{fontSize:14,fontWeight:700,color:TSC[col],marginBottom:14,display:"flex",alignItems:"center",gap:10}}><span style={{width:12,height:12,borderRadius:"50%",background:TSC[col]}}/> {TSL[col]} ({colTasks.length})</div>
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -1057,6 +1138,9 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
                             </select>
                             <select value={t.priority||"medium"} onChange={e=>{e.stopPropagation();updTask(t.id,{priority:e.target.value});}} onClick={e=>e.stopPropagation()} className="modernSel" style={{...sty.i,padding:"8px 28px 8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${th.b}`}}>
                               <option value="high">Urgent</option><option value="medium">Normal</option><option value="low">Low</option>
+                            </select>
+                            <select value={t.repeat||"none"} onChange={e=>{e.stopPropagation();updTask(t.id,{repeat:e.target.value});}} onClick={e=>e.stopPropagation()} className="modernSel" style={{...sty.i,padding:"8px 24px 8px 10px",fontSize:11,borderRadius:8,border:`1px solid ${th.b}`,maxWidth:120}} title="Repetare">
+                              {REPEAT_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
                             </select>
                             {t.due&&<span style={{fontSize:10,color:th.tm}}><IcClock s={10}/> {fD(t.due)}</span>}
                             {(t.subtasks||[]).length>0&&<span style={{fontSize:10,color:th.tm}}>{(t.subtasks||[]).filter(s=>s.done).length}/{(t.subtasks||[]).length}</span>}
@@ -4128,6 +4212,7 @@ function App() {
   const [annualCosts, setAC] = useLocalStorageState(LS_KEYS.annualCosts, loadAnnualCosts);
   const [gigsPerYear, setGigsPerYear] = useLocalStorageState(LS_KEYS.gigsPerYear, ()=>12);
   const [tasks, setTasks] = useLocalStorageState(LS_KEYS.tasks, loadTasks);
+  const [calBlocks, setCalBlocks] = useLocalStorageState(LS_KEYS.calBlocks, loadCalBlocks);
   const [bandNotifications, setBandNotifications] = useLocalStorageState(LS_KEYS.bandNotifications, loadBandNotifications);
   const [finMember, setFinMember] = useState(null);
   const [templates, setTemplates] = useState(loadTemplates);
@@ -4158,7 +4243,15 @@ function App() {
   const [calDragEvId, setCalDragEvId] = useState(null);
   const [calDropDate, setCalDropDate] = useState(null);
   const [calDateSearch, setCalDateSearch] = useState("");
+  const [calNewOccMember, setCalNewOccMember] = useState("");
+  const [calNewOccNote, setCalNewOccNote] = useState("");
+  const [calNewOccTent, setCalNewOccTent] = useState(false);
   const [dashboardDateSearch, setDashboardDateSearch] = useState("");
+  useEffect(() => {
+    setCalNewOccMember("");
+    setCalNewOccNote("");
+    setCalNewOccTent(false);
+  }, [calSidebarDate]);
   const [globalSearch, setGlobalSearch] = useState("");
   const [sectTab, setSectTab] = useState("playlist");
   const docsSectTab = sectTab==="poveste" ? "playlist" : sectTab;
@@ -4216,6 +4309,7 @@ function App() {
           if(remote.creative){ try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(remote.creative));}catch(e){} }
           if(remote.memberProfiles){ setMemberProfiles(remote.memberProfiles); try{localStorage.setItem(LS_KEYS.memberProfiles,JSON.stringify(remote.memberProfiles));}catch(e){} }
           if(Array.isArray(remote.bandNotifications)){ setBandNotifications(remote.bandNotifications); try{localStorage.setItem(LS_KEYS.bandNotifications,JSON.stringify(remote.bandNotifications));}catch(e){} }
+          if(Array.isArray(remote.calBlocks)){ setCalBlocks(remote.calBlocks); try{localStorage.setItem(LS_KEYS.calBlocks,JSON.stringify(remote.calBlocks));}catch(e){} }
           localStorage.setItem("phaser_sync_ts",String(remote._ts));
           showToast("☁️ Date sincronizate din cloud");
         }
@@ -4236,7 +4330,7 @@ function App() {
       if(!client) return;
       const ts=Date.now();
       const syncData={
-        evs,tasks,genExp,annualCosts,gigsPerYear,templates,
+        evs,tasks,calBlocks,genExp,annualCosts,gigsPerYear,templates,
         riderVersions,pressKitVersions,playlistVersions,memberProfiles,
         bandNotifications,
         creative:loadCreative(),
@@ -4258,7 +4352,7 @@ function App() {
           setSyncStatus("error");
         });
     },2000);
-  },[evs,tasks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,playlistVersions,memberProfiles,bandNotifications]);
+  },[evs,tasks,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,playlistVersions,memberProfiles,bandNotifications]);
 
   // ─── GOOGLE CALENDAR STATE ───
   const [gcalToken, setGcalToken] = useState(() => {
@@ -4896,8 +4990,8 @@ function App() {
               <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px"}}>Docs</h1>
               <p style={{color:th.tm,fontSize:12,marginTop:2}}>Documente, rider, playlist și press kit — template-uri editabile pentru oferte.</p>
               <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
-                <button onClick={()=>{const blob=new Blob([JSON.stringify({_v:PHASER_V,evs,tasks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions:loadPressKitVersions(),creative:loadCreative()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`phaser-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);showToast("Backup exportat");}} style={sty.bg}><IcFile s={14}/> Export JSON</button>
-                <label style={{...sty.bg,cursor:"pointer",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><IcFile s={14}/> Import JSON<input type="file" accept=".json,application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=="object")throw new Error("JSON invalid");if(Array.isArray(d.evs)){setEvs(d.evs);}if(Array.isArray(d.tasks)){setTasks(d.tasks);}if(Array.isArray(d.genExp)){setGE(d.genExp);}if(Array.isArray(d.annualCosts)){setAC(d.annualCosts);}if(typeof d.gigsPerYear==="number"&&d.gigsPerYear>0){setGigsPerYear(d.gigsPerYear);}if(d.templates){setTemplates(d.templates);try{localStorage.setItem(LS_KEYS.templates,JSON.stringify(d.templates));}catch(x){}}if(Array.isArray(d.riderVersions)){setRiderVersions(d.riderVersions);try{localStorage.setItem(LS_KEYS.riderVersions,JSON.stringify(d.riderVersions));}catch(x){}}if(Array.isArray(d.pressKitVersions)){setPressKitVersions(d.pressKitVersions);try{localStorage.setItem(LS_KEYS.pressKitVersions,JSON.stringify(d.pressKitVersions));}catch(x){}}if(d.creative){try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(d.creative));}catch(x){}}showToast("Date importate");}catch(err){showToast("Eroare: "+(err?.message||String(err)));}e.target.value="";};r.readAsText(f);}}/></label>
+                <button onClick={()=>{const blob=new Blob([JSON.stringify({_v:PHASER_V,evs,tasks,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions:loadPressKitVersions(),creative:loadCreative()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`phaser-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);showToast("Backup exportat");}} style={sty.bg}><IcFile s={14}/> Export JSON</button>
+                <label style={{...sty.bg,cursor:"pointer",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><IcFile s={14}/> Import JSON<input type="file" accept=".json,application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=="object")throw new Error("JSON invalid");if(Array.isArray(d.evs)){setEvs(d.evs);}if(Array.isArray(d.tasks)){setTasks(d.tasks);}if(Array.isArray(d.calBlocks)){setCalBlocks(d.calBlocks);}if(Array.isArray(d.genExp)){setGE(d.genExp);}if(Array.isArray(d.annualCosts)){setAC(d.annualCosts);}if(typeof d.gigsPerYear==="number"&&d.gigsPerYear>0){setGigsPerYear(d.gigsPerYear);}if(d.templates){setTemplates(d.templates);try{localStorage.setItem(LS_KEYS.templates,JSON.stringify(d.templates));}catch(x){}}if(Array.isArray(d.riderVersions)){setRiderVersions(d.riderVersions);try{localStorage.setItem(LS_KEYS.riderVersions,JSON.stringify(d.riderVersions));}catch(x){}}if(Array.isArray(d.pressKitVersions)){setPressKitVersions(d.pressKitVersions);try{localStorage.setItem(LS_KEYS.pressKitVersions,JSON.stringify(d.pressKitVersions));}catch(x){}}if(d.creative){try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(d.creative));}catch(x){}}showToast("Date importate");}catch(err){showToast("Eroare: "+(err?.message||String(err)));}e.target.value="";};r.readAsText(f);}}/></label>
               </div>
             </div>
             <div className={mob?"mob-tab-scroll":""} style={{display:"flex",gap:6,marginBottom:16,flexWrap:mob?"nowrap":"wrap",overflowX:mob?"auto":"visible",paddingBottom:mob?4:0}}>
@@ -5344,13 +5438,14 @@ function App() {
           {tab==="calendar"&&<div style={{animation:"su .3s ease",display:"flex",flexDirection:"column",gap:0,position:"relative",flex:1,minHeight:0,overflow:"hidden"}}>
             <div style={{flex:1,minWidth:0,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
             <h1 style={{fontSize:22,fontWeight:700,marginBottom:16,flexShrink:0}}>Calendar</h1>
-            <div style={{fontSize:11,color:th.tm,marginBottom:8,flexShrink:0}}>Toate ofertele și evenimentele — click pe eveniment pentru rezumat</div>
+            <div style={{fontSize:11,color:th.tm,marginBottom:8,flexShrink:0,lineHeight:1.45}}>Oferte și evenimente; <strong style={{color:th.t}}>ocupări</strong> = cine e indisponibil. Linie continuă = sigur · <span style={{borderBottom:"1px dashed "+th.tm}}>întreruptă</span> = neconfirmat (?). Click pe zi pentru detalii.</div>
             {(()=>{
               const y=calM.getFullYear(),m=calM.getMonth();
               const f=new Date(y,m,1).getDay(); const dn=new Date(y,m+1,0).getDate();
               const off=f===0?6:f-1;
               const mn=["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iulie","August","Septembrie","Octombrie","Noiembrie","Decembrie"];
               const dk=th.bg==="#09090b";
+              const occHue = (mid) => { const idx = MEMBERS.findIndex(x => x.id === mid); const hues = ["#6366f1","#f59e0b","#22c55e","#ec4899","#06b6d4","#a855f7"]; return hues[(idx >= 0 ? idx : 0) % hues.length]; };
               return <div style={{...sty.cd,flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexShrink:0}}>
                   <button onClick={()=>setCalM(new Date(y,m-1))} style={{...sty.bg,padding:"6px 12px"}}><IcChevL s={14}/> Înapoi</button>
@@ -5391,17 +5486,24 @@ function App() {
                     const d=i+1;
                     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
                     const de=evs.filter(e=>e.date===ds);
+                    const dayOcc=(calBlocks||[]).filter(b=>b.date===ds);
+                    const hasStuff=de.length>0||dayOcc.length>0;
                     const td=new Date().getDate()===d&&new Date().getMonth()===m&&new Date().getFullYear()===y;
                     const isSearchedDay=calDateSearch===ds;
                     const resp=(e)=>e.responsabilPrincipal||(e.responsabili&&e.responsabili[0]?.nume)||e.cn||"—";
                     return <div key={d} onClick={()=>setCalSidebarDate(ds)} onDragOver={e=>{e.preventDefault();setCalDropDate(ds);}} onDragLeave={()=>setCalDropDate(null)} onDrop={e=>{e.preventDefault();setCalDropDate(null);if(calDragEvId){moveEvToDate(calDragEvId,ds);setCalDragEvId(null);}}}
-                      style={{minHeight:80,padding:4,borderRadius:6,border:isSearchedDay?`2px solid #3b82f6`:td?`2px solid ${th.a}`:calDropDate===ds?`2px solid ${th.a}`:de.length>0?`1px solid ${th.b}`:`1px solid ${th.bl}`,background:calDropDate===ds?th.ab:isSearchedDay?"rgba(59,130,246,0.08)":td?th.ab:"transparent",display:"flex",flexDirection:"column",cursor:"pointer"}}>
+                      style={{minHeight:80,padding:4,borderRadius:6,border:isSearchedDay?`2px solid #3b82f6`:td?`2px solid ${th.a}`:calDropDate===ds?`2px solid ${th.a}`:hasStuff?`1px solid ${th.b}`:`1px solid ${th.bl}`,background:calDropDate===ds?th.ab:isSearchedDay?"rgba(59,130,246,0.08)":td?th.ab:dayOcc.length>0?"rgba(245,158,11,.06)":"transparent",display:"flex",flexDirection:"column",cursor:"pointer"}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                        <span style={{fontSize:12,fontWeight:isSearchedDay||td?800:de.length>0?600:400,color:isSearchedDay?"#3b82f6":td?th.t:de.length>0?th.t:th.tm}}>{d}</span>
+                        <span style={{fontSize:12,fontWeight:isSearchedDay||td?800:hasStuff?600:400,color:isSearchedDay?"#3b82f6":td?th.t:hasStuff?th.t:th.tm}}>{d}</span>
                         {p.c&&<button onClick={e=>{e.stopPropagation();openModal("pick",{date:ds});}} style={{width:20,height:20,padding:0,borderRadius:6,border:"none",background:th.a,color:th.bg,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}} title="Adaugă ofertă">+</button>}
                       </div>
                       <div style={{flex:1,overflow:"auto",maxHeight:120}}>
                         {de.map(ev=><div key={ev.id} draggable onDragStart={e=>{e.stopPropagation();setCalDragEvId(ev.id);}} onDragEnd={()=>setCalDragEvId(null)} onClick={e=>{e.stopPropagation();setCalSidebarDate(ds);}} style={{padding:"3px 5px",borderRadius:4,marginBottom:2,fontSize:9,fontWeight:600,cursor:"grab",background:dk?ST[ev.st]?.bd:ST[ev.st]?.bg,color:ST[ev.st]?.c,lineHeight:1.25,borderLeft:`3px solid ${ST[ev.st]?.c}`}} title={`${ev.type} — ${resp(ev)} · ${ST[ev.st]?.l||ev.st} (trage pentru a muta)`}>{ev.type} ({resp(ev)}) · {ST[ev.st]?.l||ev.st}</div>)}
+                        {dayOcc.map(b=>{
+                          const mem=MEMBERS.find(x=>x.id===b.memberId);
+                          const hue=occHue(b.memberId);
+                          return <div key={b.id} onClick={e=>{e.stopPropagation();setCalSidebarDate(ds);}} style={{padding:"3px 5px",borderRadius:4,marginBottom:2,fontSize:9,fontWeight:600,cursor:"pointer",lineHeight:1.25,borderLeft:`3px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",background:dk?"rgba(99,102,241,.12)":"rgba(99,102,241,.08)",color:th.t,opacity:b.tentative?0.92:1}} title={(b.tentative?"Neconfirmat — ":"")+(mem?mem.n:b.memberId)+(b.note?": "+b.note:"")}>{b.tentative?"? ":""}Ocupat: {mem?.short||"?"} {b.note?`· ${b.note.slice(0,18)}${b.note.length>18?"…":""}`:""}</div>;
+                        })}
                       </div>
                     </div>;
                   })}
@@ -5412,12 +5514,14 @@ function App() {
             </div>
             {calSidebarDate&&(()=>{
               const dayEvs=evs.filter(e=>e.date===calSidebarDate);
+              const dayOcc=(calBlocks||[]).filter(b=>b.date===calSidebarDate);
+              const occHue = (mid) => { const idx = MEMBERS.findIndex(x => x.id === mid); const hues = ["#6366f1","#f59e0b","#22c55e","#ec4899","#06b6d4","#a855f7"]; return hues[(idx >= 0 ? idx : 0) % hues.length]; };
               return <div style={{position:mob?"fixed":"sticky",top:0,right:0,width:mob?"100%":360,maxWidth:"100%",height:mob?"70vh":"auto",maxHeight:"85vh",background:th.c,borderLeft:`1px solid ${th.b}`,boxShadow:"-4px 0 20px rgba(0,0,0,.15)",zIndex:100,overflow:"auto",padding:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                  <h3 style={{fontSize:14,fontWeight:700}}>{fD(calSidebarDate)} — {dayEvs.length} eveniment{dayEvs.length!==1?"e":""}</h3>
+                  <h3 style={{fontSize:14,fontWeight:700,lineHeight:1.35}}>{fD(calSidebarDate)}<br/><span style={{fontSize:11,color:th.tm,fontWeight:500}}>{dayEvs.length} eveniment{dayEvs.length!==1?"e":""} · {dayOcc.length} ocupare{dayOcc.length!==1?"i":""}</span></h3>
                   <button onClick={()=>setCalSidebarDate(null)} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:th.tm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={14}/></button>
                 </div>
-                {dayEvs.length===0?<div style={{fontSize:12,color:th.tm}}>Niciun eveniment în această zi</div>:dayEvs.map(ev=>(
+                {dayEvs.length===0?<div style={{fontSize:12,color:th.tm,marginBottom:12}}>Niciun eveniment în această zi</div>:dayEvs.map(ev=>(
                   <div key={ev.id} style={{padding:14,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,marginBottom:10}}>
                     <Badge s={ev.st} th={th}/>
                     <div style={{fontSize:14,fontWeight:700,marginTop:8}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</div>
@@ -5428,6 +5532,35 @@ function App() {
                     <button onClick={()=>{setCalSidebarDate(null);openModal("detail",ev.id);}} style={{...sty.b,marginTop:10,width:"100%",fontSize:12}}>Deschide oferta</button>
                   </div>
                 ))}
+                <div style={{marginTop:18,paddingTop:16,borderTop:`1px solid ${th.b}`}}>
+                  <div style={{fontSize:12,fontWeight:700,marginBottom:4,color:th.t}}>Ocupat / indisponibil</div>
+                  <div style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.4}}>Marchează dacă cineva nu poate (ex. ar pleca). Bifează „Neconfirmat” când nu e sigur încă — apare cu <strong>?</strong> și linie întreruptă.</div>
+                  <select value={calNewOccMember} onChange={e=>setCalNewOccMember(e.target.value)} className="modernSel" style={{...sty.i,width:"100%",marginBottom:8,fontSize:13}}>
+                    <option value="">— Cine e ocupat? —</option>
+                    {MEMBERS.map(m=><option key={m.id} value={m.id}>{m.short} ({m.n})</option>)}
+                  </select>
+                  <input value={calNewOccNote} onChange={e=>setCalNewOccNote(e.target.value)} placeholder="Notă opțională (ex. plecat, nu răspunde încă…)" style={{...sty.i,width:"100%",marginBottom:8,fontSize:13,padding:"10px 12px"}}/>
+                  <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,cursor:"pointer",marginBottom:10,userSelect:"none"}}>
+                    <input type="checkbox" checked={calNewOccTent} onChange={e=>setCalNewOccTent(e.target.checked)} style={{accentColor:th.a,width:16,height:16}}/>
+                    Încă neconfirmat (?)
+                  </label>
+                  <button type="button" onClick={()=>{
+                    if(!calNewOccMember){ showToast("Alege cine e ocupat", "error"); return; }
+                    setCalBlocks(prev=>[...(prev||[]),{id:uid(),date:calSidebarDate,memberId:calNewOccMember,note:(calNewOccNote||"").trim(),tentative:!!calNewOccTent}]);
+                    setCalNewOccNote("");
+                    setCalNewOccTent(false);
+                    showToast("Ocupare adăugată ✓");
+                  }} style={{...sty.b,width:"100%",fontSize:12,padding:"10px 14px"}}>+ Adaugă ocupare</button>
+                  {dayOcc.length>0&&<div style={{fontSize:11,fontWeight:600,color:th.tm,marginTop:14,marginBottom:6}}>Înregistrate</div>}
+                  {dayOcc.map(b=>{
+                    const mem=MEMBERS.find(x=>x.id===b.memberId);
+                    return <div key={b.id} style={{marginTop:8,padding:12,borderRadius:8,border:`1px solid ${th.b}`,background:th.h,borderLeft:`4px solid ${occHue(b.memberId)}`,borderLeftStyle:b.tentative?"dashed":"solid"}}>
+                      <div style={{fontSize:13,fontWeight:700}}>{b.tentative?<span style={{color:"#f59e0b"}}>? </span>:null}Ocupat: {mem?.short||mem?.n||"?"}</div>
+                      {b.note?<div style={{fontSize:11,color:th.tm,marginTop:4,whiteSpace:"pre-wrap"}}>{b.note}</div>:null}
+                      <button type="button" onClick={()=>setCalBlocks(prev=>(prev||[]).filter(x=>x.id!==b.id))} style={{marginTop:8,padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${th.b}`,background:"transparent",color:"#ef4444",cursor:"pointer"}}>Șterge</button>
+                    </div>;
+                  })}
+                </div>
               </div>;
             })()}
           </div>}
