@@ -6144,33 +6144,6 @@ function App() {
         showToast={showToast}
       />})()}
 
-      {showChangePw&&user&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={()=>{setShowChangePw(false);setChPwNew("");setChPwConf("");setChPwErr("");}}>
-        <div style={{background:th.c,borderRadius:14,border:`1px solid ${th.b}`,padding:24,width:mob?"90%":360}} onClick={e=>e.stopPropagation()}>
-          <h3 style={{fontSize:16,fontWeight:700,marginBottom:16}}>Schimbă parola</h3>
-          <div style={{fontSize:12,color:th.tm,marginBottom:12}}>Sesiunea ta curentă autentifică schimbarea — nu e nevoie de parola veche.</div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <input type="password" value={chPwNew} onChange={e=>{setChPwNew(e.target.value);setChPwErr("");}} placeholder="Parolă nouă" style={{...sty.i,padding:12,fontSize:14}}/>
-            <input type="password" value={chPwConf} onChange={e=>{setChPwConf(e.target.value);setChPwErr("");}} placeholder="Confirmă parola nouă" style={{...sty.i,padding:12,fontSize:14}}/>
-            <div style={{fontSize:11,color:th.tm}}>Cerințe: minim 8 caractere · literă MARE · literă mică · cifră</div>
-            {chPwErr&&<div style={{fontSize:12,color:"#ef4444"}}>{chPwErr}</div>}
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
-              <button onClick={()=>{setShowChangePw(false);setChPwNew("");setChPwConf("");setChPwErr("");}} style={{...sty.bg,padding:"8px 16px"}}>Anulează</button>
-              <button onClick={async()=>{
-                setChPwErr("");
-                const vErr=validatePw(chPwNew); if(vErr){setChPwErr(vErr);return;}
-                if(chPwNew!==chPwConf){setChPwErr("Parolele nu coincid");return;}
-                const sb=getSbClient();
-                if(!sb){setChPwErr("Supabase nu e configurat");return;}
-                const {error}=await sb.auth.updateUser({password:chPwNew});
-                if(error){setChPwErr(error.message||"Eroare");return;}
-                setShowChangePw(false);setChPwNew("");setChPwConf("");
-                showToast("Parola a fost schimbată ✓");
-              }} style={{...sty.b,padding:"8px 16px"}}>Salvează</button>
-            </div>
-          </div>
-        </div>
-      </div>}
-
       <AIChatWidget th={th} evs={evs} tasks={tasks} mob={mob}/>
       <Toast message={toast.message} visible={toast.visible} variant={toast.variant}/>
     </div>
