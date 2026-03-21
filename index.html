@@ -33,9 +33,9 @@
   </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-text-size-adjust: 100%; }
-    body { font-family: 'Inter', system-ui, sans-serif; background: #0a0a0c; color: #fff; }
-    #root { height: 100vh; min-height: 100vh; min-height: -webkit-fill-available; }
+    html { -webkit-text-size-adjust: 100%; height: 100%; overflow: hidden; }
+    body { height: 100%; overflow: hidden; margin: 0; font-family: 'Inter', system-ui, sans-serif; background: #0a0a0c; color: #fff; }
+    #root { height: 100%; min-height: 100vh; min-height: -webkit-fill-available; overflow: hidden; }
     .tasks-cal-scroll::-webkit-scrollbar { display: none; }
     @media (max-width: 767px) {
       input, select, textarea { font-size: 16px !important; }
@@ -91,6 +91,14 @@
       /* Fă toate taburile scrollabile orizontal fără scrollbar */
       .mob-tab-scroll { display: flex; overflow-x: auto; gap: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; }
       .mob-tab-scroll::-webkit-scrollbar { display: none; }
+      /* Un singur scroll vertical principal — evită „opriri” iOS când două zone overflow se bat */
+      .app-main-scroll {
+        overflow-x: hidden !important;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        touch-action: pan-y;
+      }
     }
   </style>
 </head>
@@ -4825,9 +4833,9 @@ function App() {
         </button>
       </nav>
 
-      {/* MAIN */}
-      <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",position:"relative"}}>
-        <div style={{flex:1,minHeight:0,overflow:"auto",padding:mob?"14px 16px 80px":"22px 36px 22px 44px",paddingLeft:mob?16:(sbMode==="mini"?52:44),paddingBottom:mob?"max(80px, calc(60px + env(safe-area-inset-bottom)))":"22px"}}>
+      {/* MAIN — un singur strat scroll pe mobil (.app-main-scroll); părintele rămâne overflow:hidden */}
+      <div style={{flex:1,minHeight:0,overflow:"hidden",display:"flex",flexDirection:"column",position:"relative"}}>
+        <div className={mob?"app-main-scroll":""} style={{flex:1,minHeight:0,...(mob?{}:{overflow:"auto"}),padding:mob?"14px 16px 80px":"22px 36px 22px 44px",paddingLeft:mob?16:(sbMode==="mini"?52:44),paddingBottom:mob?"max(80px, calc(60px + env(safe-area-inset-bottom)))":"22px"}}>
 
           {/* GLOBAL SEARCH — mereu vizibil */}
           <div style={{position:"relative",marginBottom:16,maxWidth:mob?"100%":400}}>
@@ -5499,8 +5507,8 @@ function App() {
           </div>}
 
           {/* CALENDAR */}
-          {tab==="calendar"&&<div style={{animation:"su .3s ease",display:"flex",flexDirection:"column",gap:0,position:"relative",flex:1,minHeight:0,overflow:"hidden"}}>
-            <div style={{flex:1,minWidth:0,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          {tab==="calendar"&&<div style={{animation:"su .3s ease",display:"flex",flexDirection:"column",gap:0,position:"relative",...(mob?{flex:"none",minHeight:"auto",overflow:"visible"}:{flex:1,minHeight:0,overflow:"hidden"})}}>
+            <div style={{...(mob?{flex:"none",minHeight:"auto",overflow:"visible"}:{flex:1,minWidth:0,minHeight:0,overflow:"hidden"}),display:"flex",flexDirection:"column"}}>
             <h1 style={{fontSize:22,fontWeight:700,marginBottom:16,flexShrink:0}}>Calendar</h1>
             <div style={{fontSize:11,color:th.tm,marginBottom:8,flexShrink:0,lineHeight:1.45}}>Oferte și evenimente; <strong style={{color:th.t}}>ocupări</strong> = cine e indisponibil. Linie continuă = sigur · <span style={{borderBottom:"1px dashed "+th.tm}}>întreruptă</span> = neconfirmat (?). <strong style={{color:th.t}}>Click</strong> pe o zi cu intrări: rezumat în popup. <strong style={{color:th.t}}>Dublu-click</strong> pe o zi{p.c?"":" (cu permisiune creare)"}: adaugă ceva. Câmpul de sus: panou lateral cu detalii.</div>
             {(()=>{
@@ -5510,7 +5518,7 @@ function App() {
               const mn=["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iulie","August","Septembrie","Octombrie","Noiembrie","Decembrie"];
               const dk=th.bg==="#09090b";
               const occHue = (mid) => { const idx = MEMBERS.findIndex(x => x.id === mid); const hues = ["#6366f1","#f59e0b","#22c55e","#ec4899","#06b6d4","#a855f7"]; return hues[(idx >= 0 ? idx : 0) % hues.length]; };
-              return <div style={{...sty.cd,flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+              return <div style={{...sty.cd,display:"flex",flexDirection:"column",...(mob?{flex:"none",minHeight:"auto",overflow:"visible"}:{flex:1,minHeight:0,overflow:"hidden"})}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexShrink:0}}>
                   <button onClick={()=>setCalM(new Date(y,m-1))} style={{...sty.bg,padding:"6px 12px"}}><IcChevL s={14}/> Înapoi</button>
                   <h2 style={{fontSize:18,fontWeight:700}}>{mn[m]} {y}</h2>
@@ -5542,10 +5550,10 @@ function App() {
                   {calDateSearch&&<button onClick={()=>{setCalDateSearch("");setCalSidebarDate(null);}} style={{...sty.bg,padding:"5px 10px",fontSize:12,color:th.tm}}>✕</button>}
                   <button onClick={()=>{const n=new Date();setCalM(new Date(n.getFullYear(),n.getMonth()));setCalDateSearch("");setCalSidebarDate(null);}} style={{...sty.bg,padding:"5px 10px",fontSize:12}}>Azi</button>
                 </div>
-                <div style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,minWidth:400}}>
-                  {["Lu","Ma","Mi","Jo","Vi","Sâ","Du"].map(d=><div key={d} style={{padding:"6px 4px",textAlign:"center",fontSize:11,color:th.tm,fontWeight:600,borderBottom:`1px solid ${th.b}`}}>{d}</div>)}
-                  {Array.from({length:off}).map((_,i)=><div key={`e${i}`} style={{minHeight:70}}/>)}
+                <div style={mob?{width:"100%",overflow:"visible"}:{flex:1,minHeight:0,overflowY:"auto",overflowX:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7, minmax(0, 1fr))",gap:mob?2:3,width:"100%",minWidth:mob?0:400}}>
+                  {["Lu","Ma","Mi","Jo","Vi","Sâ","Du"].map(d=><div key={d} style={{padding:mob?"5px 1px":"6px 4px",textAlign:"center",fontSize:mob?9:11,color:th.tm,fontWeight:600,borderBottom:`1px solid ${th.b}`,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d}</div>)}
+                  {Array.from({length:off}).map((_,i)=><div key={`e${i}`} style={{minHeight:mob?52:70}}/>)}
                   {Array.from({length:dn}).map((_,i)=>{
                     const d=i+1;
                     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
@@ -5557,22 +5565,22 @@ function App() {
                     const isSearchedDay=calDateSearch===ds;
                     const resp=(e)=>e.responsabilPrincipal||(e.responsabili&&e.responsabili[0]?.nume)||e.cn||"—";
                     return <div key={d} onClick={()=>{if(!hasStuff)return;if(calCellClickTimerRef.current)clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=setTimeout(()=>{calCellClickTimerRef.current=null;openModal("calDay",ds);},280);}} onDoubleClick={()=>{if(calCellClickTimerRef.current){clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=null;}if(p.c)openModal("calQuickAdd",{date:ds});else showToast("Dublu-click: adăugare în calendar (necesită permisiune de creare)","error");}} onDragOver={e=>{e.preventDefault();setCalDropDate(ds);}} onDragLeave={()=>setCalDropDate(null)} onDrop={e=>{e.preventDefault();setCalDropDate(null);if(calDragEvId){moveEvToDate(calDragEvId,ds);setCalDragEvId(null);}}}
-                      style={{minHeight:80,padding:4,borderRadius:6,border:isSearchedDay?`2px solid #3b82f6`:td?`2px solid ${th.a}`:calDropDate===ds?`2px solid ${th.a}`:hasStuff?`1px solid ${th.b}`:`1px solid ${th.bl}`,background:calDropDate===ds?th.ab:isSearchedDay?"rgba(59,130,246,0.08)":td?th.ab:dayOcc.length>0?"rgba(245,158,11,.06)":"transparent",display:"flex",flexDirection:"column",cursor:calDropDate===ds?"copy":hasStuff?"pointer":"default"}}>
-                      <div style={{marginBottom:2}}>
-                        <span style={{fontSize:12,fontWeight:isSearchedDay||td?800:hasStuff?600:400,color:isSearchedDay?"#3b82f6":td?th.t:hasStuff?th.t:th.tm}}>{d}</span>
+                      style={{minHeight:mob?58:80,padding:mob?2:4,borderRadius:6,border:isSearchedDay?`2px solid #3b82f6`:td?`2px solid ${th.a}`:calDropDate===ds?`2px solid ${th.a}`:hasStuff?`1px solid ${th.b}`:`1px solid ${th.bl}`,background:calDropDate===ds?th.ab:isSearchedDay?"rgba(59,130,246,0.08)":td?th.ab:dayOcc.length>0?"rgba(245,158,11,.06)":"transparent",display:"flex",flexDirection:"column",minWidth:0,cursor:calDropDate===ds?"copy":hasStuff?"pointer":"default"}}>
+                      <div style={{marginBottom:mob?1:2}}>
+                        <span style={{fontSize:mob?10:12,fontWeight:isSearchedDay||td?800:hasStuff?600:400,color:isSearchedDay?"#3b82f6":td?th.t:hasStuff?th.t:th.tm}}>{d}</span>
                       </div>
-                      <div style={{flex:1,overflow:"auto",maxHeight:120}}>
-                        {de.map(ev=><div key={ev.id} draggable onDragStart={e=>{e.stopPropagation();setCalDragEvId(ev.id);}} onDragEnd={()=>setCalDragEvId(null)} onClick={e=>{e.stopPropagation();if(ev.st==="confirmat")openModal("detail",ev.id);else openModal("oferta",ev.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:"3px 5px",borderRadius:4,marginBottom:2,fontSize:9,fontWeight:600,cursor:"grab",background:dk?ST[ev.st]?.bd:ST[ev.st]?.bg,color:ST[ev.st]?.c,lineHeight:1.25,borderLeft:`3px solid ${ST[ev.st]?.c}`}} title={`${ev.type} — ${resp(ev)} · ${ST[ev.st]?.l||ev.st} (trage pentru a muta)`}>{ev.type} ({resp(ev)}) · {ST[ev.st]?.l||ev.st}</div>)}
+                      <div style={{flex:1,minHeight:0,overflow:mob?"hidden":"auto",maxHeight:mob?52:120}}>
+                        {de.map(ev=><div key={ev.id} draggable={!mob} onDragStart={e=>{e.stopPropagation();setCalDragEvId(ev.id);}} onDragEnd={()=>setCalDragEvId(null)} onClick={e=>{e.stopPropagation();if(ev.st==="confirmat")openModal("detail",ev.id);else openModal("oferta",ev.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:mob?"pointer":"grab",background:dk?ST[ev.st]?.bd:ST[ev.st]?.bg,color:ST[ev.st]?.c,lineHeight:1.2,borderLeft:`2px solid ${ST[ev.st]?.c}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={`${ev.type} — ${resp(ev)} · ${ST[ev.st]?.l||ev.st}${mob?"":" (trage pentru a muta)"}`}>{ev.type} ({resp(ev)}) · {ST[ev.st]?.l||ev.st}</div>)}
                         {dayOcc.map(b=>{
                           const mem=MEMBERS.find(x=>x.id===b.memberId);
                           const hue=occHue(b.memberId);
-                          return <div key={b.id} onClick={e=>{e.stopPropagation();openModal("calOcc",b.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:"3px 5px",borderRadius:4,marginBottom:2,fontSize:9,fontWeight:600,cursor:"pointer",lineHeight:1.25,borderLeft:`3px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",background:dk?"rgba(99,102,241,.12)":"rgba(99,102,241,.08)",color:th.t,opacity:b.tentative?0.92:1}} title={(b.tentative?"Neconfirmat — ":"")+(mem?mem.n:b.memberId)+(b.note?": "+b.note:"")}>{b.tentative?"? ":""}Ocupat: {mem?.short||"?"} {b.note?`· ${b.note.slice(0,18)}${b.note.length>18?"…":""}`:""}</div>;
+                          return <div key={b.id} onClick={e=>{e.stopPropagation();openModal("calOcc",b.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:"pointer",lineHeight:1.2,borderLeft:`2px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",background:dk?"rgba(99,102,241,.12)":"rgba(99,102,241,.08)",color:th.t,opacity:b.tentative?0.92:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={(b.tentative?"Neconfirmat — ":"")+(mem?mem.n:b.memberId)+(b.note?": "+b.note:"")}>{b.tentative?"? ":""}Ocupat: {mem?.short||"?"} {b.note?`· ${b.note.slice(0,12)}${b.note.length>12?"…":""}`:""}</div>;
                         })}
                         {dayTasks.map(t=>{
                           const TPC={high:"#ef4444",medium:"#f59e0b",low:"#22c55e"};
                           const col=TPC[t.priority||"medium"];
                           const done=t.done||t.taskStatus==="done";
-                          return <div key={t.id} onClick={e=>{e.stopPropagation();openModal("calTask",t.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:"3px 5px",borderRadius:4,marginBottom:2,fontSize:9,fontWeight:600,cursor:"pointer",lineHeight:1.25,borderLeft:`3px solid ${col}`,background:(col)+"22",color:th.t}} title={t.text}>{(t.repeat&&t.repeat!=="none"?"🔁 ":"")}{done?"✓ ":""}{t.text.length>24?t.text.slice(0,24)+"…":t.text}</div>;
+                          return <div key={t.id} onClick={e=>{e.stopPropagation();openModal("calTask",t.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:"pointer",lineHeight:1.2,borderLeft:`2px solid ${col}`,background:(col)+"22",color:th.t,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={t.text}>{(t.repeat&&t.repeat!=="none"?"🔁 ":"")}{done?"✓ ":""}{t.text.length>(mob?14:24)?t.text.slice(0,mob?14:24)+"…":t.text}</div>;
                         })}
                       </div>
                     </div>;
