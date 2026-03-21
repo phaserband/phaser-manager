@@ -20,6 +20,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function check() {
@@ -590,19 +591,28 @@ const getSbClient = () => {
     return _sbClient;
   } catch(e) { return null; }
 };
-/** La ștergere ofertă/eveniment: șterge din Storage paginile publice (offer-, contract-, fisa-). Necesită politică DELETE pe bucket (supabase-setup / supabase-fix-fisa-rls). */
-const deleteStoredHtmlPagesForEventIds = (eventIds) => {
+/** La ștergere ofertă/eveniment: șterge din Storage paginile publice (offer-, contract-, fisa-). Returnează mesaj de eroare sau null. Necesită politică DELETE pe bucket — vezi supabase-fix-fisa-rls.sql */
+const deleteStoredHtmlPagesForEventIds = async (eventIds) => {
   const ids = (eventIds || []).filter(Boolean);
-  if (ids.length === 0) return;
+  if (ids.length === 0) return null;
   const sb = getSbClient();
-  if (!sb) return;
+  if (!sb) return null;
   const paths = [];
   for (const id of ids) {
     paths.push(`offer-${id}.html`, `contract-${id}.html`, `fisa-${id}.html`);
   }
-  void sb.storage.from(FISA_PUBLIC_BUCKET).remove(paths).then(({ error }) => {
-    if (error) console.warn("Supabase Storage remove:", error.message || error);
-  });
+  try {
+    const { error } = await sb.storage.from(FISA_PUBLIC_BUCKET).remove(paths);
+    if (error) {
+      const msg = (error.message || String(error)).trim();
+      console.warn("Supabase Storage remove:", error);
+      return msg || "Eroare la ștergerea din Storage";
+    }
+  } catch (e) {
+    console.warn("Supabase Storage remove:", e);
+    return (e?.message || String(e)).trim() || "Eroare la ștergerea din Storage";
+  }
+  return null;
 };
 const migrate = (data, key) => { if (!data) return data; if (Array.isArray(data)) return data; if (data._v === PHASER_V) return data; if (typeof data._v !== "number") data._v = 1; while (data._v < PHASER_V) { data._v++; } return data; };
 const loadEvs = () => { try { const s = localStorage.getItem(LS_KEYS.evs); if (s) { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } } catch(e){} return []; };
@@ -1566,6 +1576,12 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   const [offerLinkPanelOpen, setOfferLinkPanelOpen] = useState(false);
   const [offerLinkCopied, setOfferLinkCopied] = useState(false);
   const offerLinkInputRef = useRef(null);
+  const [pdfIncludeRider, setPdfIncludeRider] = useState(!!ev.pdfIncludeRider);
+  const [pdfIncludePressKit, setPdfIncludePressKit] = useState(!!ev.pdfIncludePressKit);
+  const [pdfSinglePage, setPdfSinglePage] = useState(() => {
+    if (ev.pdfSinglePageOffer != null) return !!ev.pdfSinglePageOffer;
+    return ev.cat !== "private";
+  });
   useEffect(() => {
     if (!offerLinkPanelOpen || !offerLinkUrl) return;
     const id = requestAnimationFrame(() => {
@@ -1590,6 +1606,13 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     dataFinal:""
   });
   const isPriv = ev.cat==="private";
+  const publicPrestatieLine = () => {
+    const t = (ev.durataRecital || "").trim();
+    if (t) return t;
+    const m = Number(ev.publicShowMinutes);
+    const mins = Number.isFinite(m) && m > 0 ? Math.round(m) : 45;
+    return "Concert " + mins + " min";
+  };
   const pkPublic = !isPriv ? normPressKitPublic(templates?.pressKitPublic) : null;
   const svcTot = isPriv ? Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0) : 0;
   const tot = (ev.fee||0)+svcTot;
@@ -1708,10 +1731,14 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       return '<a href="https://www.youtube.com/watch?v='+vid+'" target="_blank" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;text-decoration:none"><img src="https://img.youtube.com/vi/'+vid+'/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;display:block"/><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,.9);border-radius:10px;width:60px;height:42px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff">&#9658;</div></a>';
     });
     if (!isPriv) {
-      const riderEl = document.getElementById("rider-print-content");
-      const pkEl = document.getElementById("presskit-print-content");
-      if (riderEl) html += '<div class="print-break"></div>'+iframeRepl(riderEl.innerHTML);
-      if (pkEl) html += '<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);
+      if (pdfIncludeRider) {
+        const riderEl = document.getElementById("rider-print-content");
+        if (riderEl) html += (pdfSinglePage ? "" : '<div class="print-break"></div>') + iframeRepl(riderEl.innerHTML);
+      }
+      if (pdfIncludePressKit) {
+        const pkEl = document.getElementById("presskit-print-content");
+        if (pkEl) html += (pdfSinglePage ? "" : '<div class="print-break"></div>') + iframeRepl(pkEl.innerHTML);
+      }
     }
     html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
       if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
@@ -1782,6 +1809,33 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       taRestores.push({ div, ta });
     });
 
+    const pdfExtraNodes = [];
+    if (!isPriv && (pdfIncludeRider || pdfIncludePressKit)) {
+      const pushExtra = (htmlFragment, withBreak) => {
+        if (!htmlFragment || !String(htmlFragment).trim()) return;
+        if (withBreak) {
+          const br = document.createElement("div");
+          br.className = "print-break";
+          el.appendChild(br);
+          pdfExtraNodes.push(br);
+        }
+        const wrap = document.createElement("div");
+        wrap.className = "offer-pdf-extra";
+        wrap.style.cssText = "display:block;clear:both;width:100%;box-sizing:border-box;";
+        wrap.innerHTML = htmlFragment;
+        el.appendChild(wrap);
+        pdfExtraNodes.push(wrap);
+      };
+      if (pdfIncludeRider) {
+        const riderEl = document.getElementById("rider-print-content");
+        if (riderEl) pushExtra(riderEl.innerHTML, !pdfSinglePage);
+      }
+      if (pdfIncludePressKit) {
+        const pkEl = document.getElementById("presskit-print-content");
+        if (pkEl) pushExtra(pkEl.innerHTML, !pdfSinglePage);
+      }
+    }
+
     // 2. Fix iframe → thumbnail YouTube (embed vizual, nu doar link text)
     const escapeHtml = (s) => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     const iframeRestores = [];
@@ -1846,13 +1900,16 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     //    Pozele nu se taie. Playlist forțat pe o coloană (html2canvas nu redă CSS columns bine).
     //    Logo header (primul div) nu se desparte de poza hero care urmează.
     const styleTag = document.createElement("style");
+    const printBreakCss = pdfSinglePage
+      ? "#offer-print-content .print-break { page-break-before: auto !important; break-before: auto !important; }"
+      : "#offer-print-content .print-break { page-break-before: always !important; break-before: page !important; }";
     styleTag.textContent = [
       "#offer-print-content img { page-break-inside: avoid; break-inside: avoid; display: block; }",
       "#offer-print-content > div:has(> img) { page-break-inside: avoid; break-inside: avoid; }",
       "#offer-print-content > div:first-child { page-break-after: avoid; break-after: avoid; }",
       "#offer-print-content [style*='columns'] { columns: 1 !important; column-count: 1 !important; }",
       "#offer-print-content [style*='border-left'] { border-left: none !important; }",
-      "#offer-print-content .print-break { page-break-before: always !important; break-before: page !important; }",
+      printBreakCss,
       "#offer-print-content .offer-page-1 { page-break-inside: avoid !important; break-inside: avoid !important; }",
     ].join("\n");
     document.head.appendChild(styleTag);
@@ -1874,6 +1931,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     }
 
     const restore = () => {
+      pdfExtraNodes.slice().reverse().forEach(node => { try { if (node.parentNode) node.parentNode.removeChild(node); } catch(e){} });
       taRestores.forEach(({ div, ta }) => { try { div.parentNode.replaceChild(ta, div); } catch(e){} });
       iframeRestores.forEach(({ div, container, parent }) => { try { parent.replaceChild(container, div); } catch(e){} });
       btnRestores.forEach(({ btn, was }) => { btn.style.display = was; });
@@ -1882,16 +1940,54 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       try { document.head.removeChild(styleTag); } catch(e) {}
     };
 
-    return html2pdf().set({
-      margin: 12, filename: getPdfFilename("oferta"),
-      image: {type:"jpeg", quality:0.95},
-      html2canvas: {
-        scale: 2, useCORS: true, allowTaint: true, logging: false,
-        scrollY: -window.scrollY, scrollX: -window.scrollX
-      },
-      jsPDF: {unit:"mm", format:"a4", orientation:"portrait"},
-      pagebreak: { mode: ["css", "legacy"] }
-    }).from(el).outputPdf("blob").then(blob => { restore(); return blob; }, err => { restore(); return Promise.reject(err); });
+    try {
+      if (pdfSinglePage && window.jspdf && window.jspdf.jsPDF) {
+        try {
+          const canvas = await html2pdf().set({
+            margin: 0,
+            image: { type: "jpeg", quality: 0.92 },
+            html2canvas: {
+              scale: 2, useCORS: true, allowTaint: true, logging: false,
+              scrollY: -window.scrollY, scrollX: -window.scrollX,
+              windowWidth: el.scrollWidth,
+              backgroundColor: "#ffffff",
+            },
+            jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          }).from(el).toCanvas();
+          const imgData = canvas.toDataURL("image/jpeg", 0.92);
+          const JsPDF = window.jspdf.jsPDF;
+          const pdf = new JsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+          const pageW = pdf.internal.pageSize.getWidth();
+          const pageH = pdf.internal.pageSize.getHeight();
+          const margin = 6;
+          const imgProps = pdf.getImageProperties(imgData);
+          const iw = imgProps.width;
+          const ih = imgProps.height;
+          let w = pageW - 2 * margin;
+          let h = (ih / iw) * w;
+          if (h > pageH - 2 * margin) {
+            h = pageH - 2 * margin;
+            w = (iw / ih) * h;
+          }
+          const x = margin + (pageW - 2 * margin - w) / 2;
+          const y = margin + (pageH - 2 * margin - h) / 2;
+          pdf.addImage(imgData, "JPEG", x, y, w, h);
+          return pdf.output("blob");
+        } catch (e1) { console.warn("PDF o pagină — fallback la paginare:", e1); }
+      }
+      return await html2pdf().set({
+        margin: 12, filename: getPdfFilename("oferta"),
+        image: { type: "jpeg", quality: 0.95 },
+        html2canvas: {
+          scale: 2, useCORS: true, allowTaint: true, logging: false,
+          scrollY: -window.scrollY, scrollX: -window.scrollX,
+        },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy"] },
+      }).from(el).outputPdf("blob");
+    } finally {
+      restore();
+    }
   };
 
   const generateContractPdf = async () => {
@@ -1928,7 +2024,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         try { blob = await generatePdfViaWorker(getContractHtmlForWorker()); } catch (e) { blob = null; }
         if (!blob) blob = await generateContractPdf();
       } else {
-        try { blob = await generatePdfViaWorker(getOfferHtmlForWorker()); } catch (e) { blob = null; }
+        const skipWorkerOffer = !isPriv && pdfSinglePage;
+        if (!skipWorkerOffer) {
+          try { blob = await generatePdfViaWorker(getOfferHtmlForWorker()); } catch (e) { blob = null; }
+        }
         if (!blob) blob = await generateOfferPdf();
       }
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = getPdfFilename(kind);
@@ -1949,7 +2048,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         try { blob = await generatePdfViaWorker(getContractHtmlForWorker()); } catch (e) { blob = null; }
         if (!blob) blob = await generateContractPdf();
       } else {
-        try { blob = await generatePdfViaWorker(getOfferHtmlForWorker()); } catch (e) { blob = null; }
+        const skipWorkerOffer = !isPriv && pdfSinglePage;
+        if (!skipWorkerOffer) {
+          try { blob = await generatePdfViaWorker(getOfferHtmlForWorker()); } catch (e) { blob = null; }
+        }
         if (!blob) blob = await generateOfferPdf();
       }
       const file = new File([blob], getPdfFilename(kind), { type: "application/pdf" });
@@ -2036,7 +2138,9 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     lines.push("Tip: "+(isPriv?"Privat":"Public"));
     lines.push("Locație: "+(ev.venue||"—")+(ev.city?", "+ev.city:""));
     lines.push("Data: "+fD(ev.date),"");
-    const repStr = ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs.map((d,i)=>`R${i+1}:${d}min`).join(" ") : `${ev.rep||1} reprize × ${ev.repDur||45} min`;
+    const repStr = isPriv
+      ? (ev.repDurs&&ev.repDurs.length>0 ? ev.repDurs.map((d,i)=>`R${i+1}:${d}min`).join(" ") : `${ev.rep||1} reprize × ${ev.repDur||45} min`)
+      : publicPrestatieLine();
     const v=ev.valuta||"EUR";
     lines.push("PHASER — "+repStr+" → "+fFmt(ev.fee,v),"");
     lines.push("TOTAL: "+fFmt(tot,v),"");
@@ -2072,7 +2176,21 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {singleViewMode&&onBackToDetail&&<button onClick={onBackToDetail} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"transparent",color:"rgba(255,255,255,.9)",fontSize:12,cursor:"pointer",fontWeight:600}}>← Înapoi</button>}
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {!isPriv&&<>
+              <label style={{display:"flex",alignItems:"center",gap:6,color:"rgba(255,255,255,.88)",fontSize:11,cursor:"pointer",userSelect:"none"}}>
+                <input type="checkbox" checked={pdfIncludeRider} onChange={e=>{const v=e.target.checked;setPdfIncludeRider(v);syncOffer({pdfIncludeRider:v});}} style={{accentColor:"#22c55e",width:14,height:14,cursor:"pointer",flexShrink:0}}/>
+                Rider PDF
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:6,color:"rgba(255,255,255,.88)",fontSize:11,cursor:"pointer",userSelect:"none"}}>
+                <input type="checkbox" checked={pdfIncludePressKit} onChange={e=>{const v=e.target.checked;setPdfIncludePressKit(v);syncOffer({pdfIncludePressKit:v});}} style={{accentColor:"#22c55e",width:14,height:14,cursor:"pointer",flexShrink:0}}/>
+                Press kit PDF
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:6,color:"rgba(255,255,255,.88)",fontSize:11,cursor:"pointer",userSelect:"none"}} title="Tot conținutul scalat pe o singură pagină A4">
+                <input type="checkbox" checked={pdfSinglePage} onChange={e=>{const v=e.target.checked;setPdfSinglePage(v);syncOffer({pdfSinglePageOffer:v});}} style={{accentColor:"#22c55e",width:14,height:14,cursor:"pointer",flexShrink:0}}/>
+                1 pagină A4
+              </label>
+            </>}
             <button onClick={handleDownloadPdf} disabled={pdfLoading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,fontSize:12,cursor:pdfLoading?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:pdfLoading?0.7:1}}>
               {pdfLoading?"⏳":"⬇"} Descarcă PDF
             </button>
@@ -2186,7 +2304,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                   <div style={{fontWeight:700,fontSize:15,color:"#111"}}>
                     {isPriv
                       ? `${ev.rep||1} × ${ev.repDurs?.[0]||ev.repDur||45} min`
-                      : (ev.durataRecital||`${ev.rep||1}×45 min`)
+                      : publicPrestatieLine()
                     }
                   </div>
                 </div>
@@ -2207,7 +2325,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             </div>}
 
             {/* Cazare și Transport — doar dacă există camere sau distanță >= 25km */}
-            {isPriv&&ev.hosp&&((ev.hosp.camere??0)>0||(ev.dist??999)>=25)&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
+            {ev.hosp&&((ev.hosp.camere??0)>0||(ev.dist??999)>=25)&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:14}}>Cazare și Transport</div>
               {[
                 ...((ev.hosp.camere??0)>0?[`Cazare — ${ev.hosp.camere} camere twin la locație sau în apropierea ei`]:[]),
@@ -2220,7 +2338,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               ))}
             </div>}
             {/* Protocol — întotdeauna afișat dacă există ev.hosp */}
-            {isPriv&&ev.hosp&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
+            {ev.hosp&&<div style={{background:"#fff",borderRadius:12,padding:"18px 20px",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:"#999",marginBottom:10}}>Protocol</div>
               {(ev.hosp.protocolOverride||"").trim() ? (
                 <div style={{fontSize:13,color:"#444",lineHeight:1.7,whiteSpace:"pre-line"}}>{(ev.hosp.protocolOverride||"").trim()}</div>
@@ -2463,7 +2581,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               {ev.locAddress&&<div style={{fontSize:11,color:"#666",marginTop:2}}>📍 {ev.locAddress}</div>}
             </div>
             <div style={{marginBottom:16}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Client</div><div style={{fontSize:14,fontWeight:600}}>{ev.cn||"—"}</div>{ev.cp&&<div style={{fontSize:11,color:"#666",marginTop:2}}>{ev.cp}</div>}{ev.ce&&<div style={{fontSize:11,color:"#666"}}>{ev.ce}</div>}</div>
-            {ev.cat==="private"&&<div style={{marginBottom:16}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Ospitalitate</div><div style={{fontSize:12,color:"#666"}}>{(()=>{const h=ev.hosp&&!Array.isArray(ev.hosp)?ev.hosp:{};const c=h.camere??0,m=h.meniuri??0;const s=(c>0?`${c} camere`:"")+(c>0&&m>0?" · ":"")+(m>0?`${m} meniuri`:"");return s||"—";})()}</div></div>}
+            {ev.hosp&&!Array.isArray(ev.hosp)&&<div style={{marginBottom:16}}><div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Ospitalitate</div><div style={{fontSize:12,color:"#666"}}>{(()=>{const h=ev.hosp;const c=h.camere??0,m=h.meniuri??0;const s=(c>0?`${c} camere`:"")+(c>0&&m>0?" · ":"")+(m>0?`${m} meniuri`:"");return s||"—";})()}</div></div>}
             <div style={{marginBottom:16}}>
               <div style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Timing — Load in · Soundcheck · Show start · Load out</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
@@ -3004,6 +3122,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
     repDurs: mData?.repDurs||[],
     repStarts: mData?.repStarts||[],
     durataRecital: mData?.durataRecital||"",
+    publicShowMinutes: mData?.publicShowMinutes ?? 45,
     responsabilPrincipal: mData?.responsabilPrincipal||(user?.memberId?MEMBERS.find(m=>m.id===user.memberId)?.n||user.n:""),
     responsabili: mData?.responsabili||[],
     fee: mData?.fee||(isP?PX.r[1]:PX.pub),
@@ -3043,9 +3162,9 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
   const iStyle = {...sty.i, fontSize: mob?"16px":"14px"};
 
   const showTehnicTab = !isP || ["Corporate","Private Party","Altele"].includes(fm.type);
-  const baseTabs = isP ? (showTehnicTab ? ["detalii","client","servicii","ospitalitate","tehnic","media","playlist","note"] : ["detalii","client","servicii","ospitalitate","media","playlist","note"]) : ["detalii","client","note"];
+  const baseTabs = isP ? (showTehnicTab ? ["detalii","client","servicii","ospitalitate","tehnic","media","playlist","note"] : ["detalii","client","servicii","ospitalitate","media","playlist","note"]) : ["detalii","client","ospitalitate","note"];
   const editTabs = isP ? ["detalii","client","servicii","ospitalitate","tehnic","timing","cheltuieli","membri","furnizori","media","playlist","note"]
-                       : ["detalii","client","timing","cheltuieli","membri","furnizori","note"];
+                       : ["detalii","client","ospitalitate","timing","cheltuieli","membri","furnizori","note"];
   const tabs = isE ? editTabs : baseTabs;
 
   return (
@@ -3153,8 +3272,19 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
               />
               <div><label style={sty.l}>Telefon locație</label><input value={fm.locPhone||""} onChange={e=>u("locPhone",e.target.value)} style={iStyle} placeholder="+40..."/></div>
               <div><label style={sty.l}>Adresă locație</label><input value={fm.locAddress||""} onChange={e=>u("locAddress",e.target.value)} style={iStyle} placeholder="Strada, nr., oraș..."/></div>
-              {!isP&&<div><label style={sty.l}>Durată recital / prestație</label>
-                <input value={fm.durataRecital} onChange={e=>u("durataRecital",e.target.value)} style={iStyle} placeholder="ex: 90 min, 2×45 min"/>
+              {!isP&&<div style={{gridColumn:"1/-1"}}>
+                <label style={sty.l}>Durată concert (minute)</label>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
+                  {[45,60,90,120].map(m=><button key={m} type="button" onClick={()=>u("publicShowMinutes",m)} style={{padding:"8px 12px",borderRadius:7,border:`2px solid ${(fm.publicShowMinutes??45)===m?th.t:th.b}`,background:(fm.publicShowMinutes??45)===m?th.ab:"transparent",cursor:"pointer",fontSize:12,fontWeight:600,color:th.t}}>{m} min</button>)}
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:th.tm}}>Altă durată:</span>
+                    <input type="number" value={fm.publicShowMinutes??45} onChange={e=>u("publicShowMinutes",Math.min(300,Math.max(5,Number(e.target.value)||45)))} style={{...iStyle,width:72}} min={5} max={300}/>
+                    <span style={{fontSize:11,color:th.tm}}>min</span>
+                  </div>
+                </div>
+                <div style={{fontSize:10,color:th.tm,marginBottom:6}}>În ofertă apare ca „Concert [X] min”. Poți suprascrie cu text liber mai jos.</div>
+                <label style={sty.l}>Text prestație (opțional)</label>
+                <input value={fm.durataRecital||""} onChange={e=>u("durataRecital",e.target.value)} style={iStyle} placeholder="Lasă gol pentru „Concert … min” sau ex: 2×45 min, set acoustic + electric"/>
               </div>}
               <div style={{gridColumn:"1/-1"}}><label style={sty.l}>Descriere ofertă (opțional)</label>
                 <textarea value={fm.desc} onChange={e=>u("desc",e.target.value)} style={{...iStyle,minHeight:60,resize:"vertical"}} placeholder="Text introductiv în ofertă..."/>
@@ -3320,7 +3450,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
               </div>)}
             </div>}
 
-            {secTab==="ospitalitate"&&isP&&<div>
+            {secTab==="ospitalitate"&&<div>
               <div style={{fontSize:11,color:th.tm,marginBottom:16,padding:"8px 12px",background:th.h,borderRadius:7}}>🏨 Ce solicităm organizatorului pentru echipă</div>
               
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
@@ -4271,7 +4401,14 @@ function App() {
     }
   };
 
-  const delEv = id => { deleteStoredHtmlPagesForEventIds([id]); setEvs(p=>p.filter(e=>e.id!==id)); closeModal(); };
+  const delEv = async (id) => {
+    const storageErr = await deleteStoredHtmlPagesForEventIds([id]);
+    setEvs(p=>p.filter(e=>e.id!==id));
+    closeModal();
+    if (storageErr) {
+      showToast("Oferta e ștearsă local, dar fișierul din Supabase Storage nu: " + storageErr + ". Rulează în SQL Editor politica fisa_public_delete din supabase-fix-fisa-rls.sql", "error");
+    }
+  };
   const moveEvToDate = (evId, newDate) => { setEvs(p=>p.map(e=>e.id===evId?{...e,date:newDate}:e)); showToast("Data actualizată"); };
   const updSt = (id, st) => { setEvs(p=>p.map(e=>e.id===id?{...e,st}:e)); showToast(`Status: ${ST[st]?.l}`); };
   
@@ -4684,7 +4821,7 @@ function App() {
                 return (
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
                     <button onClick={()=>setSelectedEvIds(allEvSelected?[]:allEvIds)} style={{...sty.bg,padding:"6px 12px",fontSize:11}}>{allEvSelected?"Deselectează":"Selectează toate"}</button>
-                    {selectedEvIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedEvIds.length} selectate</span>{p.d&&<button onClick={()=>{if(!window.confirm(`Ștergi ${selectedEvIds.length} eveniment/e?`))return;deleteStoredHtmlPagesForEventIds(selectedEvIds);setEvs(prev=>prev.filter(e=>!selectedEvIds.includes(e.id)));setSelectedEvIds([]);showToast(`Șterse ${selectedEvIds.length} eveniment/e`);}} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button>}</>}
+                    {selectedEvIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedEvIds.length} selectate</span>{p.d&&<button onClick={async()=>{if(!window.confirm(`Ștergi ${selectedEvIds.length} eveniment/e?`))return;const ids=[...selectedEvIds];const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));setSelectedEvIds([]);showToast(`Șterse ${ids.length} eveniment/e`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button>}</>}
                   </div>
                 );
               })()}
@@ -4751,7 +4888,7 @@ function App() {
           </div>}
 
           {/* OFERTE */}
-          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pick",null):undefined} onStatusChange={updSt} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;setEvs(p=>p.map(e=>e.id===id?{...e,dp:newDp,...(newDp&&e.st==="plata_avans"?{st:"confirmat"}:{})}:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");}} onDeleteSelected={p.d?ids=>{deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);}:undefined} showSelection={p.d||p.e}/>}
+          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pick",null):undefined} onStatusChange={updSt} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;setEvs(p=>p.map(e=>e.id===id?{...e,dp:newDp,...(newDp&&e.st==="plata_avans"?{st:"confirmat"}:{})}:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
 
           {/* DOCS — Documente, rider, playlist, press kit — template pentru oferte */}
           {tab==="docs"&&<div style={{animation:"su .3s ease"}}>
