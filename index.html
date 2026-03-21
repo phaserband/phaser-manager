@@ -261,6 +261,44 @@ const encodeHtmlCodePoints = (raw) => {
   return out;
 };
 
+/**
+ * După await (ex. upload Supabase), clipboard.writeText poate eșua fără gesture.
+ * Fallback-ul cu execCommand('copy') copiază SELECȚIA CURENTĂ din pagină dacă textarea
+ * nu primește focus (mobil) — de aici paste cu tot HTML-ul ofertei. Ștergem selecția și forțăm focus.
+ */
+const copyTextToClipboardSafe = async (text) => {
+  const s = String(text ?? "").trim();
+  if (!s) return false;
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(s);
+      return true;
+    }
+  } catch (e) { /* continuă cu fallback */ }
+  try {
+    const sel = typeof window !== "undefined" && window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount) sel.removeAllRanges();
+  } catch (e) { /* ignore */ }
+  const ta = document.createElement("textarea");
+  ta.value = s;
+  ta.setAttribute("readonly", "");
+  ta.setAttribute("aria-hidden", "true");
+  ta.style.cssText = "position:fixed;top:0;left:0;width:2px;height:2px;padding:0;margin:0;border:0;outline:0;opacity:0.01;z-index:2147483647;font-size:16px;";
+  document.body.appendChild(ta);
+  let ok = false;
+  try {
+    ta.focus();
+    ta.select();
+    if (typeof ta.setSelectionRange === "function") ta.setSelectionRange(0, s.length);
+    ok = document.execCommand("copy");
+  } catch (e) {
+    ok = false;
+  } finally {
+    try { document.body.removeChild(ta); } catch (e2) { /* ignore */ }
+  }
+  return !!ok;
+};
+
 const normalizeCssUrlPathForExport = (raw) => {
   let p = String(raw || "")
     .replace(/&quot;/gi, '"')
@@ -1499,6 +1537,19 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   const [offerLinkUrl, setOfferLinkUrl] = useState(null);
   const [offerLinkPanelOpen, setOfferLinkPanelOpen] = useState(false);
   const [offerLinkCopied, setOfferLinkCopied] = useState(false);
+  const offerLinkInputRef = useRef(null);
+  useEffect(() => {
+    if (!offerLinkPanelOpen || !offerLinkUrl) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          const el = offerLinkInputRef.current;
+          if (el) { el.focus(); el.select(); }
+        } catch (e) { /* ignore */ }
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [offerLinkPanelOpen, offerLinkUrl]);
   const [contractFields, setContractFields] = useState({
     nr:"", dataSemnare:"", clientNume:ev.cn||"", clientEmail:ev.ce||"", clientTel:ev.cp||"",
     jud:"", mun:"", str:"", nr2:"", ap:"", ciSeria:"", ciNr:"", cnp:"",
@@ -1900,18 +1951,6 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     const docTitle = getOfferContractExportBasename(tab==="contract");
     return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${escHtmlTitle(docTitle)}</title><style>body{margin:0;background:#f5f5f5}</style></head><body style="margin:0;background:#f5f5f5">${rawInner}</body></html>`;
   };
-  const copyTextToClipboard = async (text) => {
-    try { await navigator.clipboard.writeText(text); }
-    catch (e) {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.cssText = "position:fixed;opacity:0;left:-9999px";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
-  };
   /** Link public stabil: același path per eveniment (upsert). Necesită Supabase + bucket fisa-public. */
   const handleOfferSharePublicLink = async () => {
     const sb = typeof getSbClient === "function" ? getSbClient() : null;
@@ -1927,13 +1966,22 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       const blob = new Blob([html], { type: "text/html; charset=utf-8" });
       const { error } = await sb.storage.from("fisa-public").upload(path, blob, { contentType: "text/html; charset=utf-8", upsert: true });
       if (error) throw error;
-      const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
+      const pub = sb.storage.from("fisa-public").getPublicUrl(path);
+      const publicUrl = pub?.data?.publicUrl;
+      if (!publicUrl || !/^https?:\/\//i.test(String(publicUrl))) {
+        console.error("getPublicUrl neașteptat:", pub);
+        throw new Error("URL public invalid după upload.");
+      }
       setOfferLinkUrl(publicUrl);
       setOfferLinkPanelOpen(true);
-      await copyTextToClipboard(publicUrl);
-      setOfferLinkCopied(true);
-      setTimeout(() => setOfferLinkCopied(false), 2000);
-      showToast&&showToast("Link copiat în clipboard — lipește în WhatsApp / mail.");
+      const copiedOk = await copyTextToClipboardSafe(publicUrl);
+      if (copiedOk) {
+        setOfferLinkCopied(true);
+        setTimeout(() => setOfferLinkCopied(false), 2000);
+        showToast&&showToast("Link copiat — lipește în WhatsApp / mail.");
+      } else {
+        showToast&&showToast("Linkul e în fereastră: apasă «Copiază linkul» sau «Deschide în browser».");
+      }
     } catch (e) {
       const raw = (e?.message || "").trim();
       let msg = "Eroare: " + (raw || "Upload eșuat");
@@ -1947,9 +1995,13 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   };
   const copyOfferLinkAgain = async () => {
     if (!offerLinkUrl) return;
-    await copyTextToClipboard(offerLinkUrl);
-    setOfferLinkCopied(true);
-    setTimeout(() => setOfferLinkCopied(false), 2000);
+    const ok = await copyTextToClipboardSafe(offerLinkUrl);
+    if (ok) {
+      setOfferLinkCopied(true);
+      setTimeout(() => setOfferLinkCopied(false), 2000);
+    } else {
+      showToast&&showToast("Selectează manual URL-ul din câmp și Copiază (Cmd/Ctrl+C).", "error");
+    }
   };
 
   const copyOffer = async () => {
@@ -2001,20 +2053,21 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             {tab==="fisa"
               ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/>
               : <div style={{position:"relative",display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                  <button type="button" onClick={handleOfferSharePublicLink} disabled={pdfLoading||offerLinkBusy} title="Publică pe Supabase (bucket fisa-public) și copiază doar URL-ul în clipboard" style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||offerLinkBusy)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||offerLinkBusy)?0.7:1}}>
-                    {offerLinkBusy?"⏳":"🔗"} Copiază link
+                  <button type="button" onClick={handleOfferSharePublicLink} disabled={pdfLoading||offerLinkBusy} title="Creează / actualizează pagina pe internet și îți arată linkul (URL), nu HTML" style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||offerLinkBusy)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||offerLinkBusy)?0.7:1}}>
+                    {offerLinkBusy?"⏳":"🔗"} {offerLinkUrl?"Actualizează link":"Link public"}
                   </button>
-                  {offerLinkUrl&&<button type="button" onClick={()=>setOfferLinkPanelOpen(o=>!o)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.35)",background:offerLinkPanelOpen?"rgba(255,255,255,.12)":"transparent",color:"rgba(255,255,255,.95)",fontWeight:600,fontSize:12,cursor:"pointer"}}>{offerLinkPanelOpen?"▼":"▶"} Linkul</button>}
+                  {offerLinkUrl&&<button type="button" onClick={()=>setOfferLinkPanelOpen(o=>!o)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.35)",background:offerLinkPanelOpen?"rgba(255,255,255,.12)":"transparent",color:"rgba(255,255,255,.95)",fontWeight:600,fontSize:12,cursor:"pointer"}}>{offerLinkPanelOpen?"▼ Vezi link":"▶ Vezi link"}</button>}
+                  {offerLinkUrl&&<a href={offerLinkUrl} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:600,color:"#93c5fd",textDecoration:"underline",maxWidth:mob?120:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={offerLinkUrl}>Deschide oferta</a>}
                   {offerLinkPanelOpen&&offerLinkUrl&&<>
                     <div style={{position:"fixed",inset:0,zIndex:1199}} onClick={()=>setOfferLinkPanelOpen(false)}/>
-                    <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"#1a1a1a",borderRadius:12,padding:16,width:"min(360px, 92vw)",zIndex:1201,boxShadow:"0 12px 40px rgba(0,0,0,.8)",border:"1px solid rgba(255,255,255,.15)"}} onClick={e=>e.stopPropagation()}>
-                      <div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Link public · {tab==="contract"?"Contract":"Ofertă"}</div>
-                      <div style={{display:"flex",gap:6,marginBottom:10}}>
-                        <input value={offerLinkUrl} readOnly onClick={e=>e.target.select()} style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"rgba(255,255,255,.85)",fontSize:10,fontFamily:"monospace",minWidth:0}}/>
-                        <button type="button" onClick={copyOfferLinkAgain} style={{padding:"6px 10px",borderRadius:6,border:"none",background:offerLinkCopied?"#22c55e":"#333",color:"#fff",fontSize:11,cursor:"pointer",flexShrink:0,fontWeight:600}}>{offerLinkCopied?"✓":"📋"}</button>
-                      </div>
-                      <a href={"https://wa.me/?text="+encodeURIComponent(offerLinkUrl)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",borderRadius:8,background:"#25d366",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none",width:"100%",marginBottom:8}}><span style={{fontSize:16}}>💬</span> WhatsApp</a>
-                      <button type="button" onClick={handleOfferSharePublicLink} disabled={offerLinkBusy} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"transparent",color:"rgba(255,255,255,.5)",fontSize:11,cursor:offerLinkBusy?"wait":"pointer",marginBottom:4}}>{offerLinkBusy?"⏳ …":"↻ Reîncarcă pagina (același URL)"}</button>
+                    <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"#1a1a1a",borderRadius:12,padding:16,width:"min(400px, 94vw)",maxHeight:"min(520px,90vh)",overflow:"auto",zIndex:1201,boxShadow:"0 12px 40px rgba(0,0,0,.8)",border:"1px solid rgba(255,255,255,.15)"}} onClick={e=>e.stopPropagation()}>
+                      <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:6,lineHeight:1.3}}>Acesta este linkul tău</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,.45)",marginBottom:12,lineHeight:1.4}}>Trimite adresa de mai jos pe WhatsApp sau mail — clientul deschide pagina în browser. Nu trimite cod HTML.</div>
+                      <textarea ref={offerLinkInputRef} value={offerLinkUrl} readOnly onClick={e=>e.target.select()} rows={3} style={{width:"100%",boxSizing:"border-box",padding:"10px 10px",borderRadius:8,border:"1px solid rgba(245,158,11,.35)",background:"rgba(255,255,255,.06)",color:"#fde68a",fontSize:12,fontFamily:"ui-monospace,monospace",marginBottom:10,wordBreak:"break-all",resize:"vertical",minHeight:64,lineHeight:1.45}}/>
+                      <button type="button" onClick={copyOfferLinkAgain} style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"none",background:offerLinkCopied?"#16a34a":"#22c55e",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:8}}>{offerLinkCopied?"✓ Copiat!":"Copiază linkul"}</button>
+                      <a href={offerLinkUrl} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",borderRadius:8,background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.2)",color:"#e5e5e5",fontWeight:700,fontSize:12,textDecoration:"none",width:"100%",marginBottom:8,boxSizing:"border-box"}}>Deschide în browser nou</a>
+                      <a href={"https://wa.me/?text="+encodeURIComponent(offerLinkUrl)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",borderRadius:8,background:"#25d366",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none",width:"100%",marginBottom:8,boxSizing:"border-box"}}><span style={{fontSize:16}}>💬</span> Trimite link pe WhatsApp</a>
+                      <button type="button" onClick={handleOfferSharePublicLink} disabled={offerLinkBusy} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"transparent",color:"rgba(255,255,255,.5)",fontSize:11,cursor:offerLinkBusy?"wait":"pointer",marginBottom:4}}>{offerLinkBusy?"⏳ …":"↻ Reîncarcă pagina (același link)"}</button>
                       <button type="button" onClick={()=>setOfferLinkPanelOpen(false)} style={{width:"100%",padding:"5px",borderRadius:6,border:"none",background:"transparent",color:"rgba(255,255,255,.35)",fontSize:10,cursor:"pointer"}}>Închide</button>
                     </div>
                   </>}
@@ -2575,9 +2628,10 @@ function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient, updEv }) {
 
   const copyUrl = async () => {
     if (!url) return;
-    try { await navigator.clipboard.writeText(url); }
-    catch(e) { const ta=document.createElement("textarea");ta.value=url;ta.style.cssText="position:fixed;opacity:0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta); }
-    setCopied(true); setTimeout(()=>setCopied(false), 2000);
+    const ok = await copyTextToClipboardSafe(url);
+    setCopied(!!ok);
+    setTimeout(()=>setCopied(false), 2000);
+    if (!ok) showToast?.("Selectează URL-ul și Cmd/Ctrl+C", "error");
   };
 
   return (
