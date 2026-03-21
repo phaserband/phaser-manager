@@ -919,6 +919,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
   const [viewMode, setViewMode] = useState("list"); // list | calendar | kanban
   const [selectedIds, setSelectedIds] = useState([]);
   const [kanbanDragCol, setKanbanDragCol] = useState(null);
+  const [taskBulkPick, setTaskBulkPick] = useState("");
   const [calendarDate, setCalendarDate] = useState(()=>{const n=new Date(); return {y:n.getFullYear(),m:n.getMonth()};});
   const calendarScrollRef = useRef(null);
   const calendarScrolling = useRef(false);
@@ -967,6 +968,20 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
   const allSelected = allTaskIds.length>0&&allTaskIds.every(id=>selectedIds.includes(id));
   const selectAll = () => setSelectedIds(allSelected?[]:allTaskIds);
   const delSelected = () => { if(selectedIds.length===0) return; if(!window.confirm(`Ștergi ${selectedIds.length} task/taskuri?`)) return; setTasks(p=>delMultipleInTree(p,selectedIds)); setSelectedIds([]); };
+  const bulkSetTaskStatus = (col) => {
+    if (!selectedIds.length || !col) return;
+    const ids = [...selectedIds];
+    setTasks(prev => {
+      let next = prev;
+      ids.forEach(id => {
+        if (col === "done") next = applyDoneWithRepeat(next, id, true);
+        else next = updInTree(next, id, { taskStatus: col, done: false });
+      });
+      return next;
+    });
+    setSelectedIds([]);
+    setTaskBulkPick("");
+  };
 
   useEffect(()=>{
     const el=calendarScrollRef.current; if(!el||viewMode!=="calendar"||compact) return;
@@ -1148,7 +1163,14 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
 
       {!compact&&allTaskIds.length>0&&<div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
         <button onClick={selectAll} style={{...sty.bg,padding:"6px 12px",fontSize:11}}>{allSelected?"Deselectează":"Selectează toate"}</button>
-        {selectedIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedIds.length} selectate</span><button onClick={delSelected} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button></>}
+        {selectedIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedIds.length} selectate</span>
+        <select value={taskBulkPick} onChange={e=>{const v=e.target.value;setTaskBulkPick("");if(!v)return;bulkSetTaskStatus(v);}} className="modernSel" style={{...sty.i,padding:"6px 28px 6px 10px",fontSize:11,borderRadius:8,minWidth:180,maxWidth:240}} title="Schimbă status (în proces / în lucru / finalizat) pentru task-urile selectate">
+          <option value="">Schimbă status…</option>
+          <option value="in_proces">{TSL.in_proces}</option>
+          <option value="in_lucru">{TSL.in_lucru}</option>
+          <option value="done">{TSL.done}</option>
+        </select>
+        <button onClick={delSelected} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button></>}
       </div>}
 
       <div style={{display:"flex",flexDirection:"column",gap:0}}>
@@ -1241,13 +1263,14 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
 }
 
 // ─── Offers board, contract, offer preview ───
-function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, onAvansToggle, onDeleteSelected, showSelection }) {
+function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, onAvansToggle, onDeleteSelected, onBulkStatusChange, showSelection }) {
   const [sortBy, setSortBy] = useState("date");
   const [filterSt, setFilterSt] = useState("");
   const [filterCat, setFilterCat] = useState("");
   const [viewMode, setViewMode] = useState("list"); // list | grid | kanban
   const [dragOverCol, setDragOverCol] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkOfferPick, setBulkOfferPick] = useState("");
   const toggleSel = (id) => setSelectedIds(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
   const now = new Date();
   const confConfirmate = evs.filter(e=>e.st==="confirmat"&&(!filterCat||e.cat===filterCat)).sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));
@@ -1285,6 +1308,12 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
   const allSelected = allIds.length>0&&allIds.every(id=>selectedIds.includes(id));
   const selectAll = () => setSelectedIds(allSelected?[]:allIds);
   const delSelected = () => { if(selectedIds.length===0||!onDeleteSelected) return; if(!window.confirm(`Ștergi ${selectedIds.length} ofertă/oferte?`)) return; onDeleteSelected(selectedIds); setSelectedIds([]); };
+  const applyBulkOfferStatus = (st) => {
+    if (!st || !onBulkStatusChange || selectedIds.length === 0) return;
+    onBulkStatusChange([...selectedIds], st);
+    setSelectedIds([]);
+    setBulkOfferPick("");
+  };
   const glowCardShadow = (st) => {
     if (st === "confirmat") return "0 2px 16px rgba(34, 197, 94, 0.22), 0 1px 3px rgba(0,0,0,.08)";
     if (st === "respins") return "0 2px 16px rgba(239, 68, 68, 0.22), 0 1px 3px rgba(0,0,0,.08)";
@@ -1326,9 +1355,14 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
           <option value="client">Client A-Z</option>
           <option value="status">Status</option>
         </select>
-        {(showSelection||onDeleteSelected)&&<div style={{display:"flex",gap:6,alignItems:"center",marginLeft:"auto"}}>
+        {(showSelection||onDeleteSelected||onBulkStatusChange)&&<div style={{display:"flex",gap:6,alignItems:"center",marginLeft:"auto",flexWrap:"wrap"}}>
           <button onClick={selectAll} style={{...sty.bg,padding:"6px 12px",fontSize:11}}>{allSelected?"Deselectează":"Selectează toate"}</button>
-          {selectedIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedIds.length} selectate</span>{onDeleteSelected&&<button onClick={delSelected} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button>}</>}
+          {selectedIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedIds.length} selectate</span>
+          {onBulkStatusChange&&<select value={bulkOfferPick} onChange={e=>{const st=e.target.value;setBulkOfferPick("");if(!st)return;applyBulkOfferStatus(st);}} className="modernSel" style={{...sty.i,padding:"6px 28px 6px 10px",fontSize:11,borderRadius:8,minWidth:200,maxWidth:260}} title="Schimbă statusul pentru toate ofertele selectate">
+            <option value="">Schimbă status…</option>
+            {Object.entries(ST).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}
+          </select>}
+          {onDeleteSelected&&<button onClick={delSelected} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button>}</>}
         </div>}
       </div>
       {viewMode==="kanban" ? (
@@ -4303,6 +4337,7 @@ function App() {
   }, [modal, mData, evs, calBlocks, tasks, closeModal]);
   const [search, setSearch] = useState("");
   const [selectedEvIds, setSelectedEvIds] = useState([]);
+  const [evBulkStatusPick, setEvBulkStatusPick] = useState("");
   const [calM, setCalM]   = useState(new Date());
   const [calSidebarDate, setCalSidebarDate] = useState(null);
   const [calDragEvId, setCalDragEvId] = useState(null);
@@ -4651,6 +4686,12 @@ function App() {
   }, [tab]);
 
   const updSt = (id, st) => { setEvs(p=>p.map(e=>e.id===id?{...e,st}:e)); showToast(`Status: ${ST[st]?.l}`); };
+  const bulkUpdSt = (ids, st) => {
+    if (!ids || !ids.length || !st) return;
+    const set = new Set(ids);
+    setEvs(p => p.map(e => (set.has(e.id) ? { ...e, st } : e)));
+    showToast(`${ids.length} intrări → ${ST[st]?.l || st}`);
+  };
   
   const saveTemplates = (upd) => {
     const next = typeof upd==="function" ? upd(templates) : {...templates,...upd};
@@ -5059,9 +5100,14 @@ function App() {
                 const allEvIds = search ? fEvs.map(e=>e.id) : [...viitoare,...trecute].map(e=>e.id);
                 const allEvSelected = allEvIds.length>0&&allEvIds.every(id=>selectedEvIds.includes(id));
                 return (
-                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                     <button onClick={()=>setSelectedEvIds(allEvSelected?[]:allEvIds)} style={{...sty.bg,padding:"6px 12px",fontSize:11}}>{allEvSelected?"Deselectează":"Selectează toate"}</button>
-                    {selectedEvIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedEvIds.length} selectate</span>{p.d&&<button onClick={async()=>{if(!window.confirm(`Ștergi ${selectedEvIds.length} eveniment/e?`))return;const ids=[...selectedEvIds];const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));setSelectedEvIds([]);showToast(`Șterse ${ids.length} eveniment/e`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button>}</>}
+                    {selectedEvIds.length>0&&<><span style={{fontSize:11,color:th.tm}}>{selectedEvIds.length} selectate</span>
+                    {p.e&&<select value={evBulkStatusPick} onChange={e=>{const st=e.target.value;setEvBulkStatusPick("");if(!st)return;bulkUpdSt([...selectedEvIds],st);setSelectedEvIds([]);}} className="modernSel" style={{...sty.i,padding:"6px 28px 6px 10px",fontSize:11,borderRadius:8,minWidth:200,maxWidth:280}} title="Schimbă statusul pentru evenimentele selectate">
+                      <option value="">Schimbă status…</option>
+                      {Object.entries(ST).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}
+                    </select>}
+                    {p.d&&<button onClick={async()=>{if(!window.confirm(`Ștergi ${selectedEvIds.length} eveniment/e?`))return;const ids=[...selectedEvIds];const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));setSelectedEvIds([]);showToast(`Șterse ${ids.length} eveniment/e`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}} style={{padding:"6px 12px",fontSize:11,borderRadius:8,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",cursor:"pointer"}}><IcTrash s={12}/> Șterge</button>}</>}
                   </div>
                 );
               })()}
@@ -5128,7 +5174,7 @@ function App() {
           </div>}
 
           {/* OFERTE */}
-          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pick",null):undefined} onStatusChange={updSt} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;setEvs(p=>p.map(e=>e.id===id?{...e,dp:newDp,...(newDp&&e.st==="plata_avans"?{st:"confirmat"}:{})}:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
+          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pick",null):undefined} onStatusChange={updSt} onBulkStatusChange={p.e?bulkUpdSt:undefined} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;setEvs(p=>p.map(e=>e.id===id?{...e,dp:newDp,...(newDp&&e.st==="plata_avans"?{st:"confirmat"}:{})}:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
 
           {/* DOCS — Documente, rider, playlist, press kit — template pentru oferte */}
           {tab==="docs"&&<div style={{animation:"su .3s ease"}}>
