@@ -255,6 +255,52 @@ const encodeHtmlCodePoints = (raw) => {
   }
   return out;
 };
+
+const normalizeCssUrlPathForExport = (raw) => {
+  let p = String(raw || "")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(?:0*34|[xX]22);/g, '"')
+    .replace(/&apos;|&#(?:0*39|[xX]27);/g, "'")
+    .replace(/&amp;/g, "&")
+    .trim();
+  while ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'")))
+    p = p.slice(1, -1).trim();
+  return p;
+};
+/** Relativ → absolut; https deja valid rămasă; https „stricat” (ex. …/ &quot;assets/… ) reparat. */
+const resolveCssUrlToAbsoluteForExport = (pathOrUrl, base) => {
+  let x = normalizeCssUrlPathForExport(pathOrUrl);
+  if (!x || x.startsWith("data:") || x.startsWith("#")) return null;
+  if (/^[a-z]+:/i.test(x) && !/^https?:/i.test(x)) return null;
+  if (/^https?:\/\//i.test(x)) {
+    const needsUnmangle = /&quot;|\/"|\/%22/i.test(x);
+    if (!needsUnmangle) return x;
+    const om = x.match(/^https?:\/\/[^/]+/i);
+    if (!om) return null;
+    const origin = om[0];
+    let rest = normalizeCssUrlPathForExport(x.slice(origin.length).replace(/^\/+/, ""));
+    try { return new URL(rest, origin + "/").href; } catch (e) { return null; }
+  }
+  try { return new URL(x, base).href; } catch (e) { return null; }
+};
+/** CSSOM (style.backgroundImage) e fără &quot; — rezolvăm înainte de innerHTML. */
+const rewriteBackgroundImageUrlsInClone = (root, base) => {
+  if (!root || !base) return;
+  root.querySelectorAll("*").forEach((el) => {
+    const bi = el.style && el.style.backgroundImage;
+    if (!bi || bi === "none") return;
+    const next = bi.replace(/\burl\s*\(\s*([^)]+)\s*\)/gi, (full, inner0) => {
+      let inner = inner0.trim();
+      const q = inner[0];
+      if ((q === '"' || q === "'") && inner.endsWith(q)) inner = inner.slice(1, -1).trim();
+      const href = resolveCssUrlToAbsoluteForExport(inner, base);
+      if (!href) return full;
+      return `url("${href.replace(/"/g, '\\"')}")`;
+    });
+    if (next !== bi) el.style.backgroundImage = next;
+  });
+};
+
 const getFisaBodyHtmlForWorker = (ev) => { const full = buildFisaHtml(ev); const m = full.match(/<body[^>]*>([\s\S]*?)<\/body>/i); return m ? m[1] : full; };
 
 const FISA_EXTRA_TYPES = [
@@ -1426,7 +1472,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   const [localSt, setLocalSt] = useState(evStatus);
   const [playlistSearch, setPlaylistSearch] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [linkState, setLinkState] = useState({url:null, show:false, loading:false, copied:false});
+  const [offerHtmlExportBusy, setOfferHtmlExportBusy] = useState(false);
   const [contractFields, setContractFields] = useState({
     nr:"", dataSemnare:"", clientNume:ev.cn||"", clientEmail:ev.ce||"", clientTel:ev.cp||"",
     jud:"", mun:"", str:"", nr2:"", ap:"", ciSeria:"", ciNr:"", cnp:"",
@@ -1465,36 +1511,17 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       return u.origin + u.pathname.replace(/\/[^/]+$/, "/");
     } catch (e) { return (typeof window !== "undefined" ? window.location.origin : "") + "/"; }
   };
-  /** background-image: url(...) rămâne relativ la export; îl facem absolut. innerHTML folosește &quot; în atributul style — trebuie acceptat, altfel path devine &quot;assets/... și URL-ul se strică. */
+  /** Complement la rewriteBackgroundImageUrlsInClone: url() rămase în șirul innerHTML (entități &quot; etc.). */
   const absolutizeCssUrlsInHtmlExport = (html, base) => {
-    const normalizeCssUrlPath = (raw) => {
-      let p = String(raw || "")
-        .replace(/&quot;/gi, '"')
-        .replace(/&#(?:0*34|[xX]22);/g, '"')
-        .replace(/&apos;|&#(?:0*39|[xX]27);/g, "'")
-        .replace(/&amp;/g, "&")
-        .trim();
-      while ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'")))
-        p = p.slice(1, -1).trim();
-      return p;
-    };
-    const absUrl = (p) => {
-      if (!p || p.startsWith("data:") || /^https?:\/\//i.test(p) || p.startsWith("#")) return null;
-      if (/^[a-z]+:/i.test(p) && !/^https?:/i.test(p)) return null;
-      try { return new URL(p, base).href; } catch (e) { return null; }
-    };
-    // Ghilimele reale sau entități HTML (&quot;), ca în serializarea atributului style
     const quoted = /url\s*\(\s*(?:"|'|&quot;|&#(?:0*34|[xX]22);|&apos;|&#(?:0*39|[xX]27);)([\s\S]*?)(?:"|'|&quot;|&#(?:0*34|[xX]22);|&apos;|&#(?:0*39|[xX]27);)\s*\)/gi;
     let out = html.replace(quoted, (match, inner) => {
-      const p = normalizeCssUrlPath(inner);
-      const href = absUrl(p);
+      const href = resolveCssUrlToAbsoluteForExport(inner, base);
       if (!href) return match;
       const safe = href.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
       return `url('${safe}')`;
     });
     out = out.replace(/url\s*\(\s*([^)"'\s][^)]*?)\s*\)/gi, (match, inner) => {
-      const p = normalizeCssUrlPath(inner);
-      const href = absUrl(p);
+      const href = resolveCssUrlToAbsoluteForExport(inner, base);
       if (!href) return match;
       const safe = href.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
       return `url('${safe}')`;
@@ -1513,6 +1540,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       inp.parentNode.replaceChild(span, inp);
     });
     const base = exportHtmlAssetBase();
+    rewriteBackgroundImageUrlsInClone(clone, base);
     let html = clone.innerHTML;
     html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
       if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
@@ -1549,6 +1577,8 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       container.parentNode.replaceChild(div, container);
     });
     clone.querySelectorAll("button").forEach(btn => btn.remove());
+    const base = exportHtmlAssetBase();
+    rewriteBackgroundImageUrlsInClone(clone, base);
     let html = clone.innerHTML;
     const iframeRepl = (h) => h.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, (m) => {
       const s = (m.match(/src="([^"]*)"/)||[])[1]||"";
@@ -1562,7 +1592,6 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       if (riderEl) html += '<div class="print-break"></div>'+iframeRepl(riderEl.innerHTML);
       if (pkEl) html += '<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);
     }
-    const base = exportHtmlAssetBase();
     html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
       if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
       try { return "<img"+rest+' src="'+new URL(src, base).href+'"'; } catch(e) { return "<img"+rest+' src="'+src+'"'; }
@@ -1576,6 +1605,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     if (!el) return "";
     const clone = el.cloneNode(true);
     const base = exportHtmlAssetBase();
+    rewriteBackgroundImageUrlsInClone(clone, base);
     let html = clone.innerHTML;
     html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
       if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
@@ -1821,35 +1851,27 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     setPdfLoading(false);
   };
 
-  const handleGetOfferLink = async () => {
-    // Dacă avem deja link-ul generat, toggle panelul
-    if (linkState.url) { setLinkState(s=>({...s, show:!s.show})); return; }
-    const sb = typeof getSbClient==="function" ? getSbClient() : null;
-    if (!sb) { showToast&&showToast("Link partajabil necesită Supabase configurat.","error"); return; }
-    setLinkState(s=>({...s, loading:true}));
+  const handleExportOfferHtmlFile = () => {
+    setOfferHtmlExportBusy(true);
     try {
-      let rawHtml;
-      if (tab==="contract") rawHtml = getContractHtmlForWorker();
-      else rawHtml = getOfferHtmlForWorker();
-      const html = encodeHtmlCodePoints(rawHtml);
-      const prefix = tab==="contract" ? "contract" : "offer";
-      const path = `${prefix}-${ev.id}.html`;
-      const blob = new Blob([html], { type: "text/html; charset=utf-8" });
-      const { error } = await sb.storage.from("fisa-public").upload(path, blob, {contentType:"text/html; charset=utf-8", upsert:true});
-      if (error) throw error;
-      const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
-      setLinkState({url:publicUrl, show:true, loading:false, copied:false});
-      showToast&&showToast("Link generat ✓");
-    } catch(e) {
-      const raw=(e?.message||"").trim();
-      let msg = "Eroare: "+(raw||"Upload eșuat");
-      if (/bucket not found/i.test(raw)) {
-        msg = "Bucket 'fisa-public' lipsă în Supabase. Dashboard → Storage → New bucket: id 'fisa-public', Public.";
-      } else if (/row-level security|rls/i.test(raw)) {
-        msg = "Supabase blochează upload-ul (RLS). Rulează supabase-fix-fisa-rls.sql în SQL Editor.";
-      }
-      showToast&&showToast(msg,"error");
-      setLinkState(s=>({...s, loading:false}));
+      const rawInner = tab==="contract" ? getContractHtmlForWorker() : getOfferHtmlForWorker();
+      const title = tab==="contract" ? "Contract" : "Ofertă";
+      const fullPage = `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PHASER — ${title}</title><style>body{margin:0;background:#f5f5f5}</style></head><body style="margin:0;background:#f5f5f5">${rawInner}</body></html>`;
+      const html = encodeHtmlCodePoints(fullPage);
+      const fname = getPdfFilename(tab==="contract" ? "contract" : "offer").replace(/\.pdf$/i, ".html");
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = u;
+      a.download = fname;
+      a.click();
+      URL.revokeObjectURL(u);
+      showToast&&showToast("HTML descărcat — trimite fișierul pe WhatsApp, mail etc.");
+    } catch (e) {
+      showToast&&showToast("Eroare la export HTML", "error");
+      console.error(e);
+    } finally {
+      setOfferHtmlExportBusy(false);
     }
   };
 
@@ -1901,24 +1923,9 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             </button>
             {tab==="fisa"
               ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/>
-              : <div style={{position:"relative"}}>
-                  <button onClick={handleGetOfferLink} disabled={pdfLoading||linkState.loading} style={{padding:"8px 16px",borderRadius:8,border:"none",background:linkState.show?"#2563eb":"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||linkState.loading)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||linkState.loading)?0.7:1}}>
-                    {linkState.loading?"⏳":"🔗"} Link
-                  </button>
-                  {linkState.show&&<><div style={{position:"fixed",inset:0,zIndex:49}} onClick={()=>setLinkState(s=>({...s,show:false}))}/><div style={{position:"absolute",top:"calc(100% + 10px)",right:0,background:"#1a1a1a",borderRadius:12,padding:14,width:mob?280:300,zIndex:50,boxShadow:"0 12px 32px rgba(0,0,0,.6)",border:"1px solid rgba(255,255,255,.12)"}}>
-                    <div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Link partajabil</div>
-                    <div style={{display:"flex",gap:6,marginBottom:10}}>
-                      <input value={linkState.url} readOnly onClick={e=>e.target.select()} style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"rgba(255,255,255,.6)",fontSize:10,fontFamily:"monospace",minWidth:0}}/>
-                      <button onClick={async()=>{try{await navigator.clipboard.writeText(linkState.url);}catch(e){const ta=document.createElement("textarea");ta.value=linkState.url;ta.style.cssText="position:fixed;opacity:0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}setLinkState(s=>({...s,copied:true}));setTimeout(()=>setLinkState(s=>({...s,copied:false})),2000);}} style={{padding:"6px 10px",borderRadius:6,border:"none",background:linkState.copied?"#22c55e":"#333",color:"#fff",fontSize:11,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap",fontWeight:600}}>
-                        {linkState.copied?"✓":"📋"}
-                      </button>
-                    </div>
-                    <a href={"https://wa.me/?text="+encodeURIComponent(linkState.url)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",borderRadius:8,background:"#25d366",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none",width:"100%"}}>
-                      <span style={{fontSize:16}}>💬</span> Trimite pe WhatsApp
-                    </a>
-                    <button onClick={()=>setLinkState(s=>({...s,show:false}))} style={{marginTop:8,width:"100%",padding:"5px",borderRadius:6,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"rgba(255,255,255,.4)",fontSize:11,cursor:"pointer"}}>Închide</button>
-                  </div></> }
-                </div>
+              : <button onClick={handleExportOfferHtmlFile} disabled={pdfLoading||offerHtmlExportBusy} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||offerHtmlExportBusy)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||offerHtmlExportBusy)?0.7:1}}>
+                  {offerHtmlExportBusy?"⏳":"📥"} HTML
+                </button>
             }
             <button onClick={onClose} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={18}/></button>
           </div>
