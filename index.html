@@ -1457,6 +1457,30 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     return `Oferta-O${ev.offerNr||"?"}-${dateStr}.pdf`;
   };
 
+  const exportHtmlAssetBase = () => {
+    try {
+      const u = new URL(window.location.href.split("#")[0] || window.location.href);
+      if (!u.pathname || u.pathname === "/") return u.origin + "/";
+      if (u.pathname.endsWith("/")) return u.origin + u.pathname;
+      return u.origin + u.pathname.replace(/\/[^/]+$/, "/");
+    } catch (e) { return (typeof window !== "undefined" ? window.location.origin : "") + "/"; }
+  };
+  /** background-image: url('assets/...') rămâne relativ la export HTML/PDF; îl facem absolut ca <img src>. */
+  const absolutizeCssUrlsInHtmlExport = (html, base) => {
+    let out = html.replace(/url\s*\(\s*(["'])([^"']*?)\1\s*\)/gi, (match, quote, path) => {
+      const p = String(path || "").trim();
+      if (!p || p.startsWith("data:") || /^https?:\/\//i.test(p) || p.startsWith("#")) return match;
+      try { return `url(${quote}${new URL(p, base).href}${quote})`; } catch (e) { return match; }
+    });
+    out = out.replace(/url\s*\(\s*([^)"'\s][^)]*?)\s*\)/gi, (match, path) => {
+      const p = String(path || "").trim();
+      if (!p || p.startsWith("data:") || /^https?:\/\//i.test(p) || p.startsWith("#")) return match;
+      if (/^[a-z]+:/i.test(p) && !/^https?:/i.test(p)) return match;
+      try { return `url('${new URL(p, base).href}')`; } catch (e) { return match; }
+    });
+    return out;
+  };
+
   const getContractHtmlForWorker = () => {
     const el = document.getElementById("contract-print-content");
     if (!el) return "";
@@ -1467,12 +1491,13 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       span.textContent = inp.value || inp.placeholder || "___";
       inp.parentNode.replaceChild(span, inp);
     });
-    const base = window.location.href;
+    const base = exportHtmlAssetBase();
     let html = clone.innerHTML;
     html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
       if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
       try { return "<img"+rest+' src="'+new URL(src, base).href+'"'; } catch(e) { return "<img"+rest+' src="'+src+'"'; }
     });
+    html = absolutizeCssUrlsInHtmlExport(html, base);
     return html;
   };
 
@@ -1516,11 +1541,12 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       if (riderEl) html += '<div class="print-break"></div>'+iframeRepl(riderEl.innerHTML);
       if (pkEl) html += '<div class="print-break"></div>'+iframeRepl(pkEl.innerHTML);
     }
-    const base = window.location.href;
+    const base = exportHtmlAssetBase();
     html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
       if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
       try { return "<img"+rest+' src="'+new URL(src, base).href+'"'; } catch(e) { return "<img"+rest+' src="'+src+'"'; }
     });
+    html = absolutizeCssUrlsInHtmlExport(html, base);
     return html;
   };
 
@@ -1528,12 +1554,13 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     const el = document.getElementById("fisa-print-content");
     if (!el) return "";
     const clone = el.cloneNode(true);
-    const base = window.location.href;
+    const base = exportHtmlAssetBase();
     let html = clone.innerHTML;
     html = html.replace(/<img([^>]*)\ssrc="([^"]*)"/gi, (_, rest, src) => {
       if (!src || src.startsWith("data:") || /^https?:\/\//i.test(src)) return "<img"+rest+' src="'+src+'"';
       try { return "<img"+rest+' src="'+new URL(src, base).href+'"'; } catch(e) { return "<img"+rest+' src="'+src+'"'; }
     });
+    html = absolutizeCssUrlsInHtmlExport(html, base);
     return html;
   };
 
