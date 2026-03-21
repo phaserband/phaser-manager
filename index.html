@@ -1078,6 +1078,11 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
   const allSelected = allIds.length>0&&allIds.every(id=>selectedIds.includes(id));
   const selectAll = () => setSelectedIds(allSelected?[]:allIds);
   const delSelected = () => { if(selectedIds.length===0||!onDeleteSelected) return; if(!window.confirm(`Ștergi ${selectedIds.length} ofertă/oferte?`)) return; onDeleteSelected(selectedIds); setSelectedIds([]); };
+  const glowCardShadow = (st) => {
+    if (st === "confirmat") return "0 2px 16px rgba(34, 197, 94, 0.22), 0 1px 3px rgba(0,0,0,.08)";
+    if (st === "respins") return "0 2px 16px rgba(239, 68, 68, 0.22), 0 1px 3px rgba(0,0,0,.08)";
+    return "0 1px 3px rgba(0,0,0,.1)";
+  };
   return (
     <div style={{animation:"su .3s ease"}}>
       <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
@@ -1130,7 +1135,7 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
                 {colEvs.map(ev=>{
                   const d=dU(ev.date); const urgent=d<=14;
                   return <div key={ev.id} draggable onDragStart={e=>e.dataTransfer.setData("evId",ev.id)} onClick={()=>onSelect(ev)}
-                    style={{background:th.c,borderRadius:8,padding:12,cursor:"grab",border:`${selectedIds.includes(ev.id)?2:1}px solid ${selectedIds.includes(ev.id)?th.a:th.b}`,boxShadow:"0 1px 3px rgba(0,0,0,.1)",transition:"transform .15s",position:"relative"}}
+                    style={{background:th.c,borderRadius:8,padding:12,cursor:"grab",border:`${selectedIds.includes(ev.id)?2:1}px solid ${selectedIds.includes(ev.id)?th.a:(ev.st==="confirmat"?"rgba(34,197,94,0.35)":ev.st==="respins"?"rgba(239,68,68,0.35)":th.b)}`,boxShadow:glowCardShadow(ev.st),transition:"transform .15s, box-shadow .2s",position:"relative"}}
                     onMouseOver={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.cursor="grab";}}
                     onMouseOut={e=>{e.currentTarget.style.transform="translateY(0)";}}>
                     {(showSelection||onDeleteSelected)&&<div style={{position:"absolute",top:8,right:8}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(ev.id)} onChange={()=>toggleSel(ev.id)} style={{cursor:"pointer",width:14,height:14}}/></div>}
@@ -1184,13 +1189,13 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
             <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Oferte confirmate ({confConfirmate.length})</div>
             <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden",marginBottom:20}} className={mob?"table-scroll-mob":""}>
               {confConfirmate.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă confirmată</div>}
-              {confConfirmate.length>0&&<table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?480:undefined}}>
+              {confConfirmate.length>0&&<table style={{width:"100%",borderCollapse:"separate",borderSpacing:"0 8px",minWidth:mob?480:undefined}}>
                 <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
                   {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={confConfirmate.length>0&&confConfirmate.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=confConfirmate.map(e=>e.id);const all=confConfirmate.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
                   {["Data","Tipul evenimentului","Locația evenimentului"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
                 </tr></thead>
                 <tbody>{confConfirmate.map((ev)=>(
-                  <tr key={ev.id} onClick={()=>onSelect(ev)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:"transparent"}} onMouseOver={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
+                  <tr key={ev.id} onClick={()=>onSelect(ev)} style={{cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:th.c,borderRadius:10,overflow:"hidden",boxShadow:"0 2px 14px rgba(34, 197, 94, 0.2)",border:"1px solid rgba(34, 197, 94, 0.12)",outline:"none"}} onMouseOver={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.c}}>
                     {(showSelection||onDeleteSelected)&&<td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(ev.id)} onChange={()=>toggleSel(ev.id)} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></td>}
                     <td style={{padding:"10px 12px",fontSize:11}}>{fD(ev.date)}{ev.date&&new Date(ev.date+"T00:00:00")>=now?<div style={{fontSize:10,color:"#22c55e",fontWeight:600}}>în {dU(ev.date)} zile</div>:null}</td>
                     <td style={{padding:"10px 12px",fontSize:13,fontWeight:700}}>{ev.type||"—"}</td>
@@ -1203,13 +1208,13 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
             <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Oferte respinse ({respinseOffers.length})</div>
             <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden"}} className={mob?"table-scroll-mob":""}>
               {respinseOffers.length===0&&<div style={{padding:30,textAlign:"center",color:th.tm,fontSize:12}}>Nicio ofertă respinsă</div>}
-              {respinseOffers.length>0&&<table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?520:undefined}}>
+              {respinseOffers.length>0&&<table style={{width:"100%",borderCollapse:"separate",borderSpacing:"0 8px",minWidth:mob?520:undefined}}>
                 <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
                   {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={respinseOffers.length>0&&respinseOffers.every(e=>selectedIds.includes(e.id))} onChange={()=>{const ids=respinseOffers.map(e=>e.id);const all=respinseOffers.every(e=>selectedIds.includes(e.id));setSelectedIds(all?selectedIds.filter(id=>!ids.includes(id)):[...new Set([...selectedIds,...ids])]);}} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
                   {["Nr","Ofertă","Tip","Locație","Data eveniment","Adăugată","Onorariu"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
                 </tr></thead>
                 <tbody>{respinseOffers.map((ev,i)=>(
-                  <tr key={ev.id} onClick={()=>onSelect(ev)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:"transparent",opacity:.8}} onMouseOver={e=>{e.currentTarget.style.opacity="1";if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{e.currentTarget.style.opacity=".8";if(!selectedIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
+                  <tr key={ev.id} onClick={()=>onSelect(ev)} style={{cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:th.c,opacity:.88,borderRadius:10,boxShadow:"0 2px 14px rgba(239, 68, 68, 0.2)",border:"1px solid rgba(239, 68, 68, 0.12)"}} onMouseOver={e=>{e.currentTarget.style.opacity="1";if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{e.currentTarget.style.opacity=".88";if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.c}}>
                     {(showSelection||onDeleteSelected)&&<td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(ev.id)} onChange={()=>toggleSel(ev.id)} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></td>}
                     <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{(ev.offerNr?"O"+ev.offerNr:"—")}</td>
                     <td style={{padding:"10px 12px",fontSize:13,fontWeight:600}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</td>
@@ -1227,13 +1232,25 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
         <>
       {active.length===0 && <div style={{...sty.cd,padding:40,textAlign:"center",color:th.tm}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{fontSize:13}}>Nicio ofertă</div></div>}
       <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden"}} className={mob?"table-scroll-mob":""}>
-        <table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?520:undefined}}>
+        <table style={{width:"100%",borderCollapse:(filterSt==="confirmat"||filterSt==="respins")?"separate":"collapse",borderSpacing:(filterSt==="confirmat"||filterSt==="respins")?"0 8px":0,minWidth:mob?520:undefined}}>
           <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
             {(showSelection||onDeleteSelected)&&<th style={{padding:"10px 12px",width:36}}><input type="checkbox" checked={allSelected} onChange={selectAll} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></th>}
             {["Nr","Ofertă","Tip","Locație","Data eveniment","Adăugată","Onorariu","Status"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
           </tr></thead>
           <tbody>{active.map((ev,i)=>(
-            <tr key={ev.id} onClick={()=>onSelect(ev)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer",background:selectedIds.includes(ev.id)?th.ab:"transparent"}} onMouseOver={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab}} onMouseOut={e=>{if(!selectedIds.includes(ev.id))e.currentTarget.style.background="transparent"}}>
+            <tr key={ev.id} onClick={()=>onSelect(ev)} style={{
+              borderBottom:(filterSt==="confirmat"||filterSt==="respins")?"none":`1px solid ${th.bl}`,
+              cursor:"pointer",
+              background:selectedIds.includes(ev.id)?th.ab:(filterSt==="confirmat"||filterSt==="respins"?th.c:"transparent"),
+              borderRadius:(filterSt==="confirmat"||filterSt==="respins")?10:0,
+              ...(filterSt==="confirmat"?{boxShadow:"0 2px 14px rgba(34, 197, 94, 0.2)",border:"1px solid rgba(34, 197, 94, 0.12)"}:filterSt==="respins"?{boxShadow:"0 2px 14px rgba(239, 68, 68, 0.2)",border:"1px solid rgba(239, 68, 68, 0.12)",opacity:.88}:{})
+            }} onMouseOver={e=>{
+              if(filterSt==="respins")e.currentTarget.style.opacity="1";
+              if(!selectedIds.includes(ev.id))e.currentTarget.style.background=th.ab;
+            }} onMouseOut={e=>{
+              if(filterSt==="respins")e.currentTarget.style.opacity=".88";
+              if(!selectedIds.includes(ev.id))e.currentTarget.style.background=(filterSt==="confirmat"||filterSt==="respins")?th.c:"transparent";
+            }}>
               {(showSelection||onDeleteSelected)&&<td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(ev.id)} onChange={()=>toggleSel(ev.id)} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/></td>}
               <td style={{padding:"10px 12px",fontSize:11,color:th.tm}}>{(ev.offerNr?"O"+ev.offerNr:"—")}</td>
               <td style={{padding:"10px 12px",fontSize:13,fontWeight:600}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</td>
@@ -1260,8 +1277,9 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
       <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
         {active.map(ev=>{
           const d=dU(ev.date); const urgent=d<=14;
+          const glowB = ev.st==="confirmat"?"rgba(34,197,94,0.4)":ev.st==="respins"?"rgba(239,68,68,0.4)":null;
           return <div key={ev.id} onClick={()=>onSelect(ev)}
-            style={{...sty.cd,cursor:"pointer",borderColor:urgent?ST[ev.st].c:th.b,padding:16,transition:"all .15s",position:"relative",borderWidth:selectedIds.includes(ev.id)?2:1}}
+            style={{...sty.cd,cursor:"pointer",borderColor:selectedIds.includes(ev.id)?th.a:(glowB||(urgent?ST[ev.st].c:th.b)),padding:16,transition:"all .15s",position:"relative",borderWidth:selectedIds.includes(ev.id)?2:1,boxShadow:glowCardShadow(ev.st)}}
             onMouseOver={e=>e.currentTarget.style.transform="translateY(-2px)"}
             onMouseOut={e=>e.currentTarget.style.transform="translateY(0)"}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,gap:8}}>
@@ -1477,8 +1495,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   const [localSt, setLocalSt] = useState(evStatus);
   const [playlistSearch, setPlaylistSearch] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [offerHtmlExportBusy, setOfferHtmlExportBusy] = useState(false);
-  const [offerHtmlClipboardBusy, setOfferHtmlClipboardBusy] = useState(false);
+  const [offerLinkBusy, setOfferLinkBusy] = useState(false);
+  const [offerLinkUrl, setOfferLinkUrl] = useState(null);
+  const [offerLinkPanelOpen, setOfferLinkPanelOpen] = useState(false);
+  const [offerLinkCopied, setOfferLinkCopied] = useState(false);
   const [contractFields, setContractFields] = useState({
     nr:"", dataSemnare:"", clientNume:ev.cn||"", clientEmail:ev.ce||"", clientTel:ev.cp||"",
     jud:"", mun:"", str:"", nr2:"", ap:"", ciSeria:"", ciNr:"", cnp:"",
@@ -1880,48 +1900,56 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     const docTitle = getOfferContractExportBasename(tab==="contract");
     return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${escHtmlTitle(docTitle)}</title><style>body{margin:0;background:#f5f5f5}</style></head><body style="margin:0;background:#f5f5f5">${rawInner}</body></html>`;
   };
-  const handleCopyOfferHtml = async () => {
-    setOfferHtmlClipboardBusy(true);
-    try {
-      const html = encodeHtmlCodePoints(buildStandaloneOfferContractHtml());
-      try {
-        await navigator.clipboard.writeText(html);
-      } catch (clipErr) {
-        const ta = document.createElement("textarea");
-        ta.value = html;
-        ta.style.cssText = "position:fixed;opacity:0;left:-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
-      showToast&&showToast("HTML copiat — lipește în mail sau salvează ca fișier .html");
-    } catch (e) {
-      showToast&&showToast("Nu s-a putut copia HTML", "error");
-      console.error(e);
-    } finally {
-      setOfferHtmlClipboardBusy(false);
+  const copyTextToClipboard = async (text) => {
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;opacity:0;left:-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
     }
   };
-  const handleExportOfferHtmlFile = () => {
-    setOfferHtmlExportBusy(true);
+  /** Link public stabil: același path per eveniment (upsert). Necesită Supabase + bucket fisa-public. */
+  const handleOfferSharePublicLink = async () => {
+    const sb = typeof getSbClient === "function" ? getSbClient() : null;
+    if (!sb) {
+      showToast&&showToast("Link public: configurează Supabase și bucketul public «fisa-public».", "error");
+      return;
+    }
+    setOfferLinkBusy(true);
     try {
       const html = encodeHtmlCodePoints(buildStandaloneOfferContractHtml());
-      const fname = getOfferContractExportBasename(tab==="contract") + ".html";
-      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-      const u = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = u;
-      a.download = fname;
-      a.click();
-      URL.revokeObjectURL(u);
-      showToast&&showToast("Fișier .html descărcat (extensia ajută sistemul să îl deschidă în browser).");
+      const prefix = tab==="contract" ? "contract" : "offer";
+      const path = `${prefix}-${ev.id}.html`;
+      const blob = new Blob([html], { type: "text/html; charset=utf-8" });
+      const { error } = await sb.storage.from("fisa-public").upload(path, blob, { contentType: "text/html; charset=utf-8", upsert: true });
+      if (error) throw error;
+      const { data: { publicUrl } } = sb.storage.from("fisa-public").getPublicUrl(path);
+      setOfferLinkUrl(publicUrl);
+      setOfferLinkPanelOpen(true);
+      await copyTextToClipboard(publicUrl);
+      setOfferLinkCopied(true);
+      setTimeout(() => setOfferLinkCopied(false), 2000);
+      showToast&&showToast("Link copiat în clipboard — lipește în WhatsApp / mail.");
     } catch (e) {
-      showToast&&showToast("Eroare la export HTML", "error");
+      const raw = (e?.message || "").trim();
+      let msg = "Eroare: " + (raw || "Upload eșuat");
+      if (/bucket not found/i.test(raw)) msg = "Bucket «fisa-public» lipsă în Supabase Storage (public).";
+      else if (/row-level security|rls/i.test(raw)) msg = "RLS Storage: rulează supabase-fix-fisa-rls.sql în SQL Editor.";
+      showToast&&showToast(msg, "error");
       console.error(e);
     } finally {
-      setOfferHtmlExportBusy(false);
+      setOfferLinkBusy(false);
     }
+  };
+  const copyOfferLinkAgain = async () => {
+    if (!offerLinkUrl) return;
+    await copyTextToClipboard(offerLinkUrl);
+    setOfferLinkCopied(true);
+    setTimeout(() => setOfferLinkCopied(false), 2000);
   };
 
   const copyOffer = async () => {
@@ -1972,13 +2000,24 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             </button>
             {tab==="fisa"
               ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/>
-              : <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                  <button type="button" onClick={handleCopyOfferHtml} disabled={pdfLoading||offerHtmlExportBusy||offerHtmlClipboardBusy} title="Nu e URL permanent — e conținut copiat local" style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#6366f1",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||offerHtmlExportBusy||offerHtmlClipboardBusy)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||offerHtmlExportBusy||offerHtmlClipboardBusy)?0.7:1}}>
-                    {offerHtmlClipboardBusy?"⏳":"📋"} Copiază HTML
+              : <div style={{position:"relative",display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                  <button type="button" onClick={handleOfferSharePublicLink} disabled={pdfLoading||offerLinkBusy} title="Publică pe Supabase (bucket fisa-public) și copiază doar URL-ul în clipboard" style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||offerLinkBusy)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||offerLinkBusy)?0.7:1}}>
+                    {offerLinkBusy?"⏳":"🔗"} Copiază link
                   </button>
-                  <button type="button" onClick={handleExportOfferHtmlFile} disabled={pdfLoading||offerHtmlExportBusy||offerHtmlClipboardBusy} title="Extensia .html e opțională la copiere; la descărcare ajută sistemul" style={{padding:"8px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.35)",background:"transparent",color:"rgba(255,255,255,.95)",fontWeight:700,fontSize:12,cursor:(pdfLoading||offerHtmlExportBusy||offerHtmlClipboardBusy)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||offerHtmlExportBusy||offerHtmlClipboardBusy)?0.7:1}}>
-                    {offerHtmlExportBusy?"⏳":"📥"} .html
-                  </button>
+                  {offerLinkUrl&&<button type="button" onClick={()=>setOfferLinkPanelOpen(o=>!o)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.35)",background:offerLinkPanelOpen?"rgba(255,255,255,.12)":"transparent",color:"rgba(255,255,255,.95)",fontWeight:600,fontSize:12,cursor:"pointer"}}>{offerLinkPanelOpen?"▼":"▶"} Linkul</button>}
+                  {offerLinkPanelOpen&&offerLinkUrl&&<>
+                    <div style={{position:"fixed",inset:0,zIndex:1199}} onClick={()=>setOfferLinkPanelOpen(false)}/>
+                    <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"#1a1a1a",borderRadius:12,padding:16,width:"min(360px, 92vw)",zIndex:1201,boxShadow:"0 12px 40px rgba(0,0,0,.8)",border:"1px solid rgba(255,255,255,.15)"}} onClick={e=>e.stopPropagation()}>
+                      <div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Link public · {tab==="contract"?"Contract":"Ofertă"}</div>
+                      <div style={{display:"flex",gap:6,marginBottom:10}}>
+                        <input value={offerLinkUrl} readOnly onClick={e=>e.target.select()} style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"rgba(255,255,255,.85)",fontSize:10,fontFamily:"monospace",minWidth:0}}/>
+                        <button type="button" onClick={copyOfferLinkAgain} style={{padding:"6px 10px",borderRadius:6,border:"none",background:offerLinkCopied?"#22c55e":"#333",color:"#fff",fontSize:11,cursor:"pointer",flexShrink:0,fontWeight:600}}>{offerLinkCopied?"✓":"📋"}</button>
+                      </div>
+                      <a href={"https://wa.me/?text="+encodeURIComponent(offerLinkUrl)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",borderRadius:8,background:"#25d366",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none",width:"100%",marginBottom:8}}><span style={{fontSize:16}}>💬</span> WhatsApp</a>
+                      <button type="button" onClick={handleOfferSharePublicLink} disabled={offerLinkBusy} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid rgba(255,255,255,.15)",background:"transparent",color:"rgba(255,255,255,.5)",fontSize:11,cursor:offerLinkBusy?"wait":"pointer",marginBottom:4}}>{offerLinkBusy?"⏳ …":"↻ Reîncarcă pagina (același URL)"}</button>
+                      <button type="button" onClick={()=>setOfferLinkPanelOpen(false)} style={{width:"100%",padding:"5px",borderRadius:6,border:"none",background:"transparent",color:"rgba(255,255,255,.35)",fontSize:10,cursor:"pointer"}}>Închide</button>
+                    </div>
+                  </>}
                 </div>
             }
             <button onClick={onClose} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={18}/></button>
