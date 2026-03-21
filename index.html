@@ -584,7 +584,7 @@ const RIDER_TEHNIC = {
 // STORAGE & SCHEMA
 // ═══════════════════════════════════════════════════════════════════════════════
 const PHASER_V = 3;
-const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genExp", annualCosts: "phaser_annualCosts", gigsPerYear: "phaser_gigsPerYear", templates: "phaser_templates", riderVersions: "phaser_rider_versions", pressKitVersions: "phaser_presskit_versions", playlistVersions: "phaser_playlist_versions", creative: "phaser_creative", memberProfiles: "phaser_member_profiles", bandNotifications: "phaser_band_notifications", calBlocks: "phaser_cal_blocks" };
+const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genExp", annualCosts: "phaser_annualCosts", gigsPerYear: "phaser_gigsPerYear", templates: "phaser_templates", riderVersions: "phaser_rider_versions", pressKitVersions: "phaser_presskit_versions", playlistVersions: "phaser_playlist_versions", creative: "phaser_creative", memberProfiles: "phaser_member_profiles", bandNotifications: "phaser_band_notifications", calBlocks: "phaser_cal_blocks", songs: "phaser_songs" };
 const SUPABASE_URL = "https://qtiosqtcrqgmlkwcrnpu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aW9zcXRjcnFnbWxrd2NybnB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNTY2MzEsImV4cCI6MjA4ODkzMjYzMX0.VR4MZArOnsc-DuLF3H3ZH-0PyfnBANyMiv8i31vxBnA";
 const SUPABASE_CFG = (()=>{ try { const s=localStorage.getItem("phaser_supabase_cfg"); const fromLs=s?JSON.parse(s):{}; return { url: fromLs.url||SUPABASE_URL, key: fromLs.key||SUPABASE_ANON_KEY }; } catch(e){ return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY }; } })();
@@ -631,6 +631,7 @@ const loadGenExp = () => { try { const s = localStorage.getItem(LS_KEYS.genExp);
 const DEFAULT_ANNUAL_COSTS = [{id:"ac1",n:"Contabilă",a:4200,v:"lei"},{id:"ac2",n:"Google Workspace",a:960,v:"eur"},{id:"ac3",n:"ING",a:480,v:"lei"},{id:"ac4",n:"Sala de repetiții",a:2160,v:"lei"},{id:"ac5",n:"Internet",a:360,v:"lei"}];
 const loadAnnualCosts = () => { try { const s = localStorage.getItem(LS_KEYS.annualCosts); if (s) { const d = JSON.parse(s); return Array.isArray(d) && d.length>0 ? d : [...DEFAULT_ANNUAL_COSTS]; } } catch(e){} return [...DEFAULT_ANNUAL_COSTS]; };
 const loadCreative = () => { try { const s=localStorage.getItem(LS_KEYS.creative); if(s) { const d=JSON.parse(s); return d&&typeof d==="object"?d:{}; } } catch(e){} return {ideas:[],songs:[],setlists:[]}; };
+const loadSongs = () => { try { const s=localStorage.getItem(LS_KEYS.songs); if(s){const d=JSON.parse(s);return Array.isArray(d)?d:[];} } catch(e){} return []; };
 const loadMemberProfiles = () => { try { const s=localStorage.getItem(LS_KEYS.memberProfiles); return s?JSON.parse(s):{}; } catch(e){ return {}; } };
 // Assets press kit — poze din folder assets
 const PK_IMG_PUBLIC_HEAD = "assets/Poza Presskit Public Head.jpg";
@@ -764,6 +765,7 @@ const IcDoc   = Ic(<><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2
 const IcClock = Ic(<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>);
 const IcSun  = Ic(<><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></>);
 const IcMoon = Ic(<><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></>);
+const IcMicro = Ic(<><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENTS — UI building blocks
@@ -1547,6 +1549,394 @@ function OffersBoard({ evs, th, sty, mob, onSelect, onAddOffer, onStatusChange, 
       </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ─── MUSIC / COMPOZIȚIE ───
+const SONG_STATUSES = {
+  idee:        { l:"💡 Idee",         c:"#f59e0b" },
+  demo:        { l:"🎸 Demo/Riff",    c:"#f97316" },
+  versuri:     { l:"✍️ Versuri",      c:"#a855f7" },
+  aranjament:  { l:"🎹 Aranjament",   c:"#3b82f6" },
+  inregistrat: { l:"🎙️ Înregistrat",  c:"#06b6d4" },
+  gata:        { l:"✅ Gata",         c:"#22c55e" },
+  arhivat:     { l:"📦 Arhivat",      c:"#6b7280" },
+};
+const LYRICS_SECTIONS_DEFAULT = ["Intro","Vers 1","Pre-Chorus","Chorus","Vers 2","Bridge","Outro"];
+const newSong = (title="") => ({
+  id:uid(), title:title||"Piesă nouă", status:"idee", members:[], audioLinks:[],
+  lyrics:{}, ideas:"", comments:[], tags:[], bpm:"", key:"", genre:"",
+  cr:new Date().toISOString().split("T")[0],
+});
+const detectAudioType = (url) => {
+  if(!url) return null;
+  if(/soundcloud\.com/.test(url)) return "soundcloud";
+  if(/youtube\.com\/watch|youtu\.be\//.test(url)) return "youtube";
+  if(/\.(mp3|ogg|wav|m4a|aac)(\?|$)/i.test(url)) return "audio";
+  return "link";
+};
+const getYoutubeEmbedUrl = (url) => {
+  const m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
+  return m?`https://www.youtube.com/embed/${m[1]}`:null;
+};
+const getSoundcloudEmbedUrl = (url) => `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&color=%23ff5500&auto_play=false&hide_related=false&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`;
+
+function SongModal({ song, th, sty, mob, onClose, onUpdate, currentMemberId }) {
+  const [tab, setTab] = useState("audio");
+  const [newLinkUrl, setNewLinkUrl] = useState("");
+  const [newLinkLabel, setNewLinkLabel] = useState("");
+  const [newComment, setNewComment] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(song.title);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [activeLyricsSection, setActiveLyricsSection] = useState(null);
+  const [newSectionName, setNewSectionName] = useState("");
+  const upd = (patch) => onUpdate(song.id, patch);
+  const saveTitle = () => { if(titleDraft.trim()) upd({title:titleDraft.trim()}); setEditingTitle(false); };
+  const addLink = () => {
+    if(!newLinkUrl.trim()) return;
+    upd({audioLinks:[...(song.audioLinks||[]),{id:uid(),url:newLinkUrl.trim(),label:newLinkLabel.trim()||newLinkUrl.trim()}]});
+    setNewLinkUrl(""); setNewLinkLabel("");
+  };
+  const removeLink = (id) => upd({audioLinks:(song.audioLinks||[]).filter(l=>l.id!==id)});
+  const updateSection = (k,v) => upd({lyrics:{...(song.lyrics||{}),[k]:v}});
+  const removeSection = (k) => { const l={...(song.lyrics||{})}; delete l[k]; upd({lyrics:l}); };
+  const addSection = (name) => {
+    if(!name.trim()||(song.lyrics||{})[name]) return;
+    upd({lyrics:{...(song.lyrics||{}),[name.trim()]:""}});
+    setActiveLyricsSection(name.trim()); setNewSectionName("");
+  };
+  const addComment = () => {
+    if(!newComment.trim()) return;
+    const m=MEMBERS.find(x=>x.id===currentMemberId);
+    upd({comments:[...(song.comments||[]),{id:uid(),author:m?.short||"Eu",memberId:currentMemberId,text:newComment.trim(),date:new Date().toISOString()}]});
+    setNewComment("");
+  };
+  const AudioPlayer = ({link}) => {
+    const type=detectAudioType(link.url);
+    if(type==="soundcloud") return <iframe width="100%" height="166" scrolling="no" frameBorder="no" allow="autoplay" src={getSoundcloudEmbedUrl(link.url)} style={{borderRadius:8,display:"block",border:"none"}}/>;
+    if(type==="youtube"){ const embed=getYoutubeEmbedUrl(link.url); if(!embed) return <a href={link.url} target="_blank" rel="noopener noreferrer" style={{color:th.a}}>{link.label}</a>; return <iframe width="100%" height="215" src={embed} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{borderRadius:8,display:"block"}}/>; }
+    if(type==="audio") return <audio controls style={{width:"100%",borderRadius:8,marginTop:4}}><source src={link.url}/></audio>;
+    return <a href={link.url} target="_blank" rel="noopener noreferrer" style={{color:th.a,wordBreak:"break-all",fontSize:13}}>🔗 {link.label||link.url}</a>;
+  };
+  const tabs=[{id:"audio",l:"🔊 Audio"},{id:"versuri",l:"✍️ Versuri"},{id:"idei",l:"💡 Idei"},{id:"chat",l:"💬 Chat"}];
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:10000,background:th.ov,display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",padding:mob?0:24}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:th.c,borderRadius:mob?"20px 20px 0 0":16,width:"100%",maxWidth:740,maxHeight:mob?"92vh":"88vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,.5)"}}>
+        {/* Header */}
+        <div style={{padding:"20px 24px 0",flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:12}}>
+            <div style={{flex:1,minWidth:0}}>
+              {editingTitle
+                ? <input value={titleDraft} onChange={e=>setTitleDraft(e.target.value)} onBlur={saveTitle} onKeyDown={e=>{if(e.key==="Enter")saveTitle();if(e.key==="Escape"){setTitleDraft(song.title);setEditingTitle(false);}}} autoFocus style={{...sty.i,fontSize:22,fontWeight:700,width:"100%",padding:"4px 8px",borderRadius:6}}/>
+                : <h2 onClick={()=>{setTitleDraft(song.title);setEditingTitle(true);}} style={{fontSize:22,fontWeight:700,color:th.t,cursor:"pointer",letterSpacing:"-0.5px"}} title="Click pentru editare">{song.title} <span style={{fontSize:14,color:th.tm,fontWeight:400}}>✏️</span></h2>
+              }
+              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:10,flexWrap:"wrap"}}>
+                {/* Status selector */}
+                <div style={{position:"relative"}}>
+                  <span onClick={()=>setStatusOpen(o=>!o)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:20,fontSize:11,fontWeight:700,cursor:"pointer",background:SONG_STATUSES[song.status]?.c+"22",color:SONG_STATUSES[song.status]?.c,border:`1px solid ${SONG_STATUSES[song.status]?.c}44`}}>
+                    {SONG_STATUSES[song.status]?.l} ▾
+                  </span>
+                  {statusOpen&&<>
+                    <div style={{position:"fixed",inset:0,zIndex:10002}} onClick={()=>setStatusOpen(false)}/>
+                    <div style={{position:"absolute",top:"110%",left:0,zIndex:10003,background:th.c,border:`1px solid ${th.b}`,borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,.3)",minWidth:210,padding:4}}>
+                      {Object.entries(SONG_STATUSES).map(([k,v])=>(
+                        <div key={k} onClick={()=>{upd({status:k});setStatusOpen(false);}} style={{padding:"8px 12px",fontSize:13,cursor:"pointer",borderRadius:6,color:k===song.status?v.c:th.t,background:k===song.status?v.c+"20":"transparent",fontWeight:k===song.status?700:400}} onMouseOver={e=>e.currentTarget.style.background=v.c+"22"} onMouseOut={e=>e.currentTarget.style.background=k===song.status?v.c+"20":"transparent"}>{v.l}</div>
+                      ))}
+                    </div>
+                  </>}
+                </div>
+                {/* Members toggle */}
+                {MEMBERS.map(m=>(
+                  <span key={m.id} onClick={()=>{const has=(song.members||[]).includes(m.id);upd({members:has?(song.members||[]).filter(x=>x!==m.id):[...(song.members||[]),m.id]});}} title={m.n+" ("+m.r+")"} style={{cursor:"pointer",padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:600,border:`1px solid ${(song.members||[]).includes(m.id)?th.a:th.b}`,background:(song.members||[]).includes(m.id)?th.ab:"transparent",color:(song.members||[]).includes(m.id)?th.t:th.tm,transition:"all .15s"}}>
+                    {m.emoji} {m.short}
+                  </span>
+                ))}
+                {/* Details chips */}
+                {song.bpm&&<span style={{fontSize:11,padding:"4px 8px",borderRadius:8,background:th.h,color:th.tm}}>♩ {song.bpm} BPM</span>}
+                {song.key&&<span style={{fontSize:11,padding:"4px 8px",borderRadius:8,background:th.h,color:th.tm}}>🎵 {song.key}</span>}
+              </div>
+            </div>
+            <button onClick={onClose} style={{padding:8,border:"none",background:"transparent",color:th.tm,cursor:"pointer",fontSize:20,lineHeight:1,flexShrink:0,borderRadius:8}} title="Închide">✕</button>
+          </div>
+          {/* Tabs */}
+          <div style={{display:"flex",gap:0,borderBottom:`1px solid ${th.bl}`,marginTop:4}}>
+            {tabs.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"9px 18px",border:"none",background:"transparent",fontSize:13,fontWeight:tab===t.id?700:400,color:tab===t.id?th.t:th.tm,cursor:"pointer",borderBottom:`2px solid ${tab===t.id?th.a:"transparent"}`,marginBottom:-1,transition:"all .15s",whiteSpace:"nowrap"}}>
+                {t.l}
+                {t.id==="audio"&&(song.audioLinks||[]).length>0&&<span style={{marginLeft:5,fontSize:10,background:th.a,color:th.bg,borderRadius:10,padding:"1px 6px"}}>{(song.audioLinks||[]).length}</span>}
+                {t.id==="versuri"&&Object.keys(song.lyrics||{}).length>0&&<span style={{marginLeft:5,fontSize:10,background:th.a,color:th.bg,borderRadius:10,padding:"1px 6px"}}>{Object.keys(song.lyrics||{}).length}</span>}
+                {t.id==="chat"&&(song.comments||[]).length>0&&<span style={{marginLeft:5,fontSize:10,background:"#6366f1",color:"#fff",borderRadius:10,padding:"1px 6px"}}>{(song.comments||[]).length}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Body */}
+        <div style={{flex:1,overflow:"auto",padding:24}}>
+          {/* AUDIO TAB */}
+          {tab==="audio"&&<div>
+            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+              <input value={newLinkUrl} onChange={e=>setNewLinkUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addLink()} placeholder="🔗 Link SoundCloud, YouTube sau MP3..." style={{...sty.i,flex:"1 1 240px",padding:"12px 16px",fontSize:14,borderRadius:10}}/>
+              <input value={newLinkLabel} onChange={e=>setNewLinkLabel(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addLink()} placeholder="Etichetă (opțional)" style={{...sty.i,flex:"0 1 160px",padding:"12px 16px",fontSize:14,borderRadius:10}}/>
+              <button onClick={addLink} style={{...sty.b,padding:"12px 18px",borderRadius:10,flexShrink:0}}><IcPlus s={16}/> Adaugă</button>
+            </div>
+            {(song.audioLinks||[]).length===0&&<div style={{textAlign:"center",padding:"52px 24px",color:th.tm,background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:14,border:`2px dashed ${th.bl}`}}>
+              <div style={{fontSize:42,marginBottom:10}}>🎧</div>
+              <div style={{fontSize:15,fontWeight:600,marginBottom:6,color:th.t}}>Niciun link audio adăugat</div>
+              <div style={{fontSize:12,lineHeight:1.6,opacity:.8}}>Suportă SoundCloud, YouTube și link-uri directe MP3.<br/>Lipește un URL mai sus și apasă Enter.</div>
+            </div>}
+            {(song.audioLinks||[]).map(link=>(
+              <div key={link.id} style={{marginBottom:20,background:th.bg==="#09090b"?th.h:"#f8f8f8",borderRadius:12,padding:16,border:`1px solid ${th.bl}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <span style={{fontSize:13,fontWeight:600,color:th.tm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{link.label!==link.url?link.label:detectAudioType(link.url)?.toUpperCase()||"Link"}</span>
+                  <button onClick={()=>removeLink(link.id)} style={{padding:4,border:"none",background:"transparent",color:th.tm,cursor:"pointer",opacity:.6,flexShrink:0}}><IcTrash s={14}/></button>
+                </div>
+                <AudioPlayer link={link}/>
+              </div>
+            ))}
+          </div>}
+          {/* VERSURI TAB */}
+          {tab==="versuri"&&<div>
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:12,color:th.tm,fontWeight:600,flexShrink:0}}>+ Secțiune:</span>
+              {LYRICS_SECTIONS_DEFAULT.filter(s=>!(song.lyrics||{})[s]).map(s=>(
+                <button key={s} onClick={()=>addSection(s)} style={{padding:"5px 11px",borderRadius:8,border:`1px dashed ${th.b}`,background:"transparent",color:th.tm,fontSize:12,cursor:"pointer",transition:"all .15s",whiteSpace:"nowrap"}} onMouseOver={e=>{e.currentTarget.style.borderColor=th.a;e.currentTarget.style.color=th.t;}} onMouseOut={e=>{e.currentTarget.style.borderColor=th.b;e.currentTarget.style.color=th.tm;}}>+ {s}</button>
+              ))}
+              <input value={newSectionName} onChange={e=>setNewSectionName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){addSection(newSectionName);}}} placeholder="+ Custom..." style={{...sty.i,width:110,padding:"5px 10px",fontSize:12,borderRadius:8}}/>
+            </div>
+            {Object.keys(song.lyrics||{}).length===0&&<div style={{textAlign:"center",padding:"52px 24px",color:th.tm,background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:14,border:`2px dashed ${th.bl}`}}>
+              <div style={{fontSize:42,marginBottom:10}}>✍️</div>
+              <div style={{fontSize:15,fontWeight:600,marginBottom:6,color:th.t}}>Niciun vers scris încă</div>
+              <div style={{fontSize:12,lineHeight:1.6,opacity:.8}}>Adaugă o secțiune (Vers 1, Chorus etc.) mai sus<br/>sau creează una custom.</div>
+            </div>}
+            {Object.entries(song.lyrics||{}).map(([section,text])=>(
+              <div key={section} style={{marginBottom:12,borderRadius:12,border:`1px solid ${activeLyricsSection===section?th.a:th.bl}`,overflow:"hidden",transition:"border-color .15s"}}>
+                <div onClick={()=>setActiveLyricsSection(activeLyricsSection===section?null:section)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:th.bg==="#09090b"?th.h:"#f4f4f4",cursor:"pointer",userSelect:"none"}}>
+                  <span style={{fontSize:13,fontWeight:700,color:activeLyricsSection===section?th.a:th.t}}>{section}</span>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    {(text||"").trim()&&<span style={{fontSize:10,color:th.tm,background:th.bl,padding:"2px 6px",borderRadius:6}}>{(text||"").split("\n").filter(Boolean).length} linii</span>}
+                    <button onClick={e=>{e.stopPropagation();removeSection(section);}} style={{padding:3,border:"none",background:"transparent",color:th.tm,cursor:"pointer",opacity:.5}}><IcTrash s={12}/></button>
+                    <span style={{fontSize:11,color:th.tm,transition:"transform .2s",display:"inline-block",transform:activeLyricsSection===section?"rotate(90deg)":"rotate(0)"}}>▶</span>
+                  </div>
+                </div>
+                {activeLyricsSection===section&&<textarea value={text||""} onChange={e=>updateSection(section,e.target.value)} placeholder={`Scrie versurile pentru ${section}...`} autoFocus style={{...sty.i,width:"100%",minHeight:180,padding:"16px 18px",fontSize:14,lineHeight:1.9,borderRadius:0,border:"none",borderTop:`1px solid ${th.bl}`,resize:"vertical",fontFamily:"'Georgia',Georgia,serif",boxSizing:"border-box"}}/>}
+              </div>
+            ))}
+          </div>}
+          {/* IDEI TAB */}
+          {tab==="idei"&&<div>
+            <div style={{marginBottom:16}}>
+              <textarea value={song.ideas||""} onChange={e=>upd({ideas:e.target.value})} placeholder="Un loc liber pentru brainstorming — acorduri, referințe muzicale, structura piesei, inspirații, mood-uri, link-uri..." style={{...sty.i,width:"100%",minHeight:220,padding:"16px 18px",fontSize:14,lineHeight:1.7,borderRadius:12,border:`1px solid ${th.bl}`,resize:"vertical",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{background:th.bg==="#09090b"?th.h:"#f8f8f8",borderRadius:12,padding:18,border:`1px solid ${th.bl}`}}>
+              <div style={{fontSize:12,color:th.tm,fontWeight:700,marginBottom:12,textTransform:"uppercase",letterSpacing:1}}>Detalii muzicale</div>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:11,color:th.tm,marginBottom:5,fontWeight:600}}>BPM</div>
+                  <input type="number" value={song.bpm||""} onChange={e=>upd({bpm:e.target.value})} placeholder="ex: 120" style={{...sty.i,width:90,padding:"9px 12px",fontSize:14,borderRadius:8}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:th.tm,marginBottom:5,fontWeight:600}}>Tonalitate</div>
+                  <input value={song.key||""} onChange={e=>upd({key:e.target.value})} placeholder="ex: Am, G maj" style={{...sty.i,width:130,padding:"9px 12px",fontSize:14,borderRadius:8}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:th.tm,marginBottom:5,fontWeight:600}}>Gen muzical</div>
+                  <input value={song.genre||""} onChange={e=>upd({genre:e.target.value})} placeholder="ex: Pop, Folk..." style={{...sty.i,width:150,padding:"9px 12px",fontSize:14,borderRadius:8}}/>
+                </div>
+              </div>
+            </div>
+          </div>}
+          {/* CHAT TAB */}
+          {tab==="chat"&&<div>
+            <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+              {(song.comments||[]).length===0&&<div style={{textAlign:"center",padding:"40px 24px",color:th.tm,background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:14,border:`2px dashed ${th.bl}`}}>
+                <div style={{fontSize:36,marginBottom:8}}>💬</div>
+                <div style={{fontSize:14}}>Niciun comentariu — începe o conversație despre această piesă</div>
+              </div>}
+              {(song.comments||[]).map(c=>{
+                const m=MEMBERS.find(x=>x.id===c.memberId);
+                return <div key={c.id} style={{padding:"12px 16px",borderRadius:12,background:th.bg==="#09090b"?th.h:"#f8f8f8",border:`1px solid ${th.bl}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <span style={{fontSize:13,fontWeight:700,color:th.t}}>{m?m.emoji+" "+m.short:c.author}</span>
+                    <span style={{fontSize:11,color:th.tm}}>{new Date(c.date).toLocaleString("ro")}</span>
+                  </div>
+                  <div style={{fontSize:14,color:th.t,lineHeight:1.55}}>{c.text}</div>
+                </div>;
+              })}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <input value={newComment} onChange={e=>setNewComment(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&addComment()} placeholder="Scrie un comentariu... (Enter)" style={{...sty.i,flex:1,padding:"12px 16px",fontSize:14,borderRadius:10}}/>
+              <button onClick={addComment} style={{...sty.b,padding:"12px 18px",borderRadius:10,flexShrink:0}}>Trimite</button>
+            </div>
+          </div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MusicView({ songs, setSongs, th, sty, mob, currentMemberId }) {
+  const [viewMode, setViewMode] = useState("kanban");
+  const [openSongId, setOpenSongId] = useState(null);
+  const [newTitle, setNewTitle] = useState("");
+  const [kanbanDragCol, setKanbanDragCol] = useState(null);
+  const [filterStatus, setFilterStatus] = useState("");
+  const openSong = songs.find(s=>s.id===openSongId)||null;
+  const addSong = () => {
+    if(!newTitle.trim()) return;
+    const s=newSong(newTitle.trim());
+    setSongs(p=>[s,...p]);
+    setNewTitle("");
+    setOpenSongId(s.id);
+  };
+  const updateSong = (id,patch) => setSongs(p=>p.map(s=>s.id===id?{...s,...patch}:s));
+  const deleteSong = (id) => { if(!window.confirm("Ștergi piesa?")) return; setSongs(p=>p.filter(s=>s.id!==id)); };
+  const filtered = filterStatus ? songs.filter(s=>s.status===filterStatus) : songs;
+
+  const SongCard = ({song, compact=false}) => {
+    const sc=SONG_STATUSES[song.status]||SONG_STATUSES.idee;
+    const hasAudio=(song.audioLinks||[]).length>0;
+    const hasLyrics=Object.values(song.lyrics||{}).some(v=>(v||"").trim().length>0);
+    const hasIdeas=(song.ideas||"").trim().length>0;
+    const previewLine=Object.values(song.lyrics||{}).flatMap(v=>v.split("\n")).find(l=>l.trim())||"";
+    const assigned=MEMBERS.filter(m=>(song.members||[]).includes(m.id));
+    return (
+      <div onClick={()=>setOpenSongId(song.id)} style={{background:th.c,borderRadius:12,padding:compact?12:16,cursor:"pointer",border:`1px solid ${th.bl}`,transition:"all .2s",position:"relative",overflow:"hidden"}} onMouseOver={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px rgba(0,0,0,.12)`;e.currentTarget.style.borderColor=sc.c+"77";}} onMouseOut={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";e.currentTarget.style.borderColor=th.bl;}}>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${sc.c},${sc.c}88)`,borderRadius:"12px 12px 0 0"}}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:compact?4:8}}>
+          <div style={{fontSize:compact?13:15,fontWeight:700,color:th.t,lineHeight:1.3,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{song.title}</div>
+          <span style={{fontSize:10,padding:"3px 8px",borderRadius:10,background:sc.c+"20",color:sc.c,fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>{sc.l}</span>
+        </div>
+        {previewLine&&!compact&&<div style={{fontSize:12,color:th.tm,lineHeight:1.5,marginBottom:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontStyle:"italic",opacity:.9}}>{previewLine}</div>}
+        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",marginTop:4}}>
+          {hasAudio&&<span style={{fontSize:11,color:th.tm}} title="Audio">🔊</span>}
+          {hasLyrics&&<span style={{fontSize:11,color:th.tm}} title="Versuri">✍️</span>}
+          {hasIdeas&&<span style={{fontSize:11,color:th.tm}} title="Idei">💡</span>}
+          {(song.bpm||song.key)&&<span style={{fontSize:10,color:th.tm,background:th.h,padding:"2px 6px",borderRadius:4,fontFamily:"monospace"}}>{[song.bpm?song.bpm+"bpm":"",song.key].filter(Boolean).join(" · ")}</span>}
+          <span style={{flex:1}}/>
+          {assigned.map(m=><span key={m.id} style={{fontSize:12}} title={m.short}>{m.emoji}</span>)}
+          <span style={{fontSize:10,color:th.tm}}>{fD(song.cr)}</span>
+          <button onClick={e=>{e.stopPropagation();deleteSong(song.id);}} style={{padding:3,border:"none",background:"transparent",color:th.tm,cursor:"pointer",opacity:.4,marginLeft:2}} onMouseOver={e=>e.currentTarget.style.opacity=1} onMouseOut={e=>e.currentTarget.style.opacity=.4}><IcTrash s={11}/></button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{animation:"su .3s ease"}}>
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12,marginBottom:20}}>
+        <div>
+          <h1 style={{fontSize:28,fontWeight:700,letterSpacing:"-0.5px",color:th.t}}>🎵 Muzică & Compoziție</h1>
+          <p style={{color:th.tm,fontSize:14,marginTop:4}}>
+            {songs.length} piese ·{" "}
+            {songs.filter(s=>s.status==="gata").length>0&&<span style={{color:"#22c55e",fontWeight:600}}>{songs.filter(s=>s.status==="gata").length} gata </span>}
+            {songs.filter(s=>s.status==="inregistrat").length>0&&<span style={{color:"#06b6d4",fontWeight:600}}>· {songs.filter(s=>s.status==="inregistrat").length} înregistrate </span>}
+            {songs.filter(s=>s.status==="idee").length>0&&<span style={{color:"#f59e0b",fontWeight:600}}>· {songs.filter(s=>s.status==="idee").length} idei</span>}
+          </p>
+        </div>
+        <div style={{display:"flex",gap:4,padding:4,background:th.h,borderRadius:8,border:`1px solid ${th.b}`}}>
+          {[["kanban","Kanban"],["grid","Grid"],["list","Listă"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setViewMode(v)} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:viewMode===v?600:500,cursor:"pointer",background:viewMode===v?th.c:"transparent",color:viewMode===v?th.t:th.tm,transition:"all .15s"}}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Add song */}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <input value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSong()} placeholder="🎸 Titlu piesă sau idee nouă... (Enter pentru a crea)" style={{...sty.i,flex:1,padding:"15px 20px",fontSize:16,borderRadius:12,border:`2px solid ${th.bl}`}}/>
+        <button onClick={addSong} style={{...sty.b,padding:"15px 22px",borderRadius:12,fontWeight:600,fontSize:15,flexShrink:0}}><IcPlus s={18}/></button>
+      </div>
+
+      {/* Status filters */}
+      <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={()=>setFilterStatus("")} style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${!filterStatus?th.a:th.b}`,background:!filterStatus?th.ab:"transparent",color:!filterStatus?th.t:th.tm,fontSize:12,cursor:"pointer",fontWeight:!filterStatus?600:400}}>Toate ({songs.length})</button>
+        {Object.entries(SONG_STATUSES).map(([k,v])=>{
+          const cnt=songs.filter(s=>s.status===k).length;
+          if(!cnt) return null;
+          return <button key={k} onClick={()=>setFilterStatus(f=>f===k?"":k)} style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${filterStatus===k?v.c:th.b}`,background:filterStatus===k?v.c+"20":"transparent",color:filterStatus===k?v.c:th.tm,fontSize:12,cursor:"pointer",fontWeight:filterStatus===k?700:400,transition:"all .15s"}}>{v.l} <span style={{opacity:.7}}>({cnt})</span></button>;
+        })}
+      </div>
+
+      {/* Empty state */}
+      {songs.length===0&&<div style={{textAlign:"center",padding:"80px 24px",color:th.tm,borderRadius:16,border:`2px dashed ${th.bl}`}}>
+        <div style={{fontSize:56,marginBottom:16}}>🎸</div>
+        <div style={{fontSize:20,fontWeight:700,marginBottom:8,color:th.t}}>Nicio piesă încă</div>
+        <div style={{fontSize:14,lineHeight:1.7,maxWidth:380,margin:"0 auto"}}>
+          Adaugă prima idee de piesă mai sus.<br/>
+          Poți adăuga versuri structurate, demo-uri SoundCloud sau YouTube,<br/>
+          idei de compoziție și colaboratori din trupă.
+        </div>
+      </div>}
+
+      {/* KANBAN VIEW */}
+      {viewMode==="kanban"&&filtered.length>0&&(
+        <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:12,minHeight:220,alignItems:"flex-start"}}>
+          {Object.entries(SONG_STATUSES).map(([k,v])=>{
+            const colSongs=filtered.filter(s=>s.status===k);
+            return <div key={k}
+              onDragOver={e=>{e.preventDefault();setKanbanDragCol(k);}}
+              onDragLeave={()=>setKanbanDragCol(null)}
+              onDrop={e=>{e.preventDefault();setKanbanDragCol(null);const id=e.dataTransfer.getData("songId");if(id)updateSong(id,{status:k});}}
+              style={{background:kanbanDragCol===k?v.c+"12":th.h,borderRadius:12,padding:12,border:`2px dashed ${kanbanDragCol===k?v.c:th.bl}`,minWidth:220,flex:"0 0 220px",transition:"all .2s"}}>
+              <div style={{fontSize:12,fontWeight:700,color:v.c,marginBottom:10,display:"flex",alignItems:"center",gap:6,userSelect:"none"}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:v.c,display:"inline-block",flexShrink:0}}/>{v.l}
+                <span style={{marginLeft:"auto",background:v.c+"25",borderRadius:20,padding:"1px 8px",fontSize:11}}>{colSongs.length}</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {colSongs.map(s=>(
+                  <div key={s.id} draggable onDragStart={e=>e.dataTransfer.setData("songId",s.id)}>
+                    <SongCard song={s} compact={true}/>
+                  </div>
+                ))}
+                {colSongs.length===0&&<div style={{padding:"20px 10px",textAlign:"center",color:th.tm,fontSize:12,opacity:.6,borderRadius:8,border:`1px dashed ${th.bl}`}}>Drag & drop</div>}
+              </div>
+            </div>;
+          })}
+        </div>
+      )}
+
+      {/* GRID VIEW */}
+      {viewMode==="grid"&&filtered.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+          {filtered.map(s=><SongCard key={s.id} song={s}/>)}
+        </div>
+      )}
+
+      {/* LIST VIEW */}
+      {viewMode==="list"&&filtered.length>0&&(
+        <div style={{...sty.cd,padding:0,overflow:mob?"auto":"hidden"}} className={mob?"table-scroll-mob":""}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:mob?560:undefined}}>
+            <thead>
+              <tr style={{borderBottom:`2px solid ${th.b}`}}>
+                {["Titlu","Status","Membri","Audio","Versuri","BPM / Key","Adăugată",""].map(h=>(
+                  <th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(s=>{
+                const sc=SONG_STATUSES[s.status]||SONG_STATUSES.idee;
+                const assigned=MEMBERS.filter(m=>(s.members||[]).includes(m.id));
+                return <tr key={s.id} onClick={()=>setOpenSongId(s.id)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer"}} onMouseOver={e=>e.currentTarget.style.background=th.ab} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                  <td style={{padding:"12px",fontSize:14,fontWeight:600,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.title}</td>
+                  <td style={{padding:"12px",whiteSpace:"nowrap"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:10,background:sc.c+"20",color:sc.c,fontWeight:700}}>{sc.l}</span></td>
+                  <td style={{padding:"12px",fontSize:14}}>{assigned.map(m=>m.emoji).join(" ")||<span style={{color:th.tm,fontSize:11}}>—</span>}</td>
+                  <td style={{padding:"12px",fontSize:12,color:th.tm,whiteSpace:"nowrap"}}>{(s.audioLinks||[]).length>0?`🔊 ${s.audioLinks.length}`:<span style={{opacity:.5}}>—</span>}</td>
+                  <td style={{padding:"12px",fontSize:12,color:th.tm,whiteSpace:"nowrap"}}>{Object.keys(s.lyrics||{}).length>0?`✍️ ${Object.keys(s.lyrics||{}).length} sec.`:<span style={{opacity:.5}}>—</span>}</td>
+                  <td style={{padding:"12px",fontSize:12,color:th.tm,fontFamily:"monospace",whiteSpace:"nowrap"}}>{[s.bpm?s.bpm+"bpm":"",s.key].filter(Boolean).join(" · ")||<span style={{opacity:.5}}>—</span>}</td>
+                  <td style={{padding:"12px",fontSize:11,color:th.tm,whiteSpace:"nowrap"}}>{fD(s.cr)}</td>
+                  <td style={{padding:"12px"}}><button onClick={e=>{e.stopPropagation();deleteSong(s.id);}} style={{padding:4,border:"none",background:"transparent",color:th.tm,cursor:"pointer",opacity:.4}} onMouseOver={e=>e.currentTarget.style.opacity=1} onMouseOut={e=>e.currentTarget.style.opacity=.4}><IcTrash s={12}/></button></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Song modal */}
+      {openSong&&<SongModal song={openSong} th={th} sty={sty} mob={mob} currentMemberId={currentMemberId} onClose={()=>setOpenSongId(null)} onUpdate={updateSong}/>}
     </div>
   );
 }
@@ -4294,6 +4684,7 @@ function App() {
   const [annualCosts, setAC] = useLocalStorageState(LS_KEYS.annualCosts, loadAnnualCosts);
   const [gigsPerYear, setGigsPerYear] = useLocalStorageState(LS_KEYS.gigsPerYear, ()=>12);
   const [tasks, setTasks] = useLocalStorageState(LS_KEYS.tasks, loadTasks);
+  const [songs, setSongs] = useLocalStorageState(LS_KEYS.songs, loadSongs);
   const [calBlocks, setCalBlocks] = useLocalStorageState(LS_KEYS.calBlocks, loadCalBlocks);
   const [bandNotifications, setBandNotifications] = useLocalStorageState(LS_KEYS.bandNotifications, loadBandNotifications);
   const [finMember, setFinMember] = useState(null);
@@ -4838,6 +5229,7 @@ function App() {
     {id:"offers",   Ic:IcSend,  l:"Oferte",  badge:pendingCount},
     {id:"docs", Ic:IcFile, l:"Docs"},
     {id:"tasks",    Ic:IcTask,  l:"Tasks",    badge:activeTaskCount},
+    {id:"music",    Ic:IcMicro, l:"Muzică",   badge:songs.filter(s=>s.status==="idee").length||undefined},
     {id:"calendar", Ic:IcCal,   l:"Calendar"},
     ...(p.f?[{id:"finances", Ic:IcMoney, l:"Finanțe"}]:[]),
     ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu", badge: unreadNotifCount}]:[]),
@@ -5182,8 +5574,8 @@ function App() {
               <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px"}}>Docs</h1>
               <p style={{color:th.tm,fontSize:12,marginTop:2}}>Documente, rider, playlist și press kit — template-uri editabile pentru oferte.</p>
               <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
-                <button onClick={()=>{const blob=new Blob([JSON.stringify({_v:PHASER_V,evs,tasks,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions:loadPressKitVersions(),creative:loadCreative()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`phaser-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);showToast("Backup exportat");}} style={sty.bg}><IcFile s={14}/> Export JSON</button>
-                <label style={{...sty.bg,cursor:"pointer",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><IcFile s={14}/> Import JSON<input type="file" accept=".json,application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=="object")throw new Error("JSON invalid");if(Array.isArray(d.evs)){setEvs(d.evs);}if(Array.isArray(d.tasks)){setTasks(d.tasks);}if(Array.isArray(d.calBlocks)){setCalBlocks(d.calBlocks);}if(Array.isArray(d.genExp)){setGE(d.genExp);}if(Array.isArray(d.annualCosts)){setAC(d.annualCosts);}if(typeof d.gigsPerYear==="number"&&d.gigsPerYear>0){setGigsPerYear(d.gigsPerYear);}if(d.templates){setTemplates(d.templates);try{localStorage.setItem(LS_KEYS.templates,JSON.stringify(d.templates));}catch(x){}}if(Array.isArray(d.riderVersions)){setRiderVersions(d.riderVersions);try{localStorage.setItem(LS_KEYS.riderVersions,JSON.stringify(d.riderVersions));}catch(x){}}if(Array.isArray(d.pressKitVersions)){setPressKitVersions(d.pressKitVersions);try{localStorage.setItem(LS_KEYS.pressKitVersions,JSON.stringify(d.pressKitVersions));}catch(x){}}if(d.creative){try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(d.creative));}catch(x){}}showToast("Date importate");}catch(err){showToast("Eroare: "+(err?.message||String(err)));}e.target.value="";};r.readAsText(f);}}/></label>
+                <button onClick={()=>{const blob=new Blob([JSON.stringify({_v:PHASER_V,evs,tasks,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions:loadPressKitVersions(),creative:loadCreative(),songs},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`phaser-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);showToast("Backup exportat");}} style={sty.bg}><IcFile s={14}/> Export JSON</button>
+                <label style={{...sty.bg,cursor:"pointer",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><IcFile s={14}/> Import JSON<input type="file" accept=".json,application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=="object")throw new Error("JSON invalid");if(Array.isArray(d.evs)){setEvs(d.evs);}if(Array.isArray(d.tasks)){setTasks(d.tasks);}if(Array.isArray(d.calBlocks)){setCalBlocks(d.calBlocks);}if(Array.isArray(d.genExp)){setGE(d.genExp);}if(Array.isArray(d.annualCosts)){setAC(d.annualCosts);}if(typeof d.gigsPerYear==="number"&&d.gigsPerYear>0){setGigsPerYear(d.gigsPerYear);}if(d.templates){setTemplates(d.templates);try{localStorage.setItem(LS_KEYS.templates,JSON.stringify(d.templates));}catch(x){}}if(Array.isArray(d.riderVersions)){setRiderVersions(d.riderVersions);try{localStorage.setItem(LS_KEYS.riderVersions,JSON.stringify(d.riderVersions));}catch(x){}}if(Array.isArray(d.pressKitVersions)){setPressKitVersions(d.pressKitVersions);try{localStorage.setItem(LS_KEYS.pressKitVersions,JSON.stringify(d.pressKitVersions));}catch(x){}}if(d.creative){try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(d.creative));}catch(x){}}if(Array.isArray(d.songs)){setSongs(d.songs);}showToast("Date importate");}catch(err){showToast("Eroare: "+(err?.message||String(err)));}e.target.value="";};r.readAsText(f);}}/></label>
               </div>
             </div>
             <div className={mob?"mob-tab-scroll":""} style={{display:"flex",gap:6,marginBottom:16,flexWrap:mob?"nowrap":"wrap",overflowX:mob?"auto":"visible",paddingBottom:mob?4:0}}>
@@ -5644,6 +6036,11 @@ function App() {
             <div style={{...sty.cd,maxWidth:720,padding:32,borderRadius:16,border:`1px solid ${th.bl}`}}>
               <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={false} currentMemberId={user.memberId} onNotifyAssign={onNotifyAssign} focusTaskId={taskCalendarFocusId} onConsumeFocusTask={consumeTaskCalendarFocus} memberFilter={taskMemberFilter} setMemberFilter={setTaskMemberFilter}/>
             </div>
+          </div>}
+
+          {/* MUSIC */}
+          {tab==="music"&&<div style={{animation:"su .3s ease"}}>
+            <MusicView songs={songs} setSongs={setSongs} th={th} sty={sty} mob={mob} currentMemberId={user.memberId}/>
           </div>}
 
           {/* CALENDAR */}
