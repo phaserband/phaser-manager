@@ -899,7 +899,18 @@ const applyDoneWithRepeat = (p, id, makeDone) => {
 
 const delMultipleInTree = (tasks, ids) => tasks.filter(t=>!ids.includes(t.id)).map(t=>({...t,subtasks:delMultipleInTree(t.subtasks||[],ids)}));
 
-function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMemberId, onNotifyAssign, focusTaskId, onConsumeFocusTask }) {
+/** Task rădăcină apare la filtru dacă el sau orice subtask e desemnat la memberId */
+function taskMatchesMemberFilter(t, memberId) {
+  if (!memberId) return true;
+  if ((t.assignedTo || "") === memberId) return true;
+  return (t.subtasks || []).some(s => taskMatchesMemberFilter(s, memberId));
+}
+function filterRootTasksByMember(tasks, memberId) {
+  if (!memberId) return tasks;
+  return tasks.filter(t => taskMatchesMemberFilter(t, memberId));
+}
+
+function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMemberId, onNotifyAssign, focusTaskId, onConsumeFocusTask, memberFilter="", setMemberFilter }) {
   const [newText, setNewText] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
   const [newPrio, setNewPrio] = useState("medium");
@@ -949,8 +960,9 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
   const [replyingTo, setReplyingTo] = useState(null); // {tid, chatId}
 
   const taskStatus = t => (t.taskStatus==="done"||t.done)?"done":(t.taskStatus||"in_proces");
-  const active = tasks.filter(t=>taskStatus(t)!=="done").sort((a,b)=>({high:0,medium:1,low:2})[a.priority||"medium"]-({high:0,medium:1,low:2})[b.priority||"medium"]);
-  const done = tasks.filter(t=>taskStatus(t)==="done");
+  const rootList = useMemo(() => filterRootTasksByMember(tasks, memberFilter), [tasks, memberFilter]);
+  const active = rootList.filter(t=>taskStatus(t)!=="done").sort((a,b)=>({high:0,medium:1,low:2})[a.priority||"medium"]-({high:0,medium:1,low:2})[b.priority||"medium"]);
+  const done = rootList.filter(t=>taskStatus(t)==="done");
   const allTaskIds = [...active,...done].map(t=>t.id);
   const allSelected = allTaskIds.length>0&&allTaskIds.every(id=>selectedIds.includes(id));
   const selectAll = () => setSelectedIds(allSelected?[]:allTaskIds);
@@ -1108,6 +1120,16 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
         <button onClick={()=>setViewMode("calendar")} style={{padding:"12px 20px",borderRadius:10,border:"none",fontSize:15,fontWeight:viewMode==="calendar"?600:500,cursor:"pointer",background:viewMode==="calendar"?th.c:"transparent",color:viewMode==="calendar"?th.t:th.tm,boxShadow:viewMode==="calendar"?"0 1px 3px rgba(0,0,0,.06)":"none",transition:"all .15s"}}>Calendar</button>
       </div>}
 
+      {!compact&&setMemberFilter&&<div style={{display:"flex",gap:10,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
+        <span style={{fontSize:12,color:th.tm,fontWeight:600}}>Filtru membru</span>
+        <select value={memberFilter} onChange={e=>setMemberFilter(e.target.value)} className="modernSel" style={{...sty.i,minWidth:168,padding:"10px 28px 10px 12px",fontSize:13,borderRadius:10}} title="Afișează doar task-urile unde acest membru e desemnat (inclusiv în subtask-uri)">
+          <option value="">Toată trupa</option>
+          {MEMBERS.map(m=><option key={m.id} value={m.id}>@{m.short}</option>)}
+        </select>
+        {currentMemberId&&<button type="button" onClick={()=>setMemberFilter(currentMemberId)} style={{...sty.bg,padding:"8px 14px",fontSize:12}}>Doar ale mele</button>}
+        {memberFilter&&<button type="button" onClick={()=>setMemberFilter("")} style={{...sty.bg,padding:"8px 14px",fontSize:12}}>Arată pe toți</button>}
+      </div>}
+
       <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap",alignItems:"stretch"}}>
         <input value={newText} onChange={e=>setNewText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
           style={{...sty.i,flex:"1 1 200px",padding:"18px 22px",fontSize:17,borderRadius:12,border:`2px solid ${th.bl}`}} placeholder="Ce ai de făcut? Scrie aici și apasă Enter..."/>
@@ -1130,7 +1152,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
       </div>}
 
       <div style={{display:"flex",flexDirection:"column",gap:0}}>
-        {active.length===0 && <div style={{padding:56,textAlign:"center",color:th.tm,fontSize:17,lineHeight:1.6,background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:16,border:`2px dashed ${th.bl}`}}>Niciun task activ — scrie mai sus ce ai de făcut și apasă Enter 🎉</div>}
+        {active.length===0 && <div style={{padding:56,textAlign:"center",color:th.tm,fontSize:17,lineHeight:1.6,background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:16,border:`2px dashed ${th.bl}`}}>{memberFilter?`Niciun task activ pentru @${MEMBERS.find(x=>x.id===memberFilter)?.short||"—"} — schimbă filtrul sau desemnează task-uri.`:"Niciun task activ — scrie mai sus ce ai de făcut și apasă Enter 🎉"}</div>}
         {viewMode==="kanban"&&!compact ? (
           <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:16,minHeight:400}}>
             {(["in_proces","in_lucru","done"]).map(col=>{
@@ -4285,14 +4307,26 @@ function App() {
   const [calSidebarDate, setCalSidebarDate] = useState(null);
   const [calDragEvId, setCalDragEvId] = useState(null);
   const [calDropDate, setCalDropDate] = useState(null);
+  const [calTouchDragActive, setCalTouchDragActive] = useState(false);
+  const calLongPressTimerRef = useRef(null);
+  const calTouchDragMetaRef = useRef({ evId: "", fromDs: "", x: 0, y: 0 });
+  const calLastDropDsRef = useRef(null);
+  const calSuppressChipClickRef = useRef(false);
+  const calTouchDropHandledRef = useRef(false);
   const [calDateSearch, setCalDateSearch] = useState("");
   const [calNewOccMember, setCalNewOccMember] = useState("");
   const [calNewOccNote, setCalNewOccNote] = useState("");
   const [calNewOccTent, setCalNewOccTent] = useState(false);
   const [taskCalendarFocusId, setTaskCalendarFocusId] = useState(null);
   const consumeTaskCalendarFocus = useCallback(() => setTaskCalendarFocusId(null), []);
+  const [taskMemberFilter, setTaskMemberFilter] = useState("");
+  const tasksPageRootsFiltered = useMemo(() => filterRootTasksByMember(tasks, taskMemberFilter), [tasks, taskMemberFilter]);
+  const taskRootIsDone = t => (t.taskStatus === "done" || t.done);
   const calCellClickTimerRef = useRef(null);
-  useEffect(()=>()=>{ if (calCellClickTimerRef.current) clearTimeout(calCellClickTimerRef.current); }, []);
+  useEffect(()=>()=>{
+    if (calCellClickTimerRef.current) clearTimeout(calCellClickTimerRef.current);
+    if (calLongPressTimerRef.current) clearTimeout(calLongPressTimerRef.current);
+  }, []);
   const [dashboardDateSearch, setDashboardDateSearch] = useState("");
   useEffect(() => {
     setCalNewOccMember("");
@@ -4559,6 +4593,63 @@ function App() {
     }
   };
   const moveEvToDate = (evId, newDate) => { setEvs(p=>p.map(e=>e.id===evId?{...e,date:newDate}:e)); showToast("Data actualizată"); };
+  const moveEvToDateRef = useRef(moveEvToDate);
+  moveEvToDateRef.current = moveEvToDate;
+
+  useEffect(()=>{
+    if (!calTouchDragActive) return;
+    calTouchDropHandledRef.current = false;
+    const findCalDate = (clientX, clientY) => {
+      const el = document.elementFromPoint(clientX, clientY);
+      let n = el;
+      while (n && n !== document.documentElement) {
+        if (n.getAttribute && n.getAttribute("data-cal-date")) return n.getAttribute("data-cal-date");
+        n = n.parentElement;
+      }
+      return null;
+    };
+    const onMove = (e) => {
+      e.preventDefault();
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      const ds = findCalDate(t.clientX, t.clientY);
+      calLastDropDsRef.current = ds;
+      setCalDropDate(ds || null);
+    };
+    const onEnd = () => {
+      if (calTouchDropHandledRef.current) return;
+      calTouchDropHandledRef.current = true;
+      const meta = calTouchDragMetaRef.current;
+      const targetDs = calLastDropDsRef.current;
+      setCalTouchDragActive(false);
+      setCalDragEvId(null);
+      setCalDropDate(null);
+      calLastDropDsRef.current = null;
+      if (meta.evId && targetDs && targetDs !== meta.fromDs) {
+        moveEvToDateRef.current(meta.evId, targetDs);
+        calSuppressChipClickRef.current = true;
+        setTimeout(()=>{ calSuppressChipClickRef.current = false; }, 500);
+      }
+    };
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd, { capture: true });
+    window.addEventListener("touchcancel", onEnd, { capture: true });
+    return () => {
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd, { capture: true });
+      window.removeEventListener("touchcancel", onEnd, { capture: true });
+    };
+  }, [calTouchDragActive]);
+
+  useEffect(()=>{
+    if (tab !== "calendar") {
+      if (calLongPressTimerRef.current) { clearTimeout(calLongPressTimerRef.current); calLongPressTimerRef.current = null; }
+      setCalTouchDragActive(false);
+      setCalDragEvId(null);
+      setCalDropDate(null);
+    }
+  }, [tab]);
+
   const updSt = (id, st) => { setEvs(p=>p.map(e=>e.id===id?{...e,st}:e)); showToast(`Status: ${ST[st]?.l}`); };
   
   const saveTemplates = (upd) => {
@@ -5499,10 +5590,13 @@ function App() {
           {tab==="tasks"&&<div style={{animation:"su .3s ease"}}>
             <div style={{marginBottom:32}}>
               <h1 style={{fontSize:28,fontWeight:700,letterSpacing:"-0.5px",color:th.t}}>Tasks</h1>
-              <p style={{color:th.tm,fontSize:15,marginTop:8}}>{tasks.filter(t=>!t.done).length} active · {tasks.filter(t=>t.done).length} finalizate</p>
+              <p style={{color:th.tm,fontSize:15,marginTop:8,lineHeight:1.5}}>
+                {tasksPageRootsFiltered.filter(t=>!taskRootIsDone(t)).length} active · {tasksPageRootsFiltered.filter(t=>taskRootIsDone(t)).length} finalizate
+                {taskMemberFilter ? <span style={{display:"block",fontSize:13,marginTop:4}}>Filtru: @{MEMBERS.find(m=>m.id===taskMemberFilter)?.short || "—"}</span> : null}
+              </p>
             </div>
             <div style={{...sty.cd,maxWidth:720,padding:32,borderRadius:16,border:`1px solid ${th.bl}`}}>
-              <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={false} currentMemberId={user.memberId} onNotifyAssign={onNotifyAssign} focusTaskId={taskCalendarFocusId} onConsumeFocusTask={consumeTaskCalendarFocus}/>
+              <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={false} currentMemberId={user.memberId} onNotifyAssign={onNotifyAssign} focusTaskId={taskCalendarFocusId} onConsumeFocusTask={consumeTaskCalendarFocus} memberFilter={taskMemberFilter} setMemberFilter={setTaskMemberFilter}/>
             </div>
           </div>}
 
@@ -5564,13 +5658,13 @@ function App() {
                     const td=new Date().getDate()===d&&new Date().getMonth()===m&&new Date().getFullYear()===y;
                     const isSearchedDay=calDateSearch===ds;
                     const resp=(e)=>e.responsabilPrincipal||(e.responsabili&&e.responsabili[0]?.nume)||e.cn||"—";
-                    return <div key={d} onClick={()=>{if(!hasStuff)return;if(calCellClickTimerRef.current)clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=setTimeout(()=>{calCellClickTimerRef.current=null;openModal("calDay",ds);},280);}} onDoubleClick={()=>{if(calCellClickTimerRef.current){clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=null;}if(p.c)openModal("calQuickAdd",{date:ds});else showToast("Dublu-click: adăugare în calendar (necesită permisiune de creare)","error");}} onDragOver={e=>{e.preventDefault();setCalDropDate(ds);}} onDragLeave={()=>setCalDropDate(null)} onDrop={e=>{e.preventDefault();setCalDropDate(null);if(calDragEvId){moveEvToDate(calDragEvId,ds);setCalDragEvId(null);}}}
+                    return <div key={d} data-cal-date={ds} onClick={()=>{if(!hasStuff)return;if(calCellClickTimerRef.current)clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=setTimeout(()=>{calCellClickTimerRef.current=null;openModal("calDay",ds);},280);}} onDoubleClick={()=>{if(calCellClickTimerRef.current){clearTimeout(calCellClickTimerRef.current);calCellClickTimerRef.current=null;}if(p.c)openModal("calQuickAdd",{date:ds});else showToast("Dublu-click: adăugare în calendar (necesită permisiune de creare)","error");}} onDragOver={e=>{e.preventDefault();setCalDropDate(ds);}} onDragLeave={()=>setCalDropDate(null)} onDrop={e=>{e.preventDefault();setCalDropDate(null);if(calDragEvId){moveEvToDate(calDragEvId,ds);setCalDragEvId(null);}}}
                       style={{minHeight:mob?58:80,padding:mob?2:4,borderRadius:6,border:isSearchedDay?`2px solid #3b82f6`:td?`2px solid ${th.a}`:calDropDate===ds?`2px solid ${th.a}`:hasStuff?`1px solid ${th.b}`:`1px solid ${th.bl}`,background:calDropDate===ds?th.ab:isSearchedDay?"rgba(59,130,246,0.08)":td?th.ab:dayOcc.length>0?"rgba(245,158,11,.06)":"transparent",display:"flex",flexDirection:"column",minWidth:0,cursor:calDropDate===ds?"copy":hasStuff?"pointer":"default"}}>
                       <div style={{marginBottom:mob?1:2}}>
                         <span style={{fontSize:mob?10:12,fontWeight:isSearchedDay||td?800:hasStuff?600:400,color:isSearchedDay?"#3b82f6":td?th.t:hasStuff?th.t:th.tm}}>{d}</span>
                       </div>
                       <div style={{flex:1,minHeight:0,overflow:mob?"hidden":"auto",maxHeight:mob?52:120}}>
-                        {de.map(ev=><div key={ev.id} draggable={!mob} onDragStart={e=>{e.stopPropagation();setCalDragEvId(ev.id);}} onDragEnd={()=>setCalDragEvId(null)} onClick={e=>{e.stopPropagation();if(ev.st==="confirmat")openModal("detail",ev.id);else openModal("oferta",ev.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:mob?"pointer":"grab",background:dk?ST[ev.st]?.bd:ST[ev.st]?.bg,color:ST[ev.st]?.c,lineHeight:1.2,borderLeft:`2px solid ${ST[ev.st]?.c}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={`${ev.type} — ${resp(ev)} · ${ST[ev.st]?.l||ev.st}${mob?"":" (trage pentru a muta)"}`}>{ev.type} ({resp(ev)}) · {ST[ev.st]?.l||ev.st}</div>)}
+                        {de.map(ev=><div key={ev.id} draggable={!mob} onDragStart={e=>{e.stopPropagation();setCalDragEvId(ev.id);}} onDragEnd={()=>setCalDragEvId(null)} onClick={e=>{e.stopPropagation();if(calSuppressChipClickRef.current)return;if(ev.st==="confirmat")openModal("detail",ev.id);else openModal("oferta",ev.id);}} onDoubleClick={e=>e.stopPropagation()} onTouchStart={mob?(e=>{e.stopPropagation();const t=e.touches[0];if(!t)return;calTouchDragMetaRef.current={evId:ev.id,fromDs:ds,x:t.clientX,y:t.clientY};if(calLongPressTimerRef.current)clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=setTimeout(()=>{calLongPressTimerRef.current=null;setCalTouchDragActive(true);setCalDragEvId(ev.id);calLastDropDsRef.current=null;try{if(navigator.vibrate)navigator.vibrate(20);}catch(_){}},460);}):undefined} onTouchMove={mob?(e=>{if(calLongPressTimerRef.current&&calTouchDragMetaRef.current){const t=e.touches[0];if(!t)return;const m=calTouchDragMetaRef.current;if(Math.hypot(t.clientX-m.x,t.clientY-m.y)>14){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}}):undefined} onTouchEnd={mob?(e=>{if(calLongPressTimerRef.current){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}):undefined} onTouchCancel={mob?(e=>{if(calLongPressTimerRef.current){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}):undefined} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:mob?"pointer":"grab",background:dk?ST[ev.st]?.bd:ST[ev.st]?.bg,color:ST[ev.st]?.c,lineHeight:1.2,borderLeft:`2px solid ${ST[ev.st]?.c}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:calTouchDragActive&&calDragEvId===ev.id?0.55:1}} title={`${ev.type} — ${resp(ev)} · ${ST[ev.st]?.l||ev.st}${mob?" — ține apăsat ~0,5s, apoi trage pe altă zi":" (trage pentru a muta)"}`}>{ev.type} ({resp(ev)}) · {ST[ev.st]?.l||ev.st}</div>)}
                         {dayOcc.map(b=>{
                           const mem=MEMBERS.find(x=>x.id===b.memberId);
                           const hue=occHue(b.memberId);
@@ -6639,13 +6733,42 @@ function App() {
         if(ev.stageId){ roleBonus[ev.stageId]=(roleBonus[ev.stageId]||0)+stageAmt; }
         const shares={};
         MEMBERS.forEach(m=>{ shares[m.id]=(baseShares[m.id]||0)+(roleBonus[m.id]||0); });
-        // Rotunjire distribuție: pe firmă → 1€, altfel → 50€
-        const roundUnit=(avFirma||restFirma)?1:50;
+        /* Rotunjire:
+           - Direct (fără firmă): 10€
+           - Doar avans pe firmă: 10€ (restul în euro cash)
+           - Tot pe firmă (rest pe firmă): sumele se rotunjesc în LEI la 10 lei (curs ev.cursLei); € e doar referință — ajustarea e în lei, nu „fura” sute de € din fond din cauza rotunjirii la 1€ */
         const roundedShares={};
-        MEMBERS.forEach(m=>{const s=shares[m.id]||0;roundedShares[m.id]=Math.round(s/roundUnit)*roundUnit;});
-        const roundedPoolTotal=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
-        const roundingAdjFond=Math.round((pool-roundedPoolTotal)*100)/100;
-        const hasRounding=Math.abs(roundingAdjFond)>0.001;
+        const roundedSharesLei={};
+        let roundingInLei=false;
+        let roundUnit=10;
+        let roundingAdjFond=0;
+        let roundingAdjLei=0;
+        if (restFirma) {
+          roundingInLei=true;
+          roundUnit=10;
+          const poolLei=pool*CURS;
+          MEMBERS.forEach(m=>{
+            const s=shares[m.id]||0;
+            const lei=s*CURS;
+            roundedSharesLei[m.id]=Math.round(lei/10)*10;
+          });
+          const sumLei=MEMBERS.reduce((acc,m)=>acc+(roundedSharesLei[m.id]||0),0);
+          roundingAdjLei=Math.round((poolLei-sumLei)*100)/100;
+          MEMBERS.forEach(m=>{
+            roundedShares[m.id]=Math.round(((roundedSharesLei[m.id]||0)/CURS)*100)/100;
+          });
+          const roundedPoolTotalEur=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
+          roundingAdjFond=Math.round((pool-roundedPoolTotalEur)*100)/100;
+        } else {
+          roundUnit=10;
+          MEMBERS.forEach(m=>{
+            const s=shares[m.id]||0;
+            roundedShares[m.id]=Math.round(s/roundUnit)*roundUnit;
+          });
+          const roundedPoolTotal=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
+          roundingAdjFond=Math.round((pool-roundedPoolTotal)*100)/100;
+        }
+        const hasRounding=roundingInLei?Math.abs(roundingAdjLei)>=0.01:Math.abs(roundingAdjFond)>0.001;
 
         const fv=(v)=>v.toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+(isLei?" lei":"€");
         const fvl=(v)=>Math.round(v).toLocaleString("ro-RO")+" lei";
@@ -6879,8 +7002,14 @@ function App() {
                       <div style={{width:26,height:26,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:th.bg,flexShrink:0}}>{m.n[0]}</div>
                       <span style={{fontSize:12,flex:1}}>{m.n.split(" ")[0]}</span>
                       <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:13,fontWeight:700}}>{hasRounding?fv(roundedShares[m.id]):fv(total)}</div>
-                      {hasRounding&&roundedShares[m.id]!==total&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{fv(total)}</div>}
+                      {roundingInLei?<>
+                        <div style={{fontSize:13,fontWeight:700}}>{(roundedSharesLei[m.id]||0).toLocaleString("ro-RO")} lei</div>
+                        <div style={{fontSize:9,color:th.tm}}>≈ {fv(roundedShares[m.id])} (ref. €)</div>
+                        {hasRounding&&Math.abs((roundedSharesLei[m.id]||0)-(shares[m.id]||0)*CURS)>=1&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{Math.round((shares[m.id]||0)*CURS).toLocaleString("ro-RO")} lei · {fv(shares[m.id])}</div>}
+                      </>:<>
+                        <div style={{fontSize:13,fontWeight:700}}>{hasRounding?fv(roundedShares[m.id]):fv(total)}</div>
+                        {hasRounding&&roundedShares[m.id]!==total&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{fv(total)}</div>}
+                      </>}
                     </div>
                     </div>
                     {hasRol&&<div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:4,marginLeft:34,fontSize:11,color:th.tm}}>
@@ -6889,9 +7018,13 @@ function App() {
                     </div>}
                   </div>
                 );})}
-                {hasRounding&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:roundingAdjFond>0?"rgba(34,197,94,.08)":"rgba(245,158,11,.08)",border:`1px solid ${roundingAdjFond>0?"rgba(34,197,94,.3)":"rgba(245,158,11,.3)"}`,fontSize:11,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{color:th.tm}}>📐 Rotunjire la {roundUnit}€ · ajustare fond</span>
-                  <strong style={{color:roundingAdjFond>0?"#22c55e":"#f59e0b"}}>{roundingAdjFond>0?"+":""}{fv(roundingAdjFond)}</strong>
+                {hasRounding&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:(roundingInLei?roundingAdjLei:roundingAdjFond)>0?"rgba(34,197,94,.08)":"rgba(245,158,11,.08)",border:`1px solid ${(roundingInLei?roundingAdjLei:roundingAdjFond)>0?"rgba(34,197,94,.3)":"rgba(245,158,11,.3)"}`,fontSize:11,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                  <span style={{color:th.tm}}>{roundingInLei?`📐 Rotunjire la ${roundUnit} lei (curs 1€ = ${CURS} lei) · ajustare fond`:`📐 Rotunjire la ${roundUnit}€ · ajustare fond`}</span>
+                  <strong style={{color:(roundingInLei?roundingAdjLei:roundingAdjFond)>0?"#22c55e":"#f59e0b"}}>
+                    {roundingInLei
+                      ? <>{roundingAdjLei>0?"+":""}{roundingAdjLei.toLocaleString("ro-RO")} lei <span style={{fontWeight:600,opacity:.85}}>(≈ {roundingAdjFond>0?"+":""}{fv(roundingAdjFond)})</span></>
+                      : <>{roundingAdjFond>0?"+":""}{fv(roundingAdjFond)}</>}
+                  </strong>
                 </div>}
               </div>
 
