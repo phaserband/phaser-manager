@@ -4275,24 +4275,33 @@ function buildAIContext(evs, tasks) {
 function SettingsAI(props) {
   var th=props.th,apiKeys=props.apiKeys,onSave=props.onSave,onClose=props.onClose;
   var initModel=props.model;
-  var _k=useState({claude:apiKeys.claude||"",openai:apiKeys.openai||""}); var keys=_k[0],setKeys=_k[1];
+  var _k=useState({claude:apiKeys.claude||"",openai:apiKeys.openai||"",llamaWorker:apiKeys.llamaWorker||""}); var keys=_k[0],setKeys=_k[1];
   var _m=useState(initModel); var mdl=_m[0],setMdl=_m[1];
   var _sc=useState(false); var showC=_sc[0],setShowC=_sc[1];
   var _so=useState(false); var showO=_so[0],setShowO=_so[1];
+  var MODELS=[{v:"llama",l:"Llama 3",sub:"Cloudflare · Gratuit",color:"#f59e0b"},{v:"claude",l:"Claude",sub:"Anthropic",color:"#7c3aed"},{v:"openai",l:"GPT-4o Mini",sub:"OpenAI",color:"#10b981"}];
   return React.createElement("div",{style:{background:th.c,border:"1px solid "+th.b,borderRadius:14,width:340,padding:24,maxWidth:"90vw"},onClick:function(e){e.stopPropagation();}},
-    React.createElement("h3",{style:{fontSize:15,fontWeight:700,marginBottom:16}},"Setari AI"),
-    React.createElement("div",{style:{marginBottom:14}},
-      React.createElement("div",{style:{fontSize:11,color:"#7c3aed",fontWeight:700,marginBottom:8}},"Model preferat"),
-      React.createElement("div",{style:{display:"flex",gap:8}},
-        [{v:"claude",l:"Claude",sub:"Anthropic"},{v:"openai",l:"GPT-4o Mini",sub:"OpenAI"}].map(function(opt){
-          return React.createElement("button",{key:opt.v,onClick:function(){setMdl(opt.v);},style:{flex:1,padding:"10px 8px",borderRadius:10,cursor:"pointer",textAlign:"center",border:"2px solid "+(mdl===opt.v?"#7c3aed":th.b),background:mdl===opt.v?"rgba(124,58,237,0.1)":th.h,color:th.t}},
-            React.createElement("div",{style:{fontSize:12,fontWeight:700}},opt.l),
-            React.createElement("div",{style:{fontSize:10,color:"#7c3aed"}},opt.sub)
+    React.createElement("h3",{style:{fontSize:15,fontWeight:700,marginBottom:16}},"⚙️ Setări AI"),
+    React.createElement("div",{style:{marginBottom:16}},
+      React.createElement("div",{style:{fontSize:11,color:th.tm,fontWeight:600,marginBottom:8}},"Model"),
+      React.createElement("div",{style:{display:"flex",gap:6}},
+        MODELS.map(function(opt){
+          return React.createElement("button",{key:opt.v,onClick:function(){setMdl(opt.v);},style:{flex:1,padding:"9px 6px",borderRadius:10,cursor:"pointer",textAlign:"center",border:"2px solid "+(mdl===opt.v?opt.color:th.b),background:mdl===opt.v?"rgba(245,158,11,0.08)":th.h,color:th.t,transition:"all .15s"}},
+            React.createElement("div",{style:{fontSize:11,fontWeight:700}}),
+            React.createElement("div",{style:{fontSize:12,fontWeight:700}}),
+            React.createElement("div",{style:{fontSize:12,fontWeight:mdl===opt.v?800:500,color:mdl===opt.v?opt.color:th.t}},opt.l),
+            React.createElement("div",{style:{fontSize:9,color:opt.color,marginTop:1}},opt.sub)
           );
         })
       )
     ),
-    React.createElement("div",{style:{marginBottom:12}},
+    mdl==="llama"&&React.createElement("div",{style:{marginBottom:18,padding:"14px 16px",borderRadius:10,background:"rgba(245,158,11,.06)",border:"1px solid rgba(245,158,11,.2)"}},
+      React.createElement("div",{style:{fontSize:12,fontWeight:700,color:"#f59e0b",marginBottom:8}},"🦙 Llama 3.1 8B — Cloudflare AI Workers"),
+      React.createElement("div",{style:{fontSize:11,color:th.tm,marginBottom:10,lineHeight:1.5}},"Gratuit, fără API key. Trebuie deploiat un Worker Cloudflare. URL-ul workerului tău:"),
+      React.createElement("input",{type:"text",value:keys.llamaWorker,onChange:function(e){setKeys(function(k){return Object.assign({},k,{llamaWorker:e.target.value});});},placeholder:"https://phaser-ai-worker.raczradurr.workers.dev",style:{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid rgba(245,158,11,.3)",background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box"}}),
+      React.createElement("div",{style:{fontSize:9,color:th.tm,marginTop:6}},"Fișierele Worker sunt în folderul phaser-ai-worker/ — rulează: npx wrangler deploy")
+    ),
+    mdl==="claude"&&React.createElement("div",{style:{marginBottom:18}},
       React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:4}},"Claude API Key"),
       React.createElement("div",{style:{display:"flex",gap:6}},
         React.createElement("input",{type:showC?"text":"password",value:keys.claude,onChange:function(e){setKeys(function(k){return Object.assign({},k,{claude:e.target.value});});},placeholder:"sk-ant-...",style:{flex:1,padding:"8px 10px",borderRadius:8,border:"1px solid "+th.b,background:th.h,color:th.t,fontSize:11,outline:"none"}}),
@@ -4300,7 +4309,7 @@ function SettingsAI(props) {
       ),
       React.createElement("div",{style:{fontSize:9,color:th.tm,marginTop:3}},"console.anthropic.com → API Keys")
     ),
-    React.createElement("div",{style:{marginBottom:18}},
+    mdl==="openai"&&React.createElement("div",{style:{marginBottom:18}},
       React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:4}},"OpenAI API Key"),
       React.createElement("div",{style:{display:"flex",gap:6}},
         React.createElement("input",{type:showO?"text":"password",value:keys.openai,onChange:function(e){setKeys(function(k){return Object.assign({},k,{openai:e.target.value});});},placeholder:"sk-...",style:{flex:1,padding:"8px 10px",borderRadius:8,border:"1px solid "+th.b,background:th.h,color:th.t,fontSize:11,outline:"none"}}),
@@ -4309,8 +4318,8 @@ function SettingsAI(props) {
       React.createElement("div",{style:{fontSize:9,color:th.tm,marginTop:3}},"platform.openai.com → API Keys")
     ),
     React.createElement("div",{style:{display:"flex",gap:8}},
-      React.createElement("button",{onClick:function(){onSave(keys,mdl);},style:{flex:1,padding:10,borderRadius:10,border:"none",background:"linear-gradient(135deg,#7c3aed,#4f46e5)",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:13}},"Salveaza"),
-      React.createElement("button",{onClick:onClose,style:{padding:"10px 16px",borderRadius:10,border:"1px solid "+th.b,background:th.h,color:th.t,cursor:"pointer",fontSize:13}},"Anuleaza")
+      React.createElement("button",{onClick:function(){onSave(keys,mdl);},style:{flex:1,padding:10,borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,cursor:"pointer",fontSize:13}},"Salvează"),
+      React.createElement("button",{onClick:onClose,style:{padding:"10px 16px",borderRadius:10,border:"1px solid "+th.b,background:th.h,color:th.t,cursor:"pointer",fontSize:13}},"Anulează")
     )
   );
 }
@@ -4763,16 +4772,24 @@ function AIChatWidget(props) {
     }
 
     try{
-      var key=model==="claude"?(apiKeys.claude||CLAUDE_API_KEY):apiKeys.openai;
-      if(!key){setMsgs(function(m){return m.concat([{role:"assistant",content:"⚠️ Comandă nerecunoscută. Încearcă: raport, statistici, cauta [text], următoarele, taskuri, ajutor"}]);});setLoading(false);return;}
       var sys=buildAIContext(evs,tasks);
       var reply;
-      if(model==="claude"){
+      if(model==="llama"){
+        var workerUrl=apiKeys.llamaWorker;
+        if(!workerUrl){setMsgs(function(m){return m.concat([{role:"assistant",content:"⚠️ Configurează URL-ul Worker Cloudflare în ⚙️ Setări AI."}]);});setLoading(false);return;}
+        var rl=await fetch(workerUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history,system:sys})});
+        var dl=await rl.json();
+        reply=dl.response||(dl.error&&("Eroare Worker: "+dl.error))||"Eroare.";
+      }else if(model==="claude"){
+        var key=apiKeys.claude||CLAUDE_API_KEY;
+        if(!key){setMsgs(function(m){return m.concat([{role:"assistant",content:"⚠️ Adaugă API Key Claude în ⚙️ Setări AI."}]);});setLoading(false);return;}
         var r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-3-5-haiku-20241022",max_tokens:1024,system:sys,messages:history})});
         var d=await r.json();
         reply=(d.content&&d.content[0]&&d.content[0].text)||(d.error&&d.error.message)||"Eroare.";
       }else{
-        var r2=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"gpt-4o-mini",messages:[{role:"system",content:sys}].concat(history)})});
+        var key2=apiKeys.openai;
+        if(!key2){setMsgs(function(m){return m.concat([{role:"assistant",content:"⚠️ Adaugă API Key OpenAI în ⚙️ Setări AI."}]);});setLoading(false);return;}
+        var r2=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key2},body:JSON.stringify({model:"gpt-4o-mini",messages:[{role:"system",content:sys}].concat(history)})});
         var d2=await r2.json();
         reply=(d2.choices&&d2.choices[0]&&d2.choices[0].message&&d2.choices[0].message.content)||(d2.error&&d2.error.message)||"Eroare.";
       }
@@ -4781,7 +4798,7 @@ function AIChatWidget(props) {
     setLoading(false);
   }
 
-  var hasKey=model==="claude"?(!!apiKeys.claude||!!CLAUDE_API_KEY):!!apiKeys.openai;
+  var hasKey=model==="llama"?!!apiKeys.llamaWorker:model==="claude"?(!!apiKeys.claude||!!CLAUDE_API_KEY):!!apiKeys.openai;
   var SUGG=["rezumat","raport","urmatoarele","urgente","avansuri","ajutor"];
 
   return React.createElement("div",null,
@@ -4791,7 +4808,7 @@ function AIChatWidget(props) {
         React.createElement("span",{style:{fontSize:20}},"🤖"),
         React.createElement("div",{style:{flex:1}},
           React.createElement("div",{style:{fontSize:13,fontWeight:700}},"AI Assistant"),
-          React.createElement("div",{style:{fontSize:10,color:th.tm}},(model==="claude"?"Claude 3.5 Haiku":"GPT-4o Mini")+" "+(hasKey?"✓ conectat":"— fara API key"))
+          React.createElement("div",{style:{fontSize:10,color:th.tm}},(model==="llama"?"🦙 Llama 3.1 (Cloudflare)":model==="claude"?"Claude 3.5 Haiku":"GPT-4o Mini")+" "+(hasKey?"✓":"— neconfigurat"))
         ),
         React.createElement("button",{onClick:function(){setShowS(true);},style:{padding:"4px 6px",border:"1px solid "+th.b,borderRadius:8,background:th.h,cursor:"pointer",fontSize:13}},"⚙️"),
         React.createElement("button",{onClick:function(){setMsgs([]);},style:{padding:"4px 6px",border:"1px solid "+th.b,borderRadius:8,background:th.h,cursor:"pointer",fontSize:13}},"🗑")

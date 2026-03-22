@@ -1,0 +1,7 @@
+name = "phaser-ai-worker"
+main = "index.js"
+compatibility_date = "2024-09-23"
+
+# Binding pentru Cloudflare AI (gratuit cu Workers Free plan)
+[ai]
+binding = "AI"
