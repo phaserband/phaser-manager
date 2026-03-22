@@ -4807,8 +4807,7 @@ function AIChatWidget(props) {
     setLoading(false);
   }
 
-  var hasKey=model==="llama"?!!apiKeys.llamaWorker:model==="claude"?(!!apiKeys.claude||!!CLAUDE_API_KEY):!!apiKeys.openai;
-  var SUGG=["rezumat","raport","urmatoarele","urgente","avansuri","ajutor"];
+  var hasKey=!!apiKeys.llamaWorker;
 
   return React.createElement("div",null,
     React.createElement("button",{onClick:function(){setOpen(function(o){return !o;});},title:"AI Assistant",style:{position:"fixed",bottom:mob?72:24,right:20,zIndex:9999,width:50,height:50,borderRadius:25,background:open?"#6d28d9":"linear-gradient(135deg,#7c3aed,#4f46e5)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 20px rgba(79,70,229,0.5)",fontSize:22,color:"#fff"}},open?"✕":"🤖"),
@@ -4825,8 +4824,7 @@ function AIChatWidget(props) {
       React.createElement("div",{style:{flex:1,overflowY:"auto",padding:12,display:"flex",flexDirection:"column",gap:8}},
         msgs.length===0&&React.createElement("div",{style:{textAlign:"center",color:th.tm,fontSize:12,marginTop:16}},
           React.createElement("div",{style:{fontSize:36,marginBottom:8}},"🎸"),
-          React.createElement("div",{style:{fontWeight:700,fontSize:13,marginBottom:12}},"Salut! Sunt asistentul tau AI."),
-          SUGG.map(function(s){return React.createElement("button",{key:s,onClick:function(){setInput(s);},style:{display:"block",width:"100%",marginBottom:5,padding:"7px 10px",borderRadius:8,border:"1px solid "+th.b,background:th.h,color:th.t,fontSize:11,cursor:"pointer",textAlign:"left"}},"💬 "+s);})
+          React.createElement("div",{style:{fontWeight:700,fontSize:13}},"Salut! Sunt asistentul tau AI.")
         ),
         msgs.map(function(m,i){return React.createElement("div",{key:i,style:{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"9px 12px",borderRadius:m.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",background:m.role==="user"?"linear-gradient(135deg,#7c3aed,#4f46e5)":th.h,color:m.role==="user"?"#fff":th.t,fontSize:12,lineHeight:1.6,border:m.role==="assistant"?"1px solid "+th.b:"none",whiteSpace:"pre-wrap"}},m.content);}),
         loading&&React.createElement("div",{style:{alignSelf:"flex-start",padding:"9px 12px",borderRadius:12,background:th.h,border:"1px solid "+th.b,fontSize:12,color:th.tm}},"⏳ Se gandeste..."),
@@ -4860,7 +4858,7 @@ function App() {
   const [songs, setSongs] = useLocalStorageState(LS_KEYS.songs, loadSongs);
   const [calBlocks, setCalBlocks] = useLocalStorageState(LS_KEYS.calBlocks, loadCalBlocks);
   const [bandNotifications, setBandNotifications] = useLocalStorageState(LS_KEYS.bandNotifications, loadBandNotifications);
-  const [aiSettings, setAiSettings] = useState({llamaWorker:""});
+  const [aiSettings, setAiSettings] = useState({llamaWorker:"https://phaser-ai-worker.raczradurr.workers.dev"});
   const [finMember, setFinMember] = useState(null);
   const [templates, setTemplates] = useState(loadTemplates);
   const { modal, payload, openModal, closeModal } = useModal();
