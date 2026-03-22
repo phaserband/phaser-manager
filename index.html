@@ -4968,30 +4968,23 @@ function App() {
     const evDate = ev.date;
     const ndObj = new Date(evDate+"T00:00:00"); ndObj.setDate(ndObj.getDate()+1);
     const nextDay = ndObj.toISOString().split("T")[0];
-    const appBase = "https://phaser-manager.raczradurr.workers.dev";
     const isConfirmedEv = ev.st==="confirmat";
-    const specificUrl = isConfirmedEv ? (ev.fisaUrl||null) : (ev.offerUrl||null);
-    const evLabel = ev.offerNr ? "Oferta O"+ev.offerNr : (isConfirmedEv?"Fișa eveniment":"Eveniment");
-    const linkLine = specificUrl ? evLabel+": "+specificUrl : evLabel+": "+appBase;
-    const gcalStatusLabel = {oferta:"Ofertă",asteptare:"Așteptare",plata_avans:"Plată avans",confirmat:"Confirmat",respins:"Respins"}[ev.st]||ev.st||"";
     const gcalResp = ev.responsabilPrincipal||(ev.responsabili||[])[0]?.nume||"";
+    // Titlu: "Nuntă Ofertă (Radu Racz)" daca oferta, "Nuntă (Radu Racz)" daca confirmat
     const gcalSummary = [
-      "PHASER",
-      ev.offerNr?"O"+ev.offerNr:null,
       ev.type||"Eveniment",
-      gcalResp?"("+gcalResp+")":null,
-      ev.venue?"@ "+ev.venue:null,
-      "· "+gcalStatusLabel
+      !isConfirmedEv?"Ofertă":null,
+      gcalResp?"("+gcalResp+")":null
     ].filter(Boolean).join(" ");
+    // Link direct la oferta/fisa — construieste URL din proxy + ID daca nu e salvat inca
+    const proxyBase = OFFER_HTML_PROXY_URL.replace(/\/$/, "");
+    const gcalLink = isConfirmedEv
+      ? (ev.fisaUrl || proxyBase+"/fisa-"+ev.id+".html")
+      : (ev.offerUrl || proxyBase+"/offer-"+ev.id+".html");
     const body = {
       summary: gcalSummary,
       location: [ev.venue,ev.city].filter(Boolean).join(", "),
-      description: [
-        ev.cn?"Client: "+ev.cn:"", ev.cp?"Tel: "+ev.cp:"",
-        ev.ce?"Email: "+ev.ce:"", "Onorariu: "+f$(ev.fee||0),
-        ev.dep?"Avans: "+f$(ev.dep):"", ev.desc?"\n"+ev.desc:"",
-        "\n"+linkLine
-      ].filter(Boolean).join("\n"),
+      description: gcalLink,
       start: { date: evDate },
       end:   { date: nextDay }
     };
