@@ -11,7 +11,7 @@
   <script>
     // ─── PIN GATE ───────────────────────────────────────────────────────────────
     (function(){
-      var PIN = "2407";
+      var PIN = "0803";
       var KEY = "phaser_pin_ok";
       if(sessionStorage.getItem(KEY) === "1") return;
       document.addEventListener("DOMContentLoaded", function(){
@@ -94,48 +94,55 @@
         position: fixed;
         bottom: 0; left: 0; right: 0;
         z-index: 300;
-        height: 72px;
+        height: 64px;
+        padding: 0 4px;
         padding-bottom: env(safe-area-inset-bottom);
-        border-top: 1px solid rgba(255,255,255,.1);
+        border-top: 1px solid rgba(128,128,128,.15);
         background: var(--nav-bg, #111);
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
-        align-items: stretch;
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
+        align-items: center;
+        backdrop-filter: blur(20px) saturate(1.8);
+        -webkit-backdrop-filter: blur(20px) saturate(1.8);
+        gap: 2px;
       }
       .mob-bottom-nav::-webkit-scrollbar { display: none; }
       .mob-bottom-nav-btn {
         flex: 1;
-        min-width: 60px;
+        min-width: 52px;
+        max-width: 80px;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 4px;
+        gap: 3px;
         border: none;
         background: transparent;
         cursor: pointer;
         font-family: inherit;
-        padding: 8px 4px 6px;
+        padding: 6px 4px;
         position: relative;
-        transition: opacity .15s;
+        border-radius: 14px;
+        transition: background .18s, transform .12s;
+        -webkit-tap-highlight-color: transparent;
+        min-height: 52px;
       }
-      .mob-bottom-nav-btn.nav-active::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 50%; transform: translateX(-50%);
-        width: 32px; height: 3px;
-        border-radius: 0 0 3px 3px;
-        background: currentColor;
-        opacity: 0.9;
+      .mob-bottom-nav-btn:active { transform: scale(.91); }
+      .mob-bottom-nav-btn.nav-active {
+        background: rgba(128,128,128,.14);
       }
-      .mob-bottom-nav-btn span.nav-lbl { font-size: 11px; font-weight: 600; letter-spacing: .1px; }
+      .mob-bottom-nav-btn span.nav-lbl {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: .1px;
+        line-height: 1;
+      }
       .mob-bottom-nav-badge {
-        position: absolute; top: 7px; right: calc(50% - 16px);
+        position: absolute; top: 6px; right: calc(50% - 18px);
         width: 8px; height: 8px; border-radius: 50%;
         background: #f59e0b;
+        box-shadow: 0 0 0 2px var(--nav-bg, #111);
       }
     }
     @media (min-width: 768px) {
@@ -5131,6 +5138,25 @@ function App() {
     return (t && exp > Date.now()) ? t : null;
   });
   const tokenClientRef = useRef(null);
+  const gcalSilentRef = useRef(false); // previne multiple silent refresh simultane
+
+  // Salvează token GCal în Supabase (cloud) — oricine reconectează, toți beneficiază
+  const saveGCalToCloud = async (token, exp) => {
+    const client = getSbClient(); if(!client) return;
+    const existing = await client.from("app_data").select("data").eq("id","phaser_gcal").maybeSingle();
+    const d = existing?.data?.data || {};
+    await client.from("app_data").upsert({id:"phaser_gcal", data:{...d, token, exp, updated_at: Date.now()}, updated_at: new Date().toISOString()},{onConflict:"id"});
+  };
+
+  // Încearcă silent refresh — fără popup, fără prompt
+  const trySilentRefresh = () => {
+    if(gcalSilentRef.current) return;
+    if(!tokenClientRef.current) return;
+    gcalSilentRef.current = true;
+    try {
+      tokenClientRef.current.requestAccessToken({ prompt: "" });
+    } catch(e) { gcalSilentRef.current = false; }
+  };
 
   useEffect(() => {
     const tryInit = () => {
@@ -5139,28 +5165,65 @@ function App() {
         client_id: GCAL_CLIENT_ID,
         scope: GCAL_SCOPE,
         callback: (resp) => {
+          gcalSilentRef.current = false;
           if (resp.access_token) {
             const exp = Date.now() + (resp.expires_in - 60) * 1000;
             localStorage.setItem(GCAL_LS_TOKEN, resp.access_token);
             localStorage.setItem(GCAL_LS_EXPIRY, String(exp));
             setGcalToken(resp.access_token);
+            saveGCalToCloud(resp.access_token, exp);
+            if(resp.error) return; // silent refresh eșuat silențios
             showToast("📅 Google Calendar conectat!");
           }
-        }
+        },
+        error_callback: () => { gcalSilentRef.current = false; }
       });
+      // La pornire: încearcă să încarce token din cloud dacă local e expirat
+      const localT = localStorage.getItem(GCAL_LS_TOKEN);
+      const localExp = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
+      if(!localT || localExp <= Date.now()) {
+        // Încearcă din Supabase
+        const client = getSbClient();
+        if(client) {
+          client.from("app_data").select("data").eq("id","phaser_gcal").maybeSingle().then(({data:row})=>{
+            if(row?.data?.token && row.data.exp > Date.now()) {
+              localStorage.setItem(GCAL_LS_TOKEN, row.data.token);
+              localStorage.setItem(GCAL_LS_EXPIRY, String(row.data.exp));
+              setGcalToken(row.data.token);
+            } else {
+              // Token cloud expirat — silent refresh
+              setTimeout(trySilentRefresh, 1500);
+            }
+          });
+        } else {
+          setTimeout(trySilentRefresh, 1500);
+        }
+      }
     };
     setTimeout(tryInit, 800);
   }, []);
 
+  // Auto-refresh cu 5 minute înainte de expirare
+  useEffect(() => {
+    if(!gcalToken) return;
+    const exp = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
+    const msUntilRefresh = exp - Date.now() - 5*60*1000; // cu 5 min înainte
+    if(msUntilRefresh <= 0) { trySilentRefresh(); return; }
+    const timer = setTimeout(trySilentRefresh, msUntilRefresh);
+    return () => clearTimeout(timer);
+  }, [gcalToken]);
+
   const connectGCal = () => {
-    if (tokenClientRef.current) tokenClientRef.current.requestAccessToken({ prompt: gcalToken ? "" : "consent" });
-    else showToast("Deschide aplicația cu http://localhost:8080");
+    if (tokenClientRef.current) tokenClientRef.current.requestAccessToken({ prompt: "consent" });
+    else showToast("Google API nu s-a încărcat încă, încearcă din nou");
   };
 
   const disconnectGCal = () => {
     localStorage.removeItem(GCAL_LS_TOKEN);
     localStorage.removeItem(GCAL_LS_EXPIRY);
     setGcalToken(null);
+    const client = getSbClient();
+    if(client) client.from("app_data").delete().eq("id","phaser_gcal");
     showToast("Calendar deconectat");
   };
 
@@ -5180,9 +5243,13 @@ function App() {
     const ndObj = new Date(evDate+"T00:00:00"); ndObj.setDate(ndObj.getDate()+1);
     const nextDay = ndObj.toISOString().split("T")[0];
     const isConfirmedEv = ev.st==="confirmat";
-    const gcalResp = ev.responsabilPrincipal||(ev.responsabili||[])[0]?.nume||"";
-    // Titlu: "Nuntă Ofertă (Radu Racz)" daca oferta, "Nuntă (Radu Racz)" daca confirmat
-    const gcalSummary = [
+    const gcalRespFull = ev.responsabilPrincipal||(ev.responsabili||[])[0]?.nume||"";
+    // Doar prenumele (primul cuvânt)
+    const gcalResp = gcalRespFull ? gcalRespFull.trim().split(" ")[0] : "";
+    // Prefix status: ??? = ofertă, ? = așt. contract / plată avans, nimic = confirmat
+    const gcalPrefix = ev.st==="oferta" ? "??? " : (ev.st==="asteptare"||ev.st==="plata_avans") ? "? " : "";
+    // Titlu: "??? Nuntă Ofertă (Radu)" / "? Nuntă Ofertă (Radu)" / "Nuntă (Radu)"
+    const gcalSummary = gcalPrefix + [
       ev.type||"Eveniment",
       !isConfirmedEv?"Ofertă":null,
       gcalResp?"("+gcalResp+")":null
@@ -5351,7 +5418,22 @@ function App() {
     }
   }, [tab]);
 
-  const updSt = (id, st) => { setEvs(p=>p.map(e=>e.id===id?{...e,st}:e)); showToast(`Status: ${ST[st]?.l}`); };
+  const updSt = (id, st) => {
+    setEvs(p => {
+      const updated = p.map(e => e.id===id ? {...e, st} : e);
+      // Sync GCal dacă există gcalId — titlul și link-ul se schimbă odată cu statusul
+      if(gcalToken) {
+        const ev = updated.find(e => e.id===id);
+        if(ev?.gcalId) {
+          syncToGCal(ev).then(newId => {
+            if(newId) showToast("📅 Calendar actualizat: "+ST[st]?.l);
+          });
+        }
+      }
+      return updated;
+    });
+    showToast(`Status: ${ST[st]?.l}`);
+  };
   const bulkUpdSt = (ids, st) => {
     if (!ids || !ids.length || !st) return;
     const set = new Set(ids);
@@ -5615,20 +5697,19 @@ function App() {
       </div>
 
       {/* MOBILE BOTTOM NAV — vizibil doar pe mobil prin CSS */}
-      <nav className="mob-bottom-nav" style={{background:th.sb,borderTopColor:th.sbb}}>
+      <nav className="mob-bottom-nav" style={{"--nav-bg":th.sb, background:th.sb, borderTopColor:"transparent"}}>
         {navItems.map(it=>(
           <button key={it.id} data-tour={"nav-"+it.id} className={"mob-bottom-nav-btn"+(tab===it.id?" nav-active":"")} onClick={()=>setTab(it.id)}
             style={{color:tab===it.id?th.a:th.sbt}}>
             {it.badge>0&&<span className="mob-bottom-nav-badge"/>}
-            <it.Ic s={tab===it.id?22:20}/>
-            <span className="nav-lbl" style={{opacity:tab===it.id?1:.55,fontWeight:tab===it.id?700:500}}>{it.l}</span>
+            <it.Ic s={tab===it.id?24:21}/>
+            <span className="nav-lbl" style={{opacity:tab===it.id?1:.5}}>{it.l}</span>
           </button>
         ))}
-        {/* Logout compact */}
         <button className="mob-bottom-nav-btn" onClick={()=>{ try{localStorage.removeItem(LS_SESSION_MEMBER);}catch(e){} setUser(null); }}
-          style={{color:th.sbt,minWidth:52}}>
-          <IcOut s={20}/>
-          <span className="nav-lbl" style={{opacity:.5}}>Schimbă</span>
+          style={{color:th.sbt}}>
+          <IcOut s={21}/>
+          <span className="nav-lbl" style={{opacity:.45}}>Cont</span>
         </button>
       </nav>
 
@@ -5646,21 +5727,21 @@ function App() {
               {globalSearchResults.parsedDate&&(()=>{
                 const pd=globalSearchResults.parsedDate;
                 const evsOnDate=evs.filter(e=>e.date===pd);
-                return <div style={{padding:"10px 14px",borderBottom:`1px solid ${th.bl}`,background:"rgba(59,130,246,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                return <div style={{padding:"10px 14px",borderBottom:`1px solid ${th.bl}`,background:"rgba(59,130,246,0.06)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                     <span style={{fontSize:16}}>📅</span>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:700,color:"#3b82f6"}}>{fD(pd)}</div>
-                      <div style={{fontSize:11,color:th.tm}}>{evsOnDate.length>0?`${evsOnDate.length} eveniment${evsOnDate.length!==1?"e":""} în calendar`:"Nimic în calendar pentru această dată"}</div>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:"#3b82f6"}}>{fD(pd)}</div>
+                      <div style={{fontSize:11,color:th.tm}}>{evsOnDate.length>0?`${evsOnDate.length} eveniment${evsOnDate.length!==1?"e":""}`:"Liber"}</div>
                     </div>
                   </div>
-                  <div style={{display:"flex",gap:6,flexShrink:0}}>
-                    <button onClick={()=>{setGlobalSearch("");setTab("calendar");const d=new Date(pd+"T00:00:00");setCalM(new Date(d.getFullYear(),d.getMonth()));setCalDateSearch(pd);setCalSidebarDate(pd);}} style={{...sty.bg,fontSize:11,padding:"5px 10px",color:"#3b82f6",border:"1px solid #3b82f6",whiteSpace:"nowrap"}}>📅 Calendar</button>
-                    {p.c&&<div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                      <button onClick={()=>{setGlobalSearch("");openModal("pick",{date:pd});}} style={{padding:"4px 9px",borderRadius:7,border:"1px solid #3b82f6",background:"transparent",color:"#3b82f6",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Ofertă</button>
-                      <button onClick={()=>{setGlobalSearch("");openModal("form",{cat:"private",date:pd});}} style={{padding:"4px 9px",borderRadius:7,border:"none",background:"#3b82f6",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>+ Eveniment</button>
-                      <button onClick={()=>{const t={...fullTask(""),due:pd,text:"Task "+fD(pd)};setTasks(prev=>[...prev,t]);setGlobalSearch("");showToast("Task adăugat ✓");setTab("tasks");}} style={{padding:"4px 9px",borderRadius:7,border:`1px solid ${th.b}`,background:"transparent",color:th.tm,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Task</button>
-                    </div>}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <button onClick={()=>{setGlobalSearch("");setTab("calendar");const d=new Date(pd+"T00:00:00");setCalM(new Date(d.getFullYear(),d.getMonth()));setCalDateSearch(pd);setCalSidebarDate(pd);}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #3b82f6",background:"transparent",color:"#3b82f6",fontSize:12,fontWeight:600,cursor:"pointer"}}>📅 Calendar</button>
+                    {p.c&&<>
+                      <button onClick={()=>{setGlobalSearch("");openModal("pick",{date:pd});}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #3b82f6",background:"transparent",color:"#3b82f6",fontSize:12,fontWeight:600,cursor:"pointer"}}>+ Ofertă</button>
+                      <button onClick={()=>{setGlobalSearch("");openModal("form",{cat:"private",date:pd});}} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Eveniment</button>
+                      <button onClick={()=>{const t={...fullTask(""),due:pd,text:"Task "+fD(pd)};setTasks(prev=>[...prev,t]);setGlobalSearch("");showToast("Task adăugat ✓");setTab("tasks");}} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:"transparent",color:th.tm,fontSize:12,fontWeight:600,cursor:"pointer"}}>+ Task</button>
+                    </>}
                   </div>
                 </div>;
               })()}
@@ -5841,7 +5922,7 @@ function App() {
           </div>}
 
           {/* OFERTE */}
-          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pick",null):undefined} onStatusChange={updSt} onBulkStatusChange={p.e?bulkUpdSt:undefined} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;setEvs(p=>p.map(e=>e.id===id?{...e,dp:newDp,...(newDp&&e.st==="plata_avans"?{st:"confirmat"}:{})}:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
+          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pick",null):undefined} onStatusChange={updSt} onBulkStatusChange={p.e?bulkUpdSt:undefined} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;const becomesConfirmed=newDp&&ev.st==="plata_avans";const updatedEv={...ev,dp:newDp,...(becomesConfirmed?{st:"confirmat"}:{})};setEvs(p=>p.map(e=>e.id===id?updatedEv:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");if(becomesConfirmed&&gcalToken&&updatedEv.gcalId){syncToGCal(updatedEv).then(newId=>{if(newId)showToast("📅 Calendar actualizat: Confirmat");});}}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
 
           {/* DOCS — Documente, rider, playlist, press kit — template pentru oferte */}
           {tab==="docs"&&<div style={{animation:"su .3s ease"}}>
@@ -6321,8 +6402,8 @@ function App() {
           {/* CALENDAR */}
           {tab==="calendar"&&<div style={{animation:"su .3s ease",display:"flex",flexDirection:"column",gap:0,position:"relative",...(mob?{flex:"none",minHeight:"auto",overflow:"visible"}:{flex:1,minHeight:0,overflow:"hidden"})}}>
             <div style={{...(mob?{flex:"none",minHeight:"auto",overflow:"visible"}:{flex:1,minWidth:0,minHeight:0,overflow:"hidden"}),display:"flex",flexDirection:"column"}}>
-            <h1 style={{fontSize:22,fontWeight:700,marginBottom:16,flexShrink:0}}>Calendar</h1>
-            <div style={{fontSize:11,color:th.tm,marginBottom:8,flexShrink:0,lineHeight:1.45}}>Oferte și evenimente; <strong style={{color:th.t}}>ocupări</strong> = cine e indisponibil. Linie continuă = sigur · <span style={{borderBottom:"1px dashed "+th.tm}}>întreruptă</span> = neconfirmat (?). <strong style={{color:th.t}}>Click</strong> pe o zi cu intrări: rezumat în popup. <strong style={{color:th.t}}>Dublu-click</strong> pe o zi{p.c?"":" (cu permisiune creare)"}: adaugă ceva. Câmpul de sus: panou lateral cu detalii.</div>
+            {!mob&&<h1 style={{fontSize:22,fontWeight:700,marginBottom:16,flexShrink:0}}>Calendar</h1>}
+            {!mob&&<div style={{fontSize:11,color:th.tm,marginBottom:8,flexShrink:0,lineHeight:1.45}}>Oferte și evenimente; <strong style={{color:th.t}}>ocupări</strong> = cine e indisponibil. Linie continuă = sigur · <span style={{borderBottom:"1px dashed "+th.tm}}>întreruptă</span> = neconfirmat (?). <strong style={{color:th.t}}>Click</strong> pe o zi cu intrări: rezumat în popup. <strong style={{color:th.t}}>Dublu-click</strong> pe o zi{p.c?"":" (cu permisiune creare)"}: adaugă ceva.</div>}
             {(()=>{
               const y=calM.getFullYear(),m=calM.getMonth();
               const f=new Date(y,m,1).getDay(); const dn=new Date(y,m+1,0).getDate();
@@ -6330,38 +6411,50 @@ function App() {
               const mn=["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iulie","August","Septembrie","Octombrie","Noiembrie","Decembrie"];
               const dk=th.bg==="#09090b";
               const occHue = (mid) => { const idx = MEMBERS.findIndex(x => x.id === mid); const hues = ["#6366f1","#f59e0b","#22c55e","#ec4899","#06b6d4","#a855f7"]; return hues[(idx >= 0 ? idx : 0) % hues.length]; };
-              return <div style={{...sty.cd,display:"flex",flexDirection:"column",...(mob?{flex:"none",minHeight:"auto",overflow:"visible"}:{flex:1,minHeight:0,overflow:"hidden"})}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexShrink:0}}>
-                  <button onClick={()=>setCalM(new Date(y,m-1))} style={{...sty.bg,padding:"6px 12px"}}><IcChevL s={14}/> Înapoi</button>
-                  <h2 style={{fontSize:18,fontWeight:700}}>{mn[m]} {y}</h2>
-                  <button onClick={()=>setCalM(new Date(y,m+1))} style={{...sty.bg,padding:"6px 12px"}}>Înainte <IcChevR s={14}/></button>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexShrink:0}}>
-                  <div style={{position:"relative",flex:1,maxWidth:260}}>
-                    <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:th.tm,pointerEvents:"none"}}><IcSearch s={14}/></span>
-                    <input
-                      type="date"
-                      value={calDateSearch}
-                      onChange={e=>{
-                        const v=e.target.value;
-                        setCalDateSearch(v);
-                        if(v){
-                          const d=new Date(v+"T00:00:00");
-                          if(!isNaN(d.getTime())){
-                            setCalM(new Date(d.getFullYear(),d.getMonth()));
-                            setCalSidebarDate(v);
-                          }
-                        } else {
-                          setCalSidebarDate(null);
-                        }
-                      }}
-                      style={{...sty.i,width:"100%",paddingLeft:32,paddingRight:10,paddingTop:6,paddingBottom:6,fontSize:13,borderRadius:8}}
-                      title="Caută o dată în calendar"
-                    />
+              const calMonthVal=`${y}-${String(m+1).padStart(2,"0")}`;
+              return <div style={{...sty.cd,display:"flex",flexDirection:"column",...(mob?{flex:"none",minHeight:"auto",overflow:"visible",padding:"8px 4px",borderRadius:0,border:"none",background:"transparent",boxShadow:"none"}:{flex:1,minHeight:0,overflow:"hidden"})}}>
+                {mob ? (
+                  /* ── MOBILE: header compact cu picker nativ ── */
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingHorizontal:4}}>
+                    <button onClick={()=>setCalM(new Date(y,m-1))} style={{width:40,height:40,borderRadius:20,border:"none",background:th.h,color:th.t,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
+                    <div style={{position:"relative",flex:1,textAlign:"center"}}>
+                      <input type="month" value={calMonthVal}
+                        onChange={e=>{
+                          if(!e.target.value) return;
+                          const [ny,nm]=e.target.value.split("-").map(Number);
+                          setCalM(new Date(ny,nm-1));
+                          setCalDateSearch(""); setCalSidebarDate(null);
+                        }}
+                        style={{position:"absolute",inset:0,opacity:0,width:"100%",height:"100%",cursor:"pointer",zIndex:2}}
+                      />
+                      <div style={{fontSize:18,fontWeight:800,color:th.t,letterSpacing:-.3,pointerEvents:"none"}}>
+                        {mn[m]} <span style={{color:th.a}}>{y}</span> <span style={{fontSize:13,opacity:.5}}>▾</span>
+                      </div>
+                    </div>
+                    <button onClick={()=>setCalM(new Date(y,m+1))} style={{width:40,height:40,borderRadius:20,border:"none",background:th.h,color:th.t,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
+                    <button onClick={()=>{const n=new Date();setCalM(new Date(n.getFullYear(),n.getMonth()));setCalDateSearch("");setCalSidebarDate(null);}} style={{height:32,padding:"0 12px",borderRadius:16,border:"none",background:th.ab,color:th.a,fontSize:12,fontWeight:700,cursor:"pointer",marginLeft:4}}>Azi</button>
                   </div>
-                  {calDateSearch&&<button onClick={()=>{setCalDateSearch("");setCalSidebarDate(null);}} style={{...sty.bg,padding:"5px 10px",fontSize:12,color:th.tm}}>✕</button>}
-                  <button onClick={()=>{const n=new Date();setCalM(new Date(n.getFullYear(),n.getMonth()));setCalDateSearch("");setCalSidebarDate(null);}} style={{...sty.bg,padding:"5px 10px",fontSize:12}}>Azi</button>
-                </div>
+                ) : (
+                  /* ── DESKTOP: header cu butoane + search ── */
+                  <>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexShrink:0}}>
+                    <button onClick={()=>setCalM(new Date(y,m-1))} style={{...sty.bg,padding:"6px 12px"}}><IcChevL s={14}/> Înapoi</button>
+                    <h2 style={{fontSize:18,fontWeight:700}}>{mn[m]} {y}</h2>
+                    <button onClick={()=>setCalM(new Date(y,m+1))} style={{...sty.bg,padding:"6px 12px"}}>Înainte <IcChevR s={14}/></button>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexShrink:0}}>
+                    <div style={{position:"relative",flex:1,maxWidth:260}}>
+                      <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:th.tm,pointerEvents:"none"}}><IcSearch s={14}/></span>
+                      <input type="date" value={calDateSearch}
+                        onChange={e=>{const v=e.target.value;setCalDateSearch(v);if(v){const d=new Date(v+"T00:00:00");if(!isNaN(d.getTime())){setCalM(new Date(d.getFullYear(),d.getMonth()));setCalSidebarDate(v);}}else{setCalSidebarDate(null);}}}
+                        style={{...sty.i,width:"100%",paddingLeft:32,paddingRight:10,paddingTop:6,paddingBottom:6,fontSize:13,borderRadius:8}}
+                      />
+                    </div>
+                    {calDateSearch&&<button onClick={()=>{setCalDateSearch("");setCalSidebarDate(null);}} style={{...sty.bg,padding:"5px 10px",fontSize:12,color:th.tm}}>✕</button>}
+                    <button onClick={()=>{const n=new Date();setCalM(new Date(n.getFullYear(),n.getMonth()));setCalDateSearch("");setCalSidebarDate(null);}} style={{...sty.bg,padding:"5px 10px",fontSize:12}}>Azi</button>
+                  </div>
+                  </>
+                )}
                 <div style={mob?{width:"100%",overflow:"visible"}:{flex:1,minHeight:0,overflowY:"auto",overflowX:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
                 <div data-tour="cal-grid" style={{display:"grid",gridTemplateColumns:"repeat(7, minmax(0, 1fr))",gap:mob?2:3,width:"100%",minWidth:mob?0:400}}>
                   {["Lu","Ma","Mi","Jo","Vi","Sâ","Du"].map(d=><div key={d} style={{padding:mob?"5px 1px":"6px 4px",textAlign:"center",fontSize:mob?9:11,color:th.tm,fontWeight:600,borderBottom:`1px solid ${th.b}`,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d}</div>)}
@@ -6486,15 +6579,6 @@ function App() {
                   </div>
                 </div>
                 <div><label style={{...sty.l,display:"block",marginBottom:6}}>Telefon</label><input value={prof.phone||""} onChange={e=>saveMemberProfile(m.id,{...prof,phone:e.target.value})} placeholder="0744 771 488" style={{...sty.i,width:"100%",padding:12}}/></div>
-                <div>
-                  <label style={{...sty.l,display:"block",marginBottom:6}}>Email de login</label>
-                  <input type="email" value={prof.email||""} onChange={e=>saveMemberProfile(m.id,{...prof,email:e.target.value})} placeholder={m.email||"emailul-tau@gmail.com"} style={{...sty.i,width:"100%",padding:12}}/>
-                  <div style={{fontSize:11,color:th.tm,marginTop:6,padding:"8px 10px",background:th.h,borderRadius:6,border:`1px solid ${th.b}`}}>
-                    📧 Acesta este emailul cu care te loghezi în aplicație.
-                    {!(prof.email) && m.email && <span style={{color:"#f59e0b"}}> Momentan folosești emailul implicit: <strong>{m.email}</strong></span>}
-                    {prof.email && <span style={{color:"#22c55e"}}> Emailul tău personal este activ.</span>}
-                  </div>
-                </div>
                 <div>
                   <label style={{...sty.l,display:"block",marginBottom:6}}>Poza de profil</label>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
