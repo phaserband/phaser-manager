@@ -5388,9 +5388,13 @@ function App() {
       closeModal();
       showToast(rs ? `Actualizat! ${rs}` : "Eveniment actualizat!");
       // Sync în background cu Google Calendar
-      if(gcalToken) syncToGCal({...updated,gcalId:mData.gcalId}).then(gcalId=>{
-        if(gcalId) { setEvs(p=>p.map(e=>e.id===mData.id?{...e,gcalId}:e)); showToast("📅 Actualizat în Google Calendar!"); }
-      });
+      // gcalId: ia din evs (state curent) ca să fie sigur că nu e stale
+      if(gcalToken) {
+        const latestEv = evs.find(e=>e.id===mData.id);
+        syncToGCal({...updated, gcalId: latestEv?.gcalId||mData.gcalId}).then(gcalId=>{
+          if(gcalId) { setEvs(p=>p.map(e=>e.id===mData.id?{...e,gcalId}:e)); showToast("📅 Actualizat în Google Calendar!"); }
+        });
+      }
     } else if (directEvent) {
       const nev = {...merged, id:uid(), cr:new Date().toISOString().split("T")[0], videos:dataBody.videos||tplVideosNew, covers:dataBody.covers||tplPlaylist, st: merged.st||"confirmat", offerNr: null};
       setEvs(p=>[...p,nev]); closeModal(); openModal("detail",nev.id);
@@ -5995,10 +5999,6 @@ function App() {
             <div style={{marginBottom:20}}>
               <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px"}}>Docs</h1>
               <p style={{color:th.tm,fontSize:12,marginTop:2}}>Documente, rider, playlist și press kit — template-uri editabile pentru oferte.</p>
-              <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
-                <button onClick={()=>{const blob=new Blob([JSON.stringify({_v:PHASER_V,evs,tasks,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions:loadPressKitVersions(),creative:loadCreative(),songs},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`phaser-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);showToast("Backup exportat");}} style={sty.bg}><IcFile s={14}/> Export JSON</button>
-                <label style={{...sty.bg,cursor:"pointer",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><IcFile s={14}/> Import JSON<input type="file" accept=".json,application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=="object")throw new Error("JSON invalid");if(Array.isArray(d.evs)){setEvs(d.evs);}if(Array.isArray(d.tasks)){setTasks(d.tasks);}if(Array.isArray(d.calBlocks)){setCalBlocks(d.calBlocks);}if(Array.isArray(d.genExp)){setGE(d.genExp);}if(Array.isArray(d.annualCosts)){setAC(d.annualCosts);}if(typeof d.gigsPerYear==="number"&&d.gigsPerYear>0){setGigsPerYear(d.gigsPerYear);}if(d.templates){setTemplates(d.templates);try{localStorage.setItem(LS_KEYS.templates,JSON.stringify(d.templates));}catch(x){}}if(Array.isArray(d.riderVersions)){setRiderVersions(d.riderVersions);try{localStorage.setItem(LS_KEYS.riderVersions,JSON.stringify(d.riderVersions));}catch(x){}}if(Array.isArray(d.pressKitVersions)){setPressKitVersions(d.pressKitVersions);try{localStorage.setItem(LS_KEYS.pressKitVersions,JSON.stringify(d.pressKitVersions));}catch(x){}}if(d.creative){try{localStorage.setItem(LS_KEYS.creative,JSON.stringify(d.creative));}catch(x){}}if(Array.isArray(d.songs)){setSongs(d.songs);}showToast("Date importate");}catch(err){showToast("Eroare: "+(err?.message||String(err)));}e.target.value="";};r.readAsText(f);}}/></label>
-              </div>
             </div>
             <div className={mob?"mob-tab-scroll":""} style={{display:"flex",gap:6,marginBottom:16,flexWrap:mob?"nowrap":"wrap",overflowX:mob?"auto":"visible",paddingBottom:mob?4:0}}>
               {["rider","servicePrices","playlist","media","pressKitPublic"].map(s=>(
