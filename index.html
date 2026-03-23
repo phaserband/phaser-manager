@@ -5131,6 +5131,24 @@ function App() {
     },2000);
   },[evs,tasks,songs,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,playlistVersions,memberProfiles,bandNotifications,aiSettings]);
 
+  // Salvare imediată în Supabase (ocolește debounce-ul de 2s) — folosit la ștergere
+  const saveNow = (overrides={}) => {
+    const client=getSbClient(); if(!client) return;
+    if(syncTimerRef.current) clearTimeout(syncTimerRef.current); // anulează debounce pending
+    const syncData={
+      evs, tasks, songs, calBlocks, genExp, annualCosts, gigsPerYear, templates,
+      riderVersions, pressKitVersions, playlistVersions, memberProfiles,
+      bandNotifications, aiSettings,
+      creative:loadCreative(),
+      _ts:Date.now(),
+      ...overrides
+    };
+    setSyncStatus("syncing");
+    client.from("app_data").upsert({id:"phaser_main",data:syncData,updated_at:new Date().toISOString()},{onConflict:"id"})
+      .then(({error})=>{ setSyncStatus(error?"error":"synced"); if(error) setSyncErrorMsg(error.message||""); })
+      .catch(err=>{ setSyncStatus("error"); setSyncErrorMsg(err?.message||String(err)); });
+  };
+
   // ─── GOOGLE CALENDAR STATE ───
   const [gcalToken, setGcalToken] = useState(() => {
     const t = localStorage.getItem(GCAL_LS_TOKEN);
@@ -5150,10 +5168,15 @@ function App() {
   };
 
   // Încearcă silent refresh — fără popup, fără prompt
+  const gcalSilentTimerRef = useRef(null);
   const trySilentRefresh = () => {
     if(gcalSilentRef.current) return;
     if(!tokenClientRef.current) return;
     gcalSilentRef.current = true;
+    // Timeout de siguranță: dacă Google nu cheamă niciun callback (refuz silențios),
+    // resetăm flagul după 10s ca să permitem reîncercări viitoare
+    if(gcalSilentTimerRef.current) clearTimeout(gcalSilentTimerRef.current);
+    gcalSilentTimerRef.current = setTimeout(() => { gcalSilentRef.current = false; }, 10000);
     try {
       tokenClientRef.current.requestAccessToken({ prompt: "" });
     } catch(e) { gcalSilentRef.current = false; }
@@ -5167,6 +5190,7 @@ function App() {
         scope: GCAL_SCOPE,
         callback: (resp) => {
           gcalSilentRef.current = false;
+          if(gcalSilentTimerRef.current) { clearTimeout(gcalSilentTimerRef.current); gcalSilentTimerRef.current=null; }
           if (resp.access_token) {
             const exp = Date.now() + (resp.expires_in - 60) * 1000;
             localStorage.setItem(GCAL_LS_TOKEN, resp.access_token);
@@ -5187,7 +5211,7 @@ function App() {
             if(!pending.length) showToast("📅 Google Calendar conectat!");
           }
         },
-        error_callback: () => { gcalSilentRef.current = false; }
+        error_callback: () => { gcalSilentRef.current = false; if(gcalSilentTimerRef.current){clearTimeout(gcalSilentTimerRef.current);gcalSilentTimerRef.current=null;} }
       });
       // La pornire: încearcă să încarce token din cloud dacă local e expirat
       const localT = localStorage.getItem(GCAL_LS_TOKEN);
@@ -5202,12 +5226,14 @@ function App() {
               localStorage.setItem(GCAL_LS_EXPIRY, String(row.data.exp));
               setGcalToken(row.data.token);
             } else {
-              // Token cloud expirat — silent refresh
+              // Token cloud expirat — silent refresh + retry dacă primul eșuează silențios
               setTimeout(trySilentRefresh, 1500);
+              setTimeout(() => { if(!localStorage.getItem(GCAL_LS_TOKEN) || parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0") <= Date.now()) trySilentRefresh(); }, 13000);
             }
           });
         } else {
           setTimeout(trySilentRefresh, 1500);
+          setTimeout(() => { if(!localStorage.getItem(GCAL_LS_TOKEN) || parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0") <= Date.now()) trySilentRefresh(); }, 13000);
         }
       }
     };
@@ -5423,7 +5449,10 @@ function App() {
       }
     }
     const storageErr = await deleteStoredHtmlPagesForEventIds([id]);
-    setEvs(p=>p.filter(e=>e.id!==id));
+    const newEvs = evs.filter(e=>e.id!==id);
+    setEvs(newEvs);
+    // Salvare imediată — nu așteptăm debounce-ul de 2s ca să nu revină la refresh
+    saveNow({ evs: newEvs });
     closeModal();
     if (storageErr) {
       showToast("Oferta e ștearsă local, dar fișierul din Supabase Storage nu: " + storageErr + ". Rulează în SQL Editor politica fisa_public_delete din supabase-fix-fisa-rls.sql", "error");
@@ -6611,7 +6640,7 @@ function App() {
                       <div style={{fontSize:13,fontWeight:700}}>{b.tentative?<span style={{color:"#f59e0b"}}>? </span>:null}Ocupat: {mem?.short||mem?.n||"?"}</div>
                       {b.note?<div style={{fontSize:11,color:th.tm,marginTop:4,whiteSpace:"pre-wrap"}}>{b.note}</div>:null}
                       <div style={{fontSize:10,color:th.tm,marginTop:6}}>Apasă pentru detalii / ștergere</div>
-                      <button type="button" onClick={(e)=>{e.stopPropagation();if(gcalToken&&b.gcalId)deleteFromGCal(b.gcalId);setCalBlocks(prev=>(prev||[]).filter(x=>x.id!==b.id));}} style={{marginTop:8,padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${th.b}`,background:"transparent",color:"#ef4444",cursor:"pointer"}}>Șterge rapid</button>
+                      <button type="button" onClick={(e)=>{e.stopPropagation();if(gcalToken&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});}} style={{marginTop:8,padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${th.b}`,background:"transparent",color:"#ef4444",cursor:"pointer"}}>Șterge rapid</button>
                     </div>;
                   })}
                 </div>
@@ -7204,7 +7233,7 @@ function App() {
                 Încă neconfirmat (?) — linie întreruptă în calendar
               </label>
               <div style={{display:"flex",flexDirection:mob?"column":"row",gap:10,marginTop:8}}>
-                <button type="button" onClick={()=>{if(gcalToken&&b.gcalId)deleteFromGCal(b.gcalId);setCalBlocks(prev=>(prev||[]).filter(x=>x.id!==b.id));closeModal();showToast("Ocupare ștearsă");}} style={{flex:1,padding:"12px 16px",borderRadius:10,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",fontWeight:600,cursor:"pointer",fontSize:13}}>Șterge ocupare</button>
+                <button type="button" onClick={()=>{if(gcalToken&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});closeModal();showToast("Ocupare ștearsă");}} style={{flex:1,padding:"12px 16px",borderRadius:10,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",fontWeight:600,cursor:"pointer",fontSize:13}}>Șterge ocupare</button>
                 <button type="button" onClick={closeModal} style={{...sty.b,flex:1,padding:"12px 16px",fontSize:13}}>Închide</button>
               </div>
             </div>
