@@ -5196,7 +5196,8 @@ function App() {
     if(gcalSilentTimerRef.current) clearTimeout(gcalSilentTimerRef.current);
     gcalSilentTimerRef.current = setTimeout(() => { gcalSilentRef.current = false; }, 10000);
     try {
-      tokenClientRef.current.requestAccessToken({ prompt: "" });
+      // `prompt: "none"` = Google încearcă fără UI (silent) și folosește tokenurile existente.
+      tokenClientRef.current.requestAccessToken({ prompt: "none", include_granted_scopes: true });
     } catch(e) { gcalSilentRef.current = false; }
   };
 
@@ -5269,7 +5270,10 @@ function App() {
   }, [gcalToken]);
 
   const connectGCal = () => {
-    if (tokenClientRef.current) tokenClientRef.current.requestAccessToken({ prompt: "consent" });
+    if (tokenClientRef.current) {
+      // Cerem acces offline ca să avem refresh token / reînnoire fără a cere din nou consimțământ la fiecare refresh.
+      tokenClientRef.current.requestAccessToken({ prompt: "consent", access_type: "offline", include_granted_scopes: true });
+    }
     else showToast("Google API nu s-a încărcat încă, încearcă din nou");
   };
 
