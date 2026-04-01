@@ -64,7 +64,10 @@ DROP POLICY IF EXISTS "member_profiles_update" ON member_profiles;
 CREATE POLICY "member_profiles_update" ON member_profiles
   FOR UPDATE USING (
     auth.uid() = user_id
-    OR (SELECT email FROM auth.users WHERE id = auth.uid()) = 'raczradurr@gmail.com'
+    OR lower((SELECT email FROM auth.users WHERE id = auth.uid())) IN (
+      'raczradurr@gmail.com',
+      'contact@phaser.ro'
+    )
   );
 
 -- ─────────────────────────────────────────────

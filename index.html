@@ -9,9 +9,13 @@
   <title>Phaser Manager</title>
   <link rel="icon" type="image/png" href="assets/logo.png"/>
   <script>
-    // ─── PIN GATE ───────────────────────────────────────────────────────────────
+    // ─── PIN GATE (opțional) ───────────────────────────────────────────────────
+    // Lasă gol "" = fără ecran PIN (recomandat: protejează manager.phaser.ro cu Cloudflare Access).
+    // Dacă pui un PIN aici, nu-l comita în Git — folosește doar în copia deployată sau injectează din Worker.
     (function(){
-      var PIN = "0803";
+      var PHASER_ACCESS_PIN = "";
+      if (!PHASER_ACCESS_PIN || String(PHASER_ACCESS_PIN).trim() === "") return;
+      var PIN = String(PHASER_ACCESS_PIN).trim();
       var KEY = "phaser_pin_ok";
       if(sessionStorage.getItem(KEY) === "1") return;
       document.addEventListener("DOMContentLoaded", function(){
@@ -19,8 +23,7 @@
         overlay.id = "pin-gate";
         overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:#09090b;display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:system-ui,sans-serif";
         overlay.innerHTML = [
-          '<img src="assets/logo.png" style="width:160px;height:auto;margin-bottom:20px;" onerror="this.style.display=\'none\'"/>',
-          '<div style="font-size:20px;font-weight:800;color:#fff;margin-bottom:6px">Phaser Manager</div>',
+          '<img src="assets/logo.png" style="width:160px;height:auto;margin-bottom:28px;" onerror="this.style.display=\'none\'"/>',
           '<div style="font-size:13px;color:#71717a;margin-bottom:28px">Introdu PIN-ul pentru acces</div>',
           '<div style="display:flex;gap:10px;margin-bottom:16px">',
             '<input id="pin-inp" type="password" inputmode="numeric" maxlength="6" placeholder="••••" style="padding:12px 18px;font-size:20px;letter-spacing:8px;border-radius:12px;border:2px solid #27272a;background:#18181b;color:#fff;outline:none;width:140px;text-align:center;transition:border .2s"/>',
@@ -491,7 +494,8 @@ const FISA_EXTRA_TYPES = [
 ];
 
 // ─── AI CONFIG ───
-const CLAUDE_API_KEY = "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";
+// Niciodată chei API în repo — doar în Setări AI (widget 🤖) sau variabile injectate la deploy.
+const CLAUDE_API_KEY = "";
 
 // ─── GOOGLE CALENDAR CONFIG ───
 const GCAL_CLIENT_ID = "166600809896-bkch0s9678ahv7l9fofe0ti47btc4pum.apps.googleusercontent.com";
@@ -554,6 +558,8 @@ const MEMBERS = [
   {id:"m5",n:"Sebastian Bârzeianu",short:"Sebi",r:"Chitară",email:"sebi@phaser.ro",emoji:"🎸"}
 ];
 const LS_SESSION_MEMBER = "phaser_session_member";
+/** Emailuri cu drepturi admin în app (tab Cont → cereri acces). */
+const PHASER_ADMIN_EMAILS = ["raczradurr@gmail.com", "contact@phaser.ro"].map(e => e.trim().toLowerCase());
 const sessionUserFromStorage = () => {
   try {
     const mid = localStorage.getItem(LS_SESSION_MEMBER);
@@ -563,6 +569,28 @@ const sessionUserFromStorage = () => {
     return { id: mid, n: m.short || m.n.split(" ")[0], rl: "membru", memberId: mid };
   } catch (e) { return null; }
 };
+const buildBandUser = (m, email, forceAdmin) => {
+  const em = (email || "").toLowerCase();
+  const isAdmin = !!forceAdmin || PHASER_ADMIN_EMAILS.includes(em);
+  return { id: m.id, n: m.short || m.n.split(" ")[0], rl: isAdmin ? "admin" : "membru", memberId: m.id };
+};
+/** După login Supabase: potrivește email cu MEMBERS sau profil aprobat + band_member_id. */
+async function resolveBandUserAfterAuth(session, sb) {
+  const email = session?.user?.email?.trim().toLowerCase();
+  if (!email || !sb) return { ok: false, gate: "unknown" };
+  const m = MEMBERS.find(x => (x.email || "").toLowerCase() === email);
+  if (m) return { ok: true, user: buildBandUser(m, email, false) };
+  const { data: prof, error } = await sb.from("member_profiles").select("status,band_member_id,role").eq("user_id", session.user.id).maybeSingle();
+  if (error) console.error("[resolveBandUser]", error);
+  if (!prof) return { ok: false, gate: "unknown" };
+  if (prof.status === "pending") return { ok: false, gate: "pending" };
+  if (prof.status === "rejected") return { ok: false, gate: "rejected" };
+  if (prof.status === "approved" && prof.band_member_id) {
+    const m2 = MEMBERS.find(x => x.id === prof.band_member_id);
+    if (m2) return { ok: true, user: buildBandUser(m2, email, prof.role === "admin") };
+  }
+  return { ok: false, gate: "unknown" };
+}
 const SPLIT_PRIVATE = {m1:24,m2:19,m3:19,m4:19,m5:19}; // Carina 24%, restul 19% fiecare
 const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100}; // lei
 const CURS_DEFAULT = 5; // 1€ = 5 lei
@@ -709,7 +737,14 @@ const getSbClient = () => {
   try {
     const fn = typeof createClient !== "undefined" ? createClient : (window.supabase?.createClient);
     if (!fn || !SUPABASE_CFG.url || !SUPABASE_CFG.key) return null;
-    _sbClient = fn(SUPABASE_CFG.url, SUPABASE_CFG.key);
+    _sbClient = fn(SUPABASE_CFG.url, SUPABASE_CFG.key, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce",
+      },
+    });
     return _sbClient;
   } catch(e) { return null; }
 };
@@ -5154,7 +5189,20 @@ function AIChatWidget(props) {
 function App() {
   const [themeMode, setThemeMode] = useState(gTheme());
   const [systemTheme, setSystemTheme] = useState(getSystemTheme);
-  const [user, setUser]   = useState(() => sessionUserFromStorage());
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [sbSession, setSbSession] = useState(null);
+  const [authResolved, setAuthResolved] = useState(undefined);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authErr, setAuthErr] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPw, setLoginPw] = useState("");
+  const [authView, setAuthView] = useState("login");
+  const [regPre, setRegPre] = useState("");
+  const [regNume, setRegNume] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPw, setRegPw] = useState("");
+  const [approveMidByProfile, setApproveMidByProfile] = useState({});
   const [sbMode, setSbMode] = useState("full");
   const [tab, setTab]     = useState("acasa");
   const [evs, setEvs]     = useLocalStorageState(LS_KEYS.evs, loadEvs);
@@ -5270,6 +5318,95 @@ function App() {
   const [syncErrorMsg, setSyncErrorMsg] = useState("");
   const syncTimerRef = useRef(null);
   const initialSyncDoneRef = useRef(false);
+  const canCloudSync = authReady && !!sbSession && authResolved && !authResolved.pending && authResolved.ok === true;
+
+  useEffect(() => {
+    const sb = getSbClient();
+    if (!sb) {
+      setAuthReady(true);
+      setSbSession(null);
+      return;
+    }
+    sb.auth.getSession().then(({ data: { session } }) => {
+      setSbSession(session);
+      setAuthReady(true);
+    });
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+      setSbSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    const sb = getSbClient();
+    if (!sbSession) {
+      setAuthResolved(null);
+      setUser(null);
+      initialSyncDoneRef.current = false;
+      try { localStorage.removeItem(LS_SESSION_MEMBER); } catch (e) {}
+      return;
+    }
+    let cancelled = false;
+    setAuthResolved({ pending: true });
+    resolveBandUserAfterAuth(sbSession, sb).then((r) => {
+      if (cancelled) return;
+      setAuthResolved(r);
+      if (r.ok && r.user) {
+        setUser(r.user);
+        try { localStorage.setItem(LS_SESSION_MEMBER, r.user.memberId); } catch (e) {}
+      } else {
+        setUser(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [authReady, sbSession]);
+
+  const doAuthLogin = async (e) => {
+    e?.preventDefault?.();
+    setAuthErr("");
+    const sb = getSbClient();
+    if (!sb) { setAuthErr("Supabase nu e configurat."); return; }
+    setAuthBusy(true);
+    const { error } = await sb.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPw });
+    setAuthBusy(false);
+    if (error) { setAuthErr(error.message || "Autentificare eșuată"); return; }
+    setLoginPw("");
+  };
+  const doAuthLogout = async () => {
+    try { localStorage.removeItem(LS_SESSION_MEMBER); } catch (e) {}
+    setUser(null);
+    const sb = getSbClient();
+    if (sb) await sb.auth.signOut();
+  };
+  const doAuthRegister = async (e) => {
+    e?.preventDefault?.();
+    setAuthErr("");
+    const sb = getSbClient();
+    if (!sb) return;
+    if (!regPre.trim() || !regNume.trim()) { setAuthErr("Completează prenume și nume."); return; }
+    setAuthBusy(true);
+    const email = regEmail.trim().toLowerCase();
+    const { data, error } = await sb.auth.signUp({ email, password: regPw });
+    if (error) { setAuthBusy(false); setAuthErr(error.message); return; }
+    if (data.user) {
+      await sb.from("member_profiles").insert({
+        user_id: data.user.id,
+        prenume: regPre.trim(),
+        nume: regNume.trim(),
+        email,
+        status: "pending",
+        role: "membru",
+      });
+    }
+    setAuthBusy(false);
+    setAuthView("login");
+    showToast("Cont creat — așteaptă aprobarea adminului, apoi autentifică-te.");
+    setRegPw("");
+    setRegEmail("");
+    setRegPre("");
+    setRegNume("");
+  };
 
   // ─── BACKUP STATE ───
   const [backups, setBackups] = useState([]);
@@ -5353,10 +5490,14 @@ function App() {
     loadBackupsList();
   };
 
-  // La pornire: ÎNTOTDEAUNA încarcă din Supabase (sursa de adevăr)
+  // La pornire: încarcă din Supabase doar după login + rezolvare membru (JWT valid)
   useEffect(()=>{
+    if (!canCloudSync) {
+      if (!sbSession) initialSyncDoneRef.current = false;
+      return;
+    }
     const client = getSbClient();
-    if(!client) return;
+    if(!client) { initialSyncDoneRef.current = true; return; }
     setSyncStatus("syncing");
     setSyncErrorMsg("");
     client.from("app_data").select("data").eq("id","phaser_main").maybeSingle()
@@ -5406,12 +5547,12 @@ function App() {
         setSyncStatus("error");
         initialSyncDoneRef.current = true;
       });
-  },[]);
+  },[canCloudSync, sbSession?.user?.id]);
 
   // La orice modificare: salvează în Supabase (debounced 2s)
   // Nu salva înainte ca sync-ul inițial să fi terminat (evită suprascrierea datelor remote)
   useEffect(()=>{
-    if(!initialSyncDoneRef.current) return;
+    if(!initialSyncDoneRef.current || !canCloudSync) return;
     if(syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current=setTimeout(()=>{
       const client=getSbClient();
@@ -5442,10 +5583,11 @@ function App() {
           setSyncStatus("error");
         });
     },2000);
-  },[evs,tasks,songs,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,playlistVersions,memberProfiles,bandNotifications,aiSettings]);
+  },[canCloudSync,evs,tasks,songs,calBlocks,genExp,annualCosts,gigsPerYear,templates,riderVersions,pressKitVersions,playlistVersions,memberProfiles,bandNotifications,aiSettings]);
 
   // Salvare imediată în Supabase (ocolește debounce-ul de 2s) — folosit la ștergere
   const saveNow = (overrides={}) => {
+    if (!canCloudSync) return;
     const client=getSbClient(); if(!client) return;
     if(syncTimerRef.current) clearTimeout(syncTimerRef.current); // anulează debounce pending
     const syncData={
@@ -6090,35 +6232,77 @@ function App() {
   ];
 
   const sbW = mob ? 0 : (sbMode==="full"?220:56);
+  const authShell = { minHeight:"100vh", fontFamily:"'Inter',system-ui,sans-serif", background:"#0c0c0c", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 28px", gap:20 };
 
-  if(!user) {
-    const pickMember = (mid) => {
-      const m = MEMBERS.find(x => x.id === mid);
-      if (!m) return;
-      try { localStorage.setItem(LS_SESSION_MEMBER, mid); } catch (e) {}
-      setUser({ id: mid, n: m.short || m.n.split(" ")[0], rl: "membru", memberId: mid });
-    };
-    const aB = {minHeight:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:"#0c0c0c",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",gap:24};
+  if (!authReady) {
     return (
-      <div style={aB}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}`}</style>
-        <div style={{animation:"up .5s ease",textAlign:"center"}}>
-          <img src={LOGO_URL} alt="PHASER" style={{width:220,display:"block",margin:"0 auto"}}/>
-          <div style={{fontSize:9,color:"#666",letterSpacing:4,textTransform:"uppercase",marginTop:16}}>Band Manager</div>
-        </div>
-        <div style={{width:40,height:1,background:"#222"}}/>
-        <div style={{width:"100%",maxWidth:360,animation:"up .4s ease .08s both"}}>
-          <div style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:2,marginBottom:14,textAlign:"center"}}>Cine folosește aplicația?</div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {[...MEMBERS].sort((a,b)=>a.short.localeCompare(b.short,"ro")).map(m => (
-              <button key={m.id} type="button" onClick={()=>pickMember(m.id)} style={{width:"100%",padding:"18px 20px",background:"#161616",color:"#fff",border:"1px solid #303030",borderRadius:12,fontSize:16,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",letterSpacing:.2}}>
-                <span style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:22}} aria-hidden>{m.emoji||"🎵"}</span> {m.short}</span>
-                <span style={{fontSize:12,color:"#666",fontWeight:500}}>{m.r}</span>
-              </button>
-            ))}
-          </div>
-          <p style={{fontSize:11,color:"#555",textAlign:"center",marginTop:20,lineHeight:1.6}}>Datele sunt comune pentru trupă. Notificările pentru task-uri apar în <strong style={{color:"#888"}}>Contul meu</strong> pentru membrul desemnat.</p>
-        </div>
+      <div style={authShell}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');`}</style>
+        <div style={{color:"#888",fontSize:14}}>Se încarcă…</div>
+      </div>
+    );
+  }
+  if (!getSbClient()) {
+    return (
+      <div style={authShell}>
+        <div style={{color:"#fca5a5",fontSize:14,maxWidth:360,textAlign:"center"}}>Lipsește configurarea Supabase (URL / cheie) în index.html.</div>
+      </div>
+    );
+  }
+  if (!sbSession) {
+    return (
+      <div style={authShell}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}`}</style>
+        <img src={LOGO_URL} alt="PHASER" style={{width:200,marginBottom:8}}/>
+        {authView==="login" ? (
+          <form onSubmit={doAuthLogin} style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:13,color:"#888",marginBottom:4}}>Autentificare — același email ca în lista trupei (sau cont aprobat).</div>
+            <input type="email" autoComplete="email" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} placeholder="Email" required style={{padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+            <input type="password" autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parolă" required style={{padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+            {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
+            <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Intră"}</button>
+            <button type="button" onClick={()=>{setAuthView("signup");setAuthErr("");}} style={{background:"transparent",border:"none",color:"#737373",fontSize:12,cursor:"pointer"}}>Cont nou (așteaptă aprobare)</button>
+          </form>
+        ) : (
+          <form onSubmit={doAuthRegister} style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:13,color:"#888"}}>Înregistrare — adminul te aprobă și te leagă de un membru.</div>
+            <input value={regPre} onChange={e=>setRegPre(e.target.value)} placeholder="Prenume" required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
+            <input value={regNume} onChange={e=>setRegNume(e.target.value)} placeholder="Nume" required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
+            <input type="email" value={regEmail} onChange={e=>setRegEmail(e.target.value)} placeholder="Email" required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
+            <input type="password" value={regPw} onChange={e=>setRegPw(e.target.value)} placeholder="Parolă (min. 6 caractere)" minLength={6} required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
+            {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
+            <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"#22c55e",color:"#000",fontWeight:800,fontSize:14,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Creează cont"}</button>
+            <button type="button" onClick={()=>{setAuthView("login");setAuthErr("");}} style={{background:"transparent",border:"none",color:"#737373",fontSize:12,cursor:"pointer"}}>← Am deja cont</button>
+          </form>
+        )}
+      </div>
+    );
+  }
+  if (!authResolved || authResolved.pending) {
+    return (
+      <div style={authShell}>
+        <div style={{color:"#888",fontSize:14}}>Verific accesul…</div>
+      </div>
+    );
+  }
+  if (!authResolved.ok) {
+    const g = authResolved.gate;
+    return (
+      <div style={authShell}>
+        <img src={LOGO_URL} alt="" style={{width:160,marginBottom:12}}/>
+        {g==="pending" && <>
+          <p style={{color:"#e5e5e5",fontSize:15,textAlign:"center",maxWidth:340,lineHeight:1.5}}>Contul tău așteaptă <strong style={{color:"#f59e0b"}}>aprobare</strong> de la admin. Vei primi acces după ce ești legat de un membru din trupă.</p>
+        </>}
+        {g==="rejected" && <p style={{color:"#f87171",fontSize:15,textAlign:"center",maxWidth:340}}>Cererea ta a fost respinsă.</p>}
+        {g==="unknown" && <p style={{color:"#a3a3a3",fontSize:14,textAlign:"center",maxWidth:360,lineHeight:1.6}}>Acest email nu e recunoscut. Folosește același email ca în lista oficială a trupei sau cere unui admin să îți aprobe contul și să te asocieze cu un membru.</p>}
+        <button type="button" onClick={doAuthLogout} style={{marginTop:8,padding:"12px 24px",borderRadius:10,border:"1px solid #444",background:"transparent",color:"#fff",cursor:"pointer",fontSize:13}}>Deconectare</button>
+      </div>
+    );
+  }
+  if (!user) {
+    return (
+      <div style={authShell}>
+        <div style={{color:"#888",fontSize:14}}>Se pregătește sesiunea…</div>
       </div>
     );
   }
@@ -6182,8 +6366,8 @@ function App() {
           </button>
         </div>
         <div style={{padding:"8px 12px 14px",display:"flex",flexDirection:"column",gap:4}}>
-          <button onClick={()=>{ try{localStorage.removeItem(LS_SESSION_MEMBER);}catch(e){} setUser(null); }} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
-            <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · schimbă membru</span>}
+          <button onClick={doAuthLogout} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
+            <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · ieșire</span>}
           </button>
           {/* Sync status — bulinuță subtilă */}
           <div title={syncStatus==="synced"?"Date sincronizate în cloud":syncStatus==="syncing"?"Se sincronizează...":syncStatus==="error"?(syncErrorMsg||"Eroare sincronizare"):"Așteptând..."} style={{display:"flex",alignItems:"center",gap:6,padding:"2px 14px 8px"}}>
@@ -6203,10 +6387,10 @@ function App() {
             <span className="nav-lbl" style={{opacity:tab===it.id?1:.5}}>{it.l}</span>
           </button>
         ))}
-        <button className="mob-bottom-nav-btn" onClick={()=>{ try{localStorage.removeItem(LS_SESSION_MEMBER);}catch(e){} setUser(null); }}
+        <button className="mob-bottom-nav-btn" onClick={doAuthLogout}
           style={{color:th.sbt}}>
           <IcOut s={21}/>
-          <span className="nav-lbl" style={{opacity:.45}}>Cont</span>
+          <span className="nav-lbl" style={{opacity:.45}}>Ieșire</span>
         </button>
       </nav>
 
@@ -7325,7 +7509,10 @@ function App() {
             }
             const approve = async (profileId) => {
               const sb = getSbClient(); if(!sb) return;
-              await sb.from("member_profiles").update({status:"approved"}).eq("id",profileId);
+              const mid = approveMidByProfile[profileId] || "";
+              if (!mid) { showToast("Alege «Membru trupă» înainte de aprobare.", "error"); return; }
+              const { error } = await sb.from("member_profiles").update({ status: "approved", band_member_id: mid }).eq("id", profileId);
+              if (error) { showToast(error.message || "Eroare aprobare", "error"); return; }
               setPendingRequests(p=>p.filter(r=>r.id!==profileId));
               showToast("Utilizator aprobat ✓");
             };
@@ -7348,7 +7535,11 @@ function App() {
                       <div style={{fontSize:12,color:th.tm}}>{r.email}</div>
                       <div style={{fontSize:11,color:"#555",marginTop:2}}>{r.role} · {new Date(r.created_at).toLocaleDateString("ro-RO")}</div>
                     </div>
-                    <div style={{display:"flex",gap:8}}>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+                      <select value={approveMidByProfile[r.id] || ""} onChange={e=>setApproveMidByProfile(p=>({...p,[r.id]:e.target.value}))} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:12,minWidth:140}}>
+                        <option value="">— Membru trupă —</option>
+                        {MEMBERS.map(m=><option key={m.id} value={m.id}>{m.short} · {m.r}</option>)}
+                      </select>
                       <button onClick={()=>approve(r.id)} style={{padding:"6px 14px",background:"#22c55e",color:"#000",border:"none",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer"}}>✓ Aprobă</button>
                       <button onClick={()=>reject(r.id)} style={{padding:"6px 14px",background:"transparent",color:"#ef4444",border:"1px solid #ef4444",borderRadius:7,fontSize:12,cursor:"pointer"}}>✕ Respinge</button>
                     </div>
