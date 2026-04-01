@@ -652,8 +652,8 @@ const RIDER_TEHNIC = {
 // ═══════════════════════════════════════════════════════════════════════════════
 const PHASER_V = 3;
 const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genExp", annualCosts: "phaser_annualCosts", gigsPerYear: "phaser_gigsPerYear", templates: "phaser_templates", riderVersions: "phaser_rider_versions", pressKitVersions: "phaser_presskit_versions", playlistVersions: "phaser_playlist_versions", creative: "phaser_creative", memberProfiles: "phaser_member_profiles", bandNotifications: "phaser_band_notifications", calBlocks: "phaser_cal_blocks", songs: "phaser_songs" };
-const SUPABASE_URL = "https://qtiosqtcrqgmlkwcrnpu.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aW9zcXRjcnFnbWxrd2NybnB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNTY2MzEsImV4cCI6MjA4ODkzMjYzMX0.VR4MZArOnsc-DuLF3H3ZH-0PyfnBANyMiv8i31vxBnA";
+const SUPABASE_URL = "https://uhekoixrvyoascchdwrp.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_CZnkBOE7AnfAai9j-UVatQ_gKEPMurS";
 const SUPABASE_CFG = (()=>{ try { const s=localStorage.getItem("phaser_supabase_cfg"); const fromLs=s?JSON.parse(s):{}; return { url: fromLs.url||SUPABASE_URL, key: fromLs.key||SUPABASE_ANON_KEY }; } catch(e){ return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY }; } })();
 // Singleton client Supabase — necesar pentru Auth (sesiuni persistente)
 let _sbClient = null;

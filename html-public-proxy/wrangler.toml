@@ -4,4 +4,4 @@ compatibility_date = "2024-12-01"
 
 # Înlocuiește cu URL-ul tău: https://PROJECT.supabase.co/storage/v1/object/public/fisa-public
 [vars]
-SUPABASE_PUBLIC_OBJECT_BASE = "https://qtiosqtcrqgmlkwcrnpu.supabase.co/storage/v1/object/public/fisa-public"
+SUPABASE_PUBLIC_OBJECT_BASE = "https://uhekoixrvyoascchdwrp.supabase.co/storage/v1/object/public/fisa-public"
