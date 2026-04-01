@@ -192,10 +192,10 @@ const buildShareableHtmlPublicUrl = (sb, objectPath) => {
   const { data } = sb.storage.from(FISA_PUBLIC_BUCKET).getPublicUrl(p);
   return data?.publicUrl || "";
 };
-const generatePdfFromHtml = async (html) => {
+const generatePdfFromHtml = async (html, timeoutMs) => {
   if (!PDF_WORKER_URL || !PDF_WORKER_URL.startsWith("http") || !html) return null;
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 5000);
+  const t = setTimeout(() => ctrl.abort(), typeof timeoutMs === "number" ? timeoutMs : 5000);
   const res = await fetch(PDF_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ html, baseUrl: window.location.origin + "/" }), signal: ctrl.signal });
   clearTimeout(t);
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || err.details || "Eroare Worker"); }
@@ -706,6 +706,33 @@ const PK_IMG_OFERTA_PUBLIC_HEAD = "assets/Poza Oferta Public Header.jpg"; // hea
 const PK_IMG_PRIVAT_HEAD = "assets/Poza Presskit Privat.jpg";
 const PK_IMG_OFERTA_PRIVAT_ZGV = "assets/poza oferta private za good vibes.jpg"; // imagine top ofertă privată
 const ZGV_LOGO = "assets/logo za good vibes.png";
+/** Fișier unic în Storage pentru link public (ca ofertele) — același URL, upsert la fiecare publicare */
+const PLAYLIST_COVERS_PUBLIC_FILE = "playlist-covers.html";
+/** HTML pentru PDF + pagină publică „Phaser Playlist Covers” */
+const buildPlaylistCoversInnerHtml = (pl) => {
+  const list = Array.isArray(pl) ? pl : [];
+  const esc = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const base = typeof window !== "undefined" && window.location?.href ? window.location.href.replace(/#.*$/,"") : "";
+  const imgZgv = (() => { try { return new URL(ZGV_LOGO, base).href; } catch(e) { return ZGV_LOGO; } })();
+  const imgPhaser = (() => { try { return new URL(LOGO_URL, base).href; } catch(e) { return LOGO_URL; } })();
+  const rows = list.length
+    ? list.map((c,i) => `<tr style="border-bottom:1px solid #f0f0f0;page-break-inside:avoid;break-inside:avoid;"><td style="padding:7px 12px;font-size:12px;color:#888;width:32px;text-align:right;font-weight:500;">${i+1}</td><td style="padding:7px 14px 7px 8px;font-size:13px;font-weight:600;color:#111;">${esc(c.title)}</td><td style="padding:7px 14px 7px 4px;font-size:12px;color:#555;">${esc(c.artist)}</td></tr>`).join("")
+    : `<tr><td colspan="3" style="padding:20px;text-align:center;color:#888;">(nici o piesă)</td></tr>`;
+  return `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;background:#fff;padding:0;box-sizing:border-box;">
+      <div style="background:linear-gradient(135deg,#1a1510 0%,#2d2419 100%);padding:14px 22px;display:flex;align-items:center;justify-content:space-between;border-radius:12px 12px 0 0;">
+        <img src="${imgZgv}" alt="" style="height:36px;object-fit:contain;filter:brightness(0) invert(1);" onerror="this.style.display='none'"/>
+        <div style="text-align:center;flex:1;">
+          <div style="font-size:8px;font-weight:700;color:rgba(251,191,36,.85);letter-spacing:2px;text-transform:uppercase;">Phaser</div>
+          <div style="font-size:17px;font-weight:800;color:#fff;letter-spacing:1px;text-transform:uppercase;line-height:1.2;">Playlist Covers</div>
+        </div>
+        <img src="${imgPhaser}" alt="" style="height:26px;object-fit:contain;filter:brightness(0) invert(1);" onerror="this.style.display='none'"/>
+      </div>
+      <div style="background:#fff;border-radius:0 0 12px 12px;border:1px solid #e8e8e8;border-top:none;overflow:visible;">
+        <table style="width:100%;border-collapse:collapse;">${rows}</table>
+        <div style="padding:10px 14px;border-top:2px solid #f5f5f5;text-align:right;font-size:10px;color:#aaa;">${list.length} piese · PHASER © ${new Date().getFullYear()}</div>
+      </div>
+    </div>`;
+};
 
 // Press Kit Public — structură editabilă pentru oferta publică (festivaluri, concerte)
 const DEFAULT_PRESS_KIT_PUBLIC = {
@@ -1391,18 +1418,82 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
         {memberFilter&&<button type="button" onClick={()=>setMemberFilter("")} style={{...sty.bg,padding:"8px 14px",fontSize:12}}>Arată pe toți</button>}
       </div>}
 
-      <div style={{display:"flex",gap:8,marginBottom:20,alignItems:"center"}}>
-        <input value={newText} onChange={e=>setNewText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
-          style={{...sty.i,flex:1,padding:"12px 16px",fontSize:15,borderRadius:10,border:`1.5px solid ${th.bl}`}} placeholder="Task nou — scrie și apasă Enter"/>
-        {!compact&&<select value={newAssignee} onChange={e=>setNewAssignee(e.target.value)} className="modernSel" style={{...sty.i,padding:"12px 28px 12px 12px",fontSize:13,borderRadius:10,border:`1.5px solid ${th.bl}`,minWidth:mob?80:110}} title="Desemnează">
-          <option value="">@ —</option>
-          {MEMBERS.map(m=><option key={m.id} value={m.id}>{m.e} {m.short}</option>)}
-        </select>}
-        {!compact&&<select value={newPrio} onChange={e=>setNewPrio(e.target.value)} className="modernSel" style={{...sty.i,padding:"12px 28px 12px 12px",fontSize:13,borderRadius:10,border:`1.5px solid ${th.bl}`,minWidth:mob?70:100}}>
-          <option value="high">🔴</option><option value="medium">🟡</option><option value="low">🟢</option>
-        </select>}
-        <button onClick={add} style={{...sty.b,padding:"12px 18px",flexShrink:0,borderRadius:10,fontWeight:600,fontSize:14}}><IcPlus s={16}/></button>
-      </div>
+      {compact ? (
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+          <input value={newText} onChange={e=>setNewText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
+            style={{...sty.i,width:"100%",padding:"12px 14px",fontSize:15,borderRadius:12,border:`1px solid ${th.bl}`}} placeholder="Task nou — Enter pentru a adăuga"/>
+          <button type="button" onClick={add} style={{...sty.b,padding:"10px 16px",borderRadius:10,fontWeight:600,fontSize:13,alignSelf:"flex-start"}}><IcPlus s={15}/> Adaugă</button>
+        </div>
+      ) : (
+        <div style={{
+          marginBottom: 22,
+          padding: mob ? 14 : 20,
+          borderRadius: 16,
+          border: `1px solid ${th.bl}`,
+          background: th.bg === "#09090b" ? "rgba(255,255,255,.045)" : "#fff",
+          boxShadow: th.bg === "#09090b" ? "inset 0 1px 0 rgba(255,255,255,.04)" : "0 2px 14px rgba(0,0,0,.06)",
+        }}>
+          <div style={{fontSize:11,fontWeight:700,color:th.tm,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Task nou</div>
+          <textarea
+            value={newText}
+            onChange={e=>setNewText(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); add(); } }}
+            rows={2}
+            style={{
+              ...sty.i,
+              width: "100%",
+              minHeight: 56,
+              maxHeight: 140,
+              padding: "14px 16px",
+              fontSize: 16,
+              lineHeight: 1.5,
+              borderRadius: 12,
+              border: `1px solid ${th.bl}`,
+              resize: "vertical",
+              boxSizing: "border-box",
+              marginBottom: 14,
+            }}
+            placeholder="Scrie aici ce ai de făcut… Enter = adaugă · Shift+Enter = linie nouă"
+          />
+          <div style={{display:"flex",flexWrap:"wrap",gap:14,alignItems:"flex-end",marginBottom:14}}>
+            <div style={{flex:mob?"1 1 100%":"0 1 220px",minWidth:mob?"100%":200}}>
+              <label style={{display:"block",fontSize:10,color:th.tm,fontWeight:700,marginBottom:6,letterSpacing:0.3}}>Cui îl trimiți (opțional)</label>
+              <select value={newAssignee} onChange={e=>setNewAssignee(e.target.value)} className="modernSel" style={{...sty.i,width:"100%",padding:"11px 14px",fontSize:14,borderRadius:10}} title="Membru desemnat — primește notificare">
+                <option value="">— Nimeni (task pentru trupă)</option>
+                {MEMBERS.map(m=><option key={m.id} value={m.id}>{m.n} · @{m.short}</option>)}
+              </select>
+            </div>
+            <div style={{flex:"1 1 200px",minWidth:180}}>
+              <span style={{display:"block",fontSize:10,color:th.tm,fontWeight:700,marginBottom:6,letterSpacing:0.3}}>Prioritate</span>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {(["high","medium","low"]).map(p=>(
+                  <button key={p} type="button" onClick={()=>setNewPrio(p)}
+                    style={{
+                      padding: "9px 16px",
+                      borderRadius: 999,
+                      border: `2px solid ${newPrio===p?PC[p]:th.bl}`,
+                      background: newPrio===p ? (th.bg==="#09090b"?`${PC[p]}26`:`${PC[p]}1a`) : "transparent",
+                      color: newPrio===p ? PC[p] : th.tm,
+                      fontSize: 12,
+                      fontWeight: newPrio===p ? 700 : 500,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      transition: "border-color .15s,background .15s",
+                    }}
+                  >{p==="high"?"Urgent":p==="medium"?"Normal":"Low"}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:12,alignItems:"center",paddingTop:4,borderTop:`1px solid ${th.bl}`}}>
+            <button type="button" onClick={add} style={{...sty.b,padding:"12px 22px",borderRadius:12,fontWeight:700,fontSize:14,display:"inline-flex",alignItems:"center",gap:8}}>
+              <IcPlus s={18}/>
+              Adaugă task
+            </button>
+            <span style={{fontSize:11,color:th.tm,lineHeight:1.4}}>sau <strong style={{color:th.t}}>Enter</strong> în caseta de mai sus</span>
+          </div>
+        </div>
+      )}
 
       {!compact&&allTaskIds.length>0&&<div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
         <button onClick={selectAll} style={{...sty.bg,padding:"6px 12px",fontSize:11}}>{allSelected?"Deselectează":"Selectează toate"}</button>
@@ -1417,7 +1508,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
       </div>}
 
       <div style={{display:"flex",flexDirection:"column",gap:0}}>
-        {active.length===0 && <div style={{padding:56,textAlign:"center",color:th.tm,fontSize:17,lineHeight:1.6,background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:16,border:`2px dashed ${th.bl}`}}>{memberFilter?`Niciun task activ pentru @${MEMBERS.find(x=>x.id===memberFilter)?.short||"—"} — schimbă filtrul sau desemnează task-uri.`:"Niciun task activ — scrie mai sus ce ai de făcut și apasă Enter 🎉"}</div>}
+        {active.length===0 && <div style={{padding:56,textAlign:"center",color:th.tm,fontSize:16,lineHeight:1.65,background:th.bg==="#09090b"?th.h:"#faf9f7",borderRadius:16,border:`2px dashed ${th.bl}`}}>{memberFilter?`Niciun task activ pentru @${MEMBERS.find(x=>x.id===memberFilter)?.short||"—"} — schimbă filtrul sau desemnează task-uri.`:"Niciun task activ încă. Folosește caseta «Task nou» de mai sus — scrie ce ai de făcut și apasă Enter sau «Adaugă task»."}</div>}
         {viewMode==="kanban"&&!compact ? (
           <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:16,minHeight:400}}>
             {(["in_proces","in_lucru","done"]).map(col=>{
@@ -5095,6 +5186,8 @@ function App() {
   const [riderVersions, setRiderVersions] = useState(loadRiderVersions);
   const [pressKitVersions, setPressKitVersions] = useState(loadPressKitVersions);
   const [playlistVersions, setPlaylistVersions] = useState(loadPlaylistVersions);
+  const [playlistPublicBusy, setPlaylistPublicBusy] = useState(false);
+  const [playlistPublicUrl, setPlaylistPublicUrl] = useState("");
   const [memberProfiles, setMemberProfiles] = useState(loadMemberProfiles);
   const { toast, showToast } = useToasts();
   const saveMemberProfile = (memberId, data) => { setMemberProfiles(p=>{ const n={...p,[memberId]:{...(p[memberId]||{}),...data}}; try{localStorage.setItem(LS_KEYS.memberProfiles,JSON.stringify(n));}catch(e){} return n; }); };
@@ -5817,6 +5910,38 @@ function App() {
     showToast("Versiune ștearsă");
   };
 
+  const handlePlaylistPublicLink = async () => {
+    const sb = getSbClient();
+    if (!sb) {
+      showToast("Link public: configurează Supabase și bucket «fisa-public».", "error");
+      return;
+    }
+    const plList = (templates.playlist && templates.playlist.length > 0) ? templates.playlist : DEFAULT_COVERS;
+    setPlaylistPublicBusy(true);
+    try {
+      const inner = buildPlaylistCoversInnerHtml(plList);
+      const doc = `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Phaser Playlist Covers</title><style>body{margin:0;background:#f1f5f9;padding:20px 14px 32px;box-sizing:border-box}</style></head><body>${inner}</body></html>`;
+      const html = encodeHtmlCodePoints(doc);
+      const blob = new Blob([html], { type: "text/html; charset=utf-8" });
+      const { error } = await sb.storage.from(FISA_PUBLIC_BUCKET).upload(PLAYLIST_COVERS_PUBLIC_FILE, blob, { contentType: "text/html; charset=utf-8", upsert: true });
+      if (error) throw error;
+      const publicUrl = buildShareableHtmlPublicUrl(sb, PLAYLIST_COVERS_PUBLIC_FILE);
+      if (!publicUrl || !/^https?:\/\//i.test(String(publicUrl))) throw new Error("URL public invalid");
+      setPlaylistPublicUrl(publicUrl);
+      const copiedOk = await copyTextToClipboardSafe(publicUrl);
+      showToast(copiedOk ? "Link copiat — același URL la fiecare actualizare (upsert)" : "Link creat — copiază din câmpul de mai jos");
+    } catch (e) {
+      const raw = (e?.message || "").trim();
+      let msg = "Eroare: " + (raw || "Upload eșuat");
+      if (/bucket not found/i.test(raw)) msg = "Bucket «fisa-public» lipsă.";
+      else if (/row-level security|rls/i.test(raw)) msg = "RLS Storage — rulează supabase-fix-fisa-rls.sql";
+      showToast(msg, "error");
+      console.error(e);
+    } finally {
+      setPlaylistPublicBusy(false);
+    }
+  };
+
   const sty = {
     i:  {width:"100%",padding:"10px 12px",borderRadius:7,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14,fontFamily:"inherit"},
     l:  {fontSize:10,color:th.tm,marginBottom:3,display:"block",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"},
@@ -6301,49 +6426,58 @@ function App() {
                 const pl = (templates.playlist&&templates.playlist.length>0)?templates.playlist:DEFAULT_COVERS;
                 const downloadPlaylistPdf = async () => {
                   if (typeof html2pdf === "undefined") { showToast("html2pdf indisponibil", "error"); return; }
+                  const inner = buildPlaylistCoversInnerHtml(pl);
+                  const fname = sanitizeExportFilename("Phaser-Playlist-Covers") + ".pdf";
                   try {
                     showToast("Se generează PDF playlist...", "success", 1500);
-                    const esc = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-                    const base = (typeof window !== "undefined" && window.location?.href) ? window.location.href.replace(/#.*$/,"") : "";
-                    const imgZgv = (() => { try { return new URL(ZGV_LOGO, base).href; } catch(e) { return ZGV_LOGO; } })();
-                    const imgPhaser = (() => { try { return new URL(LOGO_URL, base).href; } catch(e) { return LOGO_URL; } })();
-                    const rows = pl.map((c,i) => `<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:7px 12px;font-size:12px;color:#888;width:32px;text-align:right;font-weight:500;">${i+1}</td><td style="padding:7px 14px 7px 8px;font-size:13px;font-weight:600;color:#111;">${esc(c.title)}</td><td style="padding:7px 14px 7px 4px;font-size:12px;color:#555;">${esc(c.artist)}</td></tr>`).join("");
-                    const html = `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;background:#fff;padding:0;box-sizing:border-box;">
-                      <div style="background:linear-gradient(135deg,#1a1510 0%,#2d2419 100%);padding:14px 22px;display:flex;align-items:center;justify-content:space-between;border-radius:12px 12px 0 0;">
-                        <img src="${imgZgv}" alt="" style="height:36px;object-fit:contain;filter:brightness(0) invert(1);" onerror="this.style.display='none'"/>
-                        <div style="text-align:center;flex:1;">
-                          <div style="font-size:9px;font-weight:700;color:rgba(251,191,36,.7);letter-spacing:3px;text-transform:uppercase;">Repertoriu</div>
-                          <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:2px;">PLAYLIST</div>
-                        </div>
-                        <img src="${imgPhaser}" alt="" style="height:26px;object-fit:contain;filter:brightness(0) invert(1);" onerror="this.style.display='none'"/>
-                      </div>
-                      <div style="background:#fff;border-radius:0 0 12px 12px;border:1px solid #e8e8e8;border-top:none;overflow:hidden;">
-                        <table style="width:100%;border-collapse:collapse;">${rows}</table>
-                        <div style="padding:10px 14px;border-top:2px solid #f5f5f5;text-align:right;font-size:10px;color:#aaa;">${pl.length} piese · PHASER © ${new Date().getFullYear()}</div>
-                      </div>
-                    </div>`;
+                    const fullDoc = `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"/><style>body{margin:12px;background:#fff}</style></head><body>${inner}</body></html>`;
+                    if (PDF_WORKER_URL && PDF_WORKER_URL.startsWith("http")) {
+                      try {
+                        const wblob = await generatePdfFromHtml(fullDoc, 45000);
+                        if (wblob && wblob.size > 100) {
+                          const a = document.createElement("a");
+                          a.href = URL.createObjectURL(wblob);
+                          a.download = fname;
+                          a.click();
+                          URL.revokeObjectURL(a.href);
+                          showToast("PDF playlist descărcat ✓");
+                          return;
+                        }
+                      } catch (wErr) { console.warn("PDF worker playlist:", wErr); }
+                    }
                     const wrapper = document.createElement("div");
-                    // html2canvas taie des conținutul cu position fixed în afara viewport-ului → PDF alb
-                    wrapper.style.cssText = "position:fixed;left:0;top:0;width:600px;max-width:100vw;background:#fff;z-index:2147483000;opacity:0.02;pointer-events:none;box-sizing:border-box;";
-                    wrapper.innerHTML = html;
+                    wrapper.style.cssText = "position:absolute;left:-16000px;top:0;width:620px;max-width:none;height:auto;min-height:auto;overflow:visible;opacity:0.02;pointer-events:none;z-index:-1;box-sizing:border-box;";
+                    wrapper.innerHTML = inner;
                     document.body.appendChild(wrapper);
                     const root = wrapper.firstElementChild || wrapper;
                     await Promise.all(Array.from(wrapper.querySelectorAll("img")).map((img) => new Promise((resolve) => {
                       if (img.complete && img.naturalWidth) return resolve();
                       img.onload = () => resolve();
                       img.onerror = () => resolve();
-                      setTimeout(resolve, 4000);
+                      setTimeout(resolve, 6000);
                     })));
                     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+                    const capH = Math.max(root.scrollHeight, root.offsetHeight, 400) + 32;
+                    const capW = Math.max(root.scrollWidth, root.offsetWidth, 560);
                     await html2pdf().set({
-                      margin: 10, filename: "phaser-playlist.pdf",
+                      margin: [10, 10, 10, 10],
+                      filename: fname,
                       image: { type: "jpeg", quality: 0.98 },
                       html2canvas: {
-                        scale: 2, useCORS: true, allowTaint: true, logging: false,
-                        scrollX: 0, scrollY: 0, backgroundColor: "#ffffff",
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
+                        logging: false,
+                        scrollX: 0,
+                        scrollY: 0,
+                        windowWidth: capW,
+                        windowHeight: capH,
+                        height: capH,
+                        width: capW,
+                        backgroundColor: "#ffffff",
                       },
                       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                      pagebreak: { mode: ["css", "legacy"] },
+                      pagebreak: { mode: ["css", "legacy"], avoid: "tr" },
                     }).from(root).save();
                     document.body.removeChild(wrapper);
                     showToast("PDF playlist descărcat ✓");
@@ -6361,8 +6495,17 @@ function App() {
                     <button onClick={()=>savePlaylistToStorage(false)} style={{...sty.b,fontSize:12,padding:"5px 12px"}}>💾 Salvează</button>
                     <button onClick={()=>savePlaylistToStorage(true)} style={{...sty.bg,fontSize:12,padding:"5px 10px"}}>📌 Versiune nouă</button>
                     <button onClick={downloadPlaylistPdf} style={{...sty.bg,fontSize:12,padding:"5px 10px"}}>⬇ PDF</button>
+                    <button type="button" onClick={handlePlaylistPublicLink} disabled={playlistPublicBusy} style={{...sty.bg,fontSize:12,padding:"5px 10px",background:"#3b82f6",color:"#fff",border:"none",opacity:playlistPublicBusy?0.7:1,cursor:playlistPublicBusy?"wait":"pointer"}}>{playlistPublicBusy?"⏳":"🔗"} Link public</button>
                     <button onClick={async()=>{const txt=pl.map((c,i)=>`${i+1}. ${c.title} — ${c.artist}`).join("\n");try{await navigator.clipboard.writeText(txt);}catch(e){const ta=document.createElement("textarea");ta.value=txt;ta.style.cssText="position:fixed;opacity:0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}showToast("Playlist copiat ✓");}} style={{...sty.bg,fontSize:12,padding:"5px 10px"}}>📋 Copiază</button>
                   </div>
+                  {playlistPublicUrl ? <div style={{marginBottom:12,padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Link stabil (îl actualizezi cu «Link public» după ce modifici lista):</div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                      <input readOnly value={playlistPublicUrl} style={{...sty.i,flex:1,minWidth:200,fontSize:11}} onFocus={e=>e.target.select()}/>
+                      <button type="button" onClick={()=>copyTextToClipboardSafe(playlistPublicUrl).then(ok=>showToast(ok?"Link copiat":"Selectează și copiază manual"))} style={{...sty.bg,fontSize:11,padding:"6px 10px"}}>Copiază</button>
+                      <a href={playlistPublicUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:th.a}}>Deschide</a>
+                    </div>
+                  </div> : null}
                   {/* Versiuni salvate */}
                   {playlistVersions.length>0&&<div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap",padding:"8px 12px",background:th.h,borderRadius:8,border:`1px solid ${th.b}`}}>
                     <span style={{fontSize:11,color:th.tm,fontWeight:600}}>Versiuni:</span>
@@ -7430,7 +7573,7 @@ function App() {
         <div style={{background:th.c,border:`1px solid ${th.b}`,borderRadius:14,width:mob?"90%":360,padding:28}} onClick={e=>e.stopPropagation()}>
           <div style={{textAlign:"center",marginBottom:20}}>
             <h2 style={{fontSize:17,fontWeight:700,color:th.t}}>Cerere nouă</h2>
-            <p style={{color:th.tm,fontSize:12,marginTop:3}}>Ce tip de client?</p>
+            <p style={{color:th.tm,fontSize:12,marginTop:3,lineHeight:1.45}}>Eveniment privat sau public? Apoi completezi detaliile în formular.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <button onClick={()=>{closeModal();setTimeout(()=>openModal("form",{cat:"private",cerereStart:true,st:"cerere",...(mData?.date&&{date:mData.date})}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:mob?24:22,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?100:undefined}}>
@@ -7470,7 +7613,7 @@ function App() {
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <button type="button" onClick={()=>{const d=mData.date;closeModal();setTimeout(()=>openModal("pickCerere",{date:d}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:mob?18:16,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?88:80}}>
-              <div style={{fontSize:22,marginBottom:6}}>📞</div><div style={{fontWeight:700,fontSize:13}}>Cerere</div><div style={{fontSize:9,color:"#666",marginTop:3}}>Cerere verbală (fără număr ofertă)</div>
+              <div style={{fontSize:22,marginBottom:6}}>📞</div><div style={{fontWeight:700,fontSize:13}}>Cerere</div><div style={{fontSize:9,color:"#64748b",marginTop:3,lineHeight:1.35}}>Următorul pas: tip eveniment și detalii</div>
             </button>
             <button type="button" onClick={()=>{const d=mData.date;closeModal();setTimeout(()=>openModal("pickEvent",{date:d}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:mob?18:16,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?88:80}}>
               <div style={{fontSize:22,marginBottom:6}}>🎉</div><div style={{fontWeight:700,fontSize:13}}>Eveniment</div><div style={{fontSize:9,color:"#666",marginTop:3}}>Fără ofertă, confirmat</div>

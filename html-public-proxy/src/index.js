@@ -16,7 +16,7 @@ export default {
     if (!key || key.includes("..") || key.includes("\\") || key.includes("/")) {
       return new Response("Not found", { status: 404 });
     }
-    if (!/^(offer|contract|fisa)-.+\.html$/i.test(key)) {
+    if (!/^(offer|contract|fisa)-.+\.html$/i.test(key) && !/^playlist-covers\.html$/i.test(key)) {
       return new Response("Not found", { status: 404 });
     }
 

@@ -1,6 +1,6 @@
 # phaser-html-proxy
 
-Worker Cloudflare care servește fișierele `offer-*.html`, `contract-*.html`, `fisa-*.html` din bucket-ul public Supabase cu header corect **`Content-Type: text/html`**.
+Worker Cloudflare care servește fișierele `offer-*.html`, `contract-*.html`, `fisa-*.html` și **`playlist-covers.html`** din bucket-ul public Supabase cu header corect **`Content-Type: text/html`**.
 
 Fără acest proxy, unele proiecte Supabase returnează HTML-ul ca **`text/plain`**, iar browserul afișează sursa (tag-uri) în loc să randeze pagina.
 
