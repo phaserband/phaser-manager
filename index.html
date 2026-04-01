@@ -175,19 +175,64 @@ const { useState, useEffect, useMemo, useRef, useId, useCallback } = React;
 
 /* Structură: HOOKS | CONSTANTS | STORAGE | ICONS | COMPONENTS | FEATURES | MAIN APP */
 
-// ─── CONFIG ───
-// URL Worker Cloudflare pentru PDF de calitate. Lasă gol pentru html2pdf (local).
-const PDF_WORKER_URL = "https://phaser-pdf-worker.raczradurr.workers.dev";
-// După `npx wrangler deploy` în folderul html-public-proxy — altfel Supabase poate servi .html ca text/plain (vezi sursă în browser).
-const OFFER_HTML_PROXY_URL = "https://phaser-html-proxy.raczradurr.workers.dev";
+// ─── CONFIG — Workeri Cloudflare ───
+// Subdomeniu cont Workers (Account Details) — trebuie să coincidă cu Dashboard, ex. phaserband.workers.dev
+// Opțional: domenii pe phaser.ro (WORKER_PUBLIC_HTML_BASE) ca linkurile către clienți să nu arate workers.dev.
+
+// 1) Domenii proprii: în Cloudflare → phaser-html-proxy (sau PDF/AI) → Triggers → Custom domains
+//    Ex.: offer.phaser.ro → același worker; linkurile de ofertă devin https://offer.phaser.ro/offer-….html
+const WORKER_PUBLIC_HTML_BASE = "https://offer.phaser.ro";
+const WORKER_URL_PDF = ""; // ex. "https://pdf.phaser.ro" după ce adaugi domeniu pe phaser-pdf-worker
+const WORKER_URL_AI = ""; // ex. "https://ai.phaser.ro" pe phaser-ai-worker
+
+// 2) Fallback *.workers.dev — partea din mijloc (Account Details → Subdomain)
+const PHASER_CF_WORKERS_SUBDOMAIN = "phaserband";
+
 const FISA_PUBLIC_BUCKET = "fisa-public";
-/** Link trimis clientului: prin proxy (text/html corect) sau direct Supabase dacă proxy e gol. */
-const buildShareableHtmlPublicUrl = (sb, objectPath) => {
+
+function normalizeOfferHtmlProxyBase(raw) {
+  const t = String(raw ?? "").trim();
+  if (t.startsWith("http")) return t.replace(/\/$/, "");
+  return "";
+}
+const phaserWorkerDevBase = (workerName) =>
+  `https://${String(workerName || "").trim()}.${PHASER_CF_WORKERS_SUBDOMAIN}.workers.dev`;
+function pickWorkerUrl(customFullUrl, workerName) {
+  const c = normalizeOfferHtmlProxyBase(customFullUrl);
+  if (c) return c;
+  return phaserWorkerDevBase(workerName);
+}
+/** Corectează URL-uri vechi (subdomenii greșite). */
+function phaserWorkersMigrateUrl(url) {
+  if (!url || typeof url !== "string") return url;
+  const suffix = `.${PHASER_CF_WORKERS_SUBDOMAIN}.workers.dev`;
+  return url
+    .replace(/\.raczradurr\.workers\.dev\b/gi, suffix)
+    .replace(/\.phaser\.workers\.dev\b/gi, suffix)
+    .replace(/\.billowing-cherry-1e3b\.workers\.dev\b/gi, suffix);
+}
+const PDF_WORKER_URL = pickWorkerUrl(WORKER_URL_PDF, "phaser-pdf-worker");
+const DEFAULT_AI_WORKER_URL = pickWorkerUrl(WORKER_URL_AI, "phaser-ai-worker");
+const OFFER_HTML_PROXY_URL = pickWorkerUrl(WORKER_PUBLIC_HTML_BASE, "phaser-html-proxy");
+/** Normalizează URL salvat: workers.dev vechi → subdomeniu curent; phaser-html-proxy.*.workers.dev → WORKER_PUBLIC_HTML_BASE dacă e setat. */
+function normalizeStoredOfferHtmlProxy(str) {
+  let u = normalizeOfferHtmlProxyBase(phaserWorkersMigrateUrl(String(str || "")));
+  if (!u) return u;
+  const branded = normalizeOfferHtmlProxyBase(WORKER_PUBLIC_HTML_BASE);
+  if (branded && /phaser-html-proxy\./i.test(u) && /\.workers\.dev/i.test(u)) return branded;
+  return u;
+}
+/** Bază pentru oferte/fișe: setarea din app sau OFFER_HTML_PROXY_URL. */
+function offerHtmlProxyBaseFromSettings(aiSettings) {
+  let u = normalizeOfferHtmlProxyBase(aiSettings?.offerHtmlProxy);
+  if (u) u = normalizeStoredOfferHtmlProxy(u);
+  return u || normalizeOfferHtmlProxyBase(OFFER_HTML_PROXY_URL);
+}
+/** Link partajabil: dacă shareBase are https → acel host + fișier; altfel getPublicUrl (Supabase). Al treilea argument = baza deja rezolvată (ex. htmlShareProxyBase). */
+const buildShareableHtmlPublicUrl = (sb, objectPath, shareBaseResolved) => {
   const p = String(objectPath || "").replace(/^\/+/, "");
   if (!p || !sb) return "";
-  const proxy = typeof OFFER_HTML_PROXY_URL === "string" && OFFER_HTML_PROXY_URL.trim().startsWith("http")
-    ? OFFER_HTML_PROXY_URL.trim().replace(/\/$/, "")
-    : "";
+  const proxy = normalizeOfferHtmlProxyBase(shareBaseResolved);
   if (proxy) return `${proxy}/${p}`;
   const { data } = sb.storage.from(FISA_PUBLIC_BUCKET).getPublicUrl(p);
   return data?.publicUrl || "";
@@ -655,6 +700,8 @@ const LS_KEYS = { evs: "phaser_evs", tasks: "phaser_tasks", genExp: "phaser_genE
 const SUPABASE_URL = "https://uhekoixrvyoascchdwrp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_CZnkBOE7AnfAai9j-UVatQ_gKEPMurS";
 const SUPABASE_CFG = (()=>{ try { const s=localStorage.getItem("phaser_supabase_cfg"); const fromLs=s?JSON.parse(s):{}; return { url: fromLs.url||SUPABASE_URL, key: fromLs.key||SUPABASE_ANON_KEY }; } catch(e){ return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY }; } })();
+/** Exemplu în setări: bază URL publică Storage (fără Worker). */
+const FISA_PUBLIC_BASE_HINT = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/storage/v1/object/public/${FISA_PUBLIC_BUCKET}`;
 // Singleton client Supabase — necesar pentru Auth (sesiuni persistente)
 let _sbClient = null;
 const getSbClient = () => {
@@ -2452,7 +2499,7 @@ function ContractView({ ev, th, contractFields, onContractChange }) {
   );
 }
 // ─── OFFER PREVIEW ───
-function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail }) {
+function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail, htmlProxyBase }) {
   const [copied, setCopied] = useState(false);
   const [mediaTitle, setMediaTitle] = useState(ev.mediaTitle||"PHASER Live");
   const [videos, setVideos] = useState(ev.videos||DEFAULT_VIDEOS);
@@ -2989,7 +3036,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       const blob = new Blob([html], { type: "text/html; charset=utf-8" });
       const { error } = await sb.storage.from(FISA_PUBLIC_BUCKET).upload(path, blob, { contentType: "text/html; charset=utf-8", upsert: true });
       if (error) throw error;
-      const publicUrl = buildShareableHtmlPublicUrl(sb, path);
+      const publicUrl = buildShareableHtmlPublicUrl(sb, path, htmlProxyBase);
       if (!publicUrl || !/^https?:\/\//i.test(String(publicUrl))) {
         throw new Error("URL public invalid după upload.");
       }
@@ -3089,7 +3136,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
               {pdfLoading?"⏳":"⬇"} Descarcă PDF
             </button>
             {tab==="fisa"
-              ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null}/>
+              ? <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={pdfLoading} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null} htmlProxyBase={htmlProxyBase}/>
               : <div style={{position:"relative",display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                   <button type="button" onClick={handleOfferSharePublicLink} disabled={pdfLoading||offerLinkBusy} title="Creează / actualizează pagina pe internet și îți arată linkul (URL), nu HTML" style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#3b82f6",color:"#fff",fontWeight:700,fontSize:12,cursor:(pdfLoading||offerLinkBusy)?"wait":"pointer",display:"flex",alignItems:"center",gap:6,opacity:(pdfLoading||offerLinkBusy)?0.7:1}}>
                     {offerLinkBusy?"⏳":"🔗"} {offerLinkUrl?"Actualizează link":"Link public"}
@@ -3621,7 +3668,7 @@ function FisaPdfButton({ ev, showToast }) {
 
 // FisaLinkButton — generează link partajabil pentru fișa evenimentului (Supabase Storage)
 // Fișier deterministic: fisa-{ev.id}.html — același fișier, actualizat la re-upload
-function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient, updEv }) {
+function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient, updEv, htmlProxyBase }) {
   const [loading, setLoading] = useState(false);
   const [show, setShow] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -3641,7 +3688,7 @@ function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient, updEv }) {
       const blob = new Blob([html], { type: "text/html; charset=utf-8" });
       const { error } = await sb.storage.from(FISA_PUBLIC_BUCKET).upload(path, blob, { contentType: "text/html; charset=utf-8", upsert: true });
       if (error) throw error;
-      const publicUrl = buildShareableHtmlPublicUrl(sb, path);
+      const publicUrl = buildShareableHtmlPublicUrl(sb, path, htmlProxyBase);
       setLocalUrl(publicUrl);
       if (updEv) updEv({ fisaUrl: publicUrl });
       setShow(true);
@@ -4574,13 +4621,18 @@ function buildAIContext(evs, tasks) {
 
 function SettingsAI(props) {
   var th=props.th,apiKeys=props.apiKeys,onSave=props.onSave,onClose=props.onClose;
-  var _k=useState({llamaWorker:apiKeys.llamaWorker||""}); var keys=_k[0],setKeys=_k[1];
-  return React.createElement("div",{style:{background:th.c,border:"1px solid "+th.b,borderRadius:14,width:340,padding:24,maxWidth:"90vw"},onClick:function(e){e.stopPropagation();}},
-    React.createElement("h3",{style:{fontSize:15,fontWeight:700,marginBottom:4}},"⚙️ Setări AI"),
+  var _k=useState({llamaWorker:apiKeys.llamaWorker||"",offerHtmlProxy:apiKeys.offerHtmlProxy||""}); var keys=_k[0],setKeys=_k[1];
+  return React.createElement("div",{style:{background:th.c,border:"1px solid "+th.b,borderRadius:14,width:380,padding:24,maxWidth:"92vw"},onClick:function(e){e.stopPropagation();}},
+    React.createElement("h3",{style:{fontSize:15,fontWeight:700,marginBottom:4}},"⚙️ Setări AI și linkuri clienți"),
     React.createElement("div",{style:{fontSize:11,color:"#f59e0b",fontWeight:600,marginBottom:18}},"🦙 Llama 3.1 8B · Cloudflare AI Workers · Gratuit"),
     React.createElement("div",{style:{marginBottom:18}},
-      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"Worker URL"),
-      React.createElement("input",{type:"text",value:keys.llamaWorker,onChange:function(e){setKeys(function(k){return Object.assign({},k,{llamaWorker:e.target.value});});},placeholder:"https://phaser-ai-worker.raczradurr.workers.dev",style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid rgba(245,158,11,.4)",background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box"}})
+      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"Worker URL (AI)"),
+      React.createElement("input",{type:"text",value:keys.llamaWorker,onChange:function(e){setKeys(function(k){return Object.assign({},k,{llamaWorker:e.target.value});});},placeholder:DEFAULT_AI_WORKER_URL,style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid rgba(245,158,11,.4)",background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box"}})
+    ),
+    React.createElement("div",{style:{marginBottom:18}},
+      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"Adresa paginilor publice (ofertă, fișă)"),
+      React.createElement("div",{style:{fontSize:10,color:th.tm,marginBottom:6,lineHeight:1.45}},"Implicit din cod: domeniu Phaser (ex. offer.phaser.ro). Lasă gol aici ca să folosești implicitul. Alt URL doar dacă știi ce faci. Se salvează în cloud."),
+      React.createElement("input",{type:"text",value:keys.offerHtmlProxy,onChange:function(e){setKeys(function(k){return Object.assign({},k,{offerHtmlProxy:e.target.value});});},placeholder:"Lasă gol = link direct Supabase",title:FISA_PUBLIC_BASE_HINT,style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid "+th.b,background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box",fontFamily:"ui-monospace,monospace"}})
     ),
     React.createElement("div",{style:{display:"flex",gap:8}},
       React.createElement("button",{onClick:function(){onSave(keys);},style:{flex:1,padding:10,borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,cursor:"pointer",fontSize:13}},"Salvează"),
@@ -5016,7 +5068,7 @@ function AIChatWidget(props) {
   useEffect(function(){if(bottomRef.current)bottomRef.current.scrollIntoView({behavior:"smooth"});},[msgs,loading]);
 
   function saveSettings(keys){
-    setAiSettings(keys);setShowS(false);
+    setAiSettings(function(prev){return Object.assign({},prev,keys);});setShowS(false);
   }
 
   async function sendMsg(){
@@ -5039,7 +5091,7 @@ function AIChatWidget(props) {
       var sys=buildAIContext(evs,tasks);
       var reply;
       if(model==="llama"){
-        var workerUrl=apiKeys.llamaWorker||"https://phaser-ai-worker.raczradurr.workers.dev";
+        var workerUrl=apiKeys.llamaWorker||DEFAULT_AI_WORKER_URL;
         if(!workerUrl){setMsgs(function(m){return m.concat([{role:"assistant",content:"⚠️ Configurează URL-ul Worker Cloudflare în ⚙️ Setări AI."}]);});setLoading(false);return;}
         var rl=await fetch(workerUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history,system:sys})});
         var dl=await rl.json();
@@ -5113,7 +5165,8 @@ function App() {
   const [songs, setSongs] = useLocalStorageState(LS_KEYS.songs, loadSongs);
   const [calBlocks, setCalBlocks] = useLocalStorageState(LS_KEYS.calBlocks, loadCalBlocks);
   const [bandNotifications, setBandNotifications] = useLocalStorageState(LS_KEYS.bandNotifications, loadBandNotifications);
-  const [aiSettings, setAiSettings] = useState({llamaWorker:"https://phaser-ai-worker.raczradurr.workers.dev"});
+  const [aiSettings, setAiSettings] = useState({llamaWorker:DEFAULT_AI_WORKER_URL,offerHtmlProxy:""});
+  const htmlShareProxyBase = useMemo(() => offerHtmlProxyBaseFromSettings(aiSettings), [aiSettings.offerHtmlProxy]);
   const [finMember, setFinMember] = useState(null);
   const [templates, setTemplates] = useState(loadTemplates);
   const { modal, payload, openModal, closeModal } = useModal();
@@ -5331,7 +5384,17 @@ function App() {
         if(remote.memberProfiles) setMemberProfiles(remote.memberProfiles);
         if(Array.isArray(remote.bandNotifications)) setBandNotifications(remote.bandNotifications);
         if(Array.isArray(remote.calBlocks)) setCalBlocks(remote.calBlocks);
-        if(remote.aiSettings&&typeof remote.aiSettings==="object") setAiSettings(function(prev){return Object.assign({},prev,remote.aiSettings,{llamaWorker:remote.aiSettings.llamaWorker||prev.llamaWorker});});
+        if(remote.aiSettings&&typeof remote.aiSettings==="object") setAiSettings(function(prev){
+          const r=remote.aiSettings;
+          const lw = phaserWorkersMigrateUrl(r.llamaWorker || prev.llamaWorker) || DEFAULT_AI_WORKER_URL;
+          const oh = "offerHtmlProxy" in r
+            ? normalizeStoredOfferHtmlProxy(r.offerHtmlProxy)
+            : normalizeStoredOfferHtmlProxy(prev.offerHtmlProxy);
+          return Object.assign({},prev,r,{
+            llamaWorker:lw,
+            offerHtmlProxy:oh
+          });
+        });
         setSyncStatus("synced");
         initialSyncDoneRef.current = true;
         // Backup automat zilnic — după ce datele sunt încărcate
@@ -5578,11 +5641,18 @@ function App() {
       ev.type||"Eveniment",
       gcalResp?"("+gcalResp+")":null
     ].filter(Boolean).join(" ");
-    // Link direct la oferta/fisa — construieste URL din proxy + ID daca nu e salvat inca
-    const proxyBase = OFFER_HTML_PROXY_URL.replace(/\/$/, "");
-    const gcalLink = isConfirmedEv
-      ? (ev.fisaUrl || proxyBase+"/fisa-"+ev.id+".html")
-      : (ev.offerUrl || proxyBase+"/offer-"+ev.id+".html");
+    const pathSuffix = isConfirmedEv ? `fisa-${ev.id}.html` : `offer-${ev.id}.html`;
+    const proxyBase = htmlShareProxyBase;
+    let builtDefault = "";
+    if (proxyBase) builtDefault = `${proxyBase}/${pathSuffix}`;
+    else {
+      const sb = getSbClient();
+      if (sb) {
+        const { data } = sb.storage.from(FISA_PUBLIC_BUCKET).getPublicUrl(pathSuffix);
+        builtDefault = data?.publicUrl || "";
+      }
+    }
+    const gcalLink = isConfirmedEv ? (ev.fisaUrl || builtDefault) : (ev.offerUrl || builtDefault);
     const body = {
       summary: gcalSummary,
       location: [ev.venue,ev.city].filter(Boolean).join(", "),
@@ -5931,7 +6001,7 @@ function App() {
       const blob = new Blob([html], { type: "text/html; charset=utf-8" });
       const { error } = await sb.storage.from(FISA_PUBLIC_BUCKET).upload(PLAYLIST_COVERS_PUBLIC_FILE, blob, { contentType: "text/html; charset=utf-8", upsert: true });
       if (error) throw error;
-      const publicUrl = buildShareableHtmlPublicUrl(sb, PLAYLIST_COVERS_PUBLIC_FILE);
+      const publicUrl = buildShareableHtmlPublicUrl(sb, PLAYLIST_COVERS_PUBLIC_FILE, htmlShareProxyBase);
       if (!publicUrl || !/^https?:\/\//i.test(String(publicUrl))) throw new Error("URL public invalid");
       setPlaylistPublicUrl(publicUrl);
       const copiedOk = await copyTextToClipboardSafe(publicUrl);
@@ -7976,7 +8046,7 @@ function App() {
                 {detailTab==="fisa"&&<>
                   <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
                     <FisaPdfButton ev={ev} showToast={showToast}/>
-                    <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={false} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null} updEv={updEv}/>
+                    <FisaLinkButton ev={ev} showToast={showToast} pdfLoading={false} getSbClient={typeof getSbClient==="function"?getSbClient:()=>null} updEv={updEv} htmlProxyBase={htmlShareProxyBase}/>
                   </div>
                   <FisaEveniment ev={ev} updEv={updEv} th={th} SVC_LABELS={SVC_LABELS} fFmt={fFmt} fD={fD} editable={true} sty={sty} mob={mob} showPaymentCards={false} showToast={showToast}/>
                 </>}
@@ -8656,6 +8726,7 @@ function App() {
         sty={sty}
         templates={templates}
         showToast={showToast}
+        htmlProxyBase={htmlShareProxyBase}
       />})()}
 
       {tourStep!==null&&<TourOverlay steps={TOUR_STEPS} step={tourStep} setStep={setTourStep} setTab={setTab}/>}

@@ -15,12 +15,10 @@ Verifică în `wrangler.toml` că `SUPABASE_PUBLIC_OBJECT_BASE` indică bucket-u
 
 `https://<project-ref>.supabase.co/storage/v1/object/public/fisa-public`
 
-## Legare în Phaser Manager
+## Domeniu Phaser (recomandat)
 
-În `index.html`, setează:
+În Cloudflare → worker **phaser-html-proxy** → **Triggers** → **Custom Domains** → adaugă de ex. **`offer.phaser.ro`** (DNS pe zona phaser.ro). În `index.html` setează `WORKER_PUBLIC_HTML_BASE = "https://offer.phaser.ro"` — linkurile de ofertă nu mai conțin subdomeniul random `*.workers.dev`.
 
-```js
-const OFFER_HTML_PROXY_URL = "https://phaser-html-proxy.<subdomeniu>.workers.dev";
-```
+## Fallback workers.dev
 
-(lăsând gol `""` vei folosi linkul direct Supabase — poate arăta sursa ca text.)
+**`PHASER_CF_WORKERS_SUBDOMAIN`** = partea din mijloc (ex. `phaserband` → `*.phaserband.workers.dev`). Folosit dacă `WORKER_PUBLIC_HTML_BASE` e gol sau pentru PDF/AI fără domeniu propriu. Opțional: suprascrie în app (widget AI → ⚙️).

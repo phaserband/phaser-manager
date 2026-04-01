@@ -24,10 +24,7 @@ Worker Cloudflare care generează PDF-uri de calitate din HTML folosind Browser 
    npm run deploy
    ```
 
-5. **Copiază URL-ul Worker-ului** (ex: `https://phaser-pdf-worker.TAUL_TAU.workers.dev`) și setează-l în `index.html`:
-   ```javascript
-   const PDF_WORKER_URL = "https://phaser-pdf-worker.TAUL_TAU.workers.dev";
-   ```
+5. **URL după deploy:** ex. `phaser-pdf-worker.phaserband.workers.dev`. În `index.html`, **`PHASER_CF_WORKERS_SUBDOMAIN`** trebuie să fie `phaserband` (sau ce ai în Account Details).
 
 ## Limitări (plan gratuit)
 

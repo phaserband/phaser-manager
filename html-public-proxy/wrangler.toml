@@ -1,3 +1,4 @@
+# URL: phaser-html-proxy.phaserband.workers.dev — PHASER_CF_WORKERS_SUBDOMAIN în index.html = phaserband
 name = "phaser-html-proxy"
 main = "src/index.js"
 compatibility_date = "2024-12-01"

@@ -1,10 +1,8 @@
 // Phaser AI Worker — Cloudflare AI (Llama 3.1 8B)
-// Deploy: npx wrangler deploy
-
-const ALLOWED_ORIGIN = "https://phaser-manager.raczradurr.workers.dev";
+// Deploy: npx wrangler deploy → phaser-ai-worker.phaserband.workers.dev
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
