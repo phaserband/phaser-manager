@@ -513,7 +513,7 @@ const MEMBERS = [
   {id:"m4",n:"Arnold Birta",  short:"Arni",  r:"Tobe",   emoji:"🥁"},
   {id:"m5",n:"Sebastian Bârzeianu",short:"Sebi",r:"Chitară",emoji:"🎸"}
 ];
-/** Email Auth pentru fiecare membru — trebuie creat utilizator în Supabase cu această adresă; parola și-o setează fiecare. */
+/** Email Auth pentru fiecare membru — user în Supabase cu această adresă. Parolă inițială comună: STANDARD_BAND_PASSWORD. */
 const MEMBER_AUTH_EMAIL = {
   m1: "carinadumitru@gmail.com",
   m2: "raczradurr@gmail.com",
@@ -521,6 +521,8 @@ const MEMBER_AUTH_EMAIL = {
   m4: "birta.arnold@gmail.com",
   m5: "sebi.barzeianu@gmail.com",
 };
+/** Setați această parolă în Supabase (Authentication → Users) pentru fiecare membru + admin la creare sau după reset. */
+const STANDARD_BAND_PASSWORD = "phaser5!";
 const CONTACT_ADMIN_EMAIL = "contact@phaser.ro";
 const LS_SESSION_MEMBER = "phaser_session_member";
 /** Ultimul profil ales la login — dacă sesiunea Supabase a expirat, sari direct la parolă (fără pasul 1). Se șterge la Deconectare / «Alt profil». */
@@ -6344,7 +6346,7 @@ function App() {
               <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 2 · Autentificare</div>
               <h2 style={{fontSize:20,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>{signInHeading}</h2>
             </div>
-            <p style={{fontSize:12,color:"#888",lineHeight:1.55,margin:0}}>Acest email e cel din contul Supabase pentru profilul ales. Introdu parola ta (cea setată la invitație sau reset). După login o poți schimba din <strong style={{color:"#a3a3a3"}}>Contul meu → Schimbă parola</strong>.</p>
+            <p style={{fontSize:12,color:"#888",lineHeight:1.55,margin:0}}>Parolă inițială pentru toți (dacă e setată așa în Supabase): <strong style={{color:"#d4d4d4"}}>{STANDARD_BAND_PASSWORD}</strong>. După login o poți schimba din <strong style={{color:"#a3a3a3"}}>Contul meu → Schimbă parola</strong>.</p>
             <div>
               <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Email</div>
               <div style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#121212",color:"#d4d4d4",fontSize:14,wordBreak:"break-all",lineHeight:1.4}}>{loginEmail}</div>
@@ -6352,7 +6354,7 @@ function App() {
             <form onSubmit={doAuthLogin} style={{display:"flex",flexDirection:"column",gap:12}}>
               <div>
                 <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Parolă</div>
-                <input type="password" autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parola contului tău" required style={{width:"100%",boxSizing:"border-box",padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+                <input type="password" autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder={STANDARD_BAND_PASSWORD} required style={{width:"100%",boxSizing:"border-box",padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
               </div>
               {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
               <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Intră în aplicație"}</button>
