@@ -9,51 +9,7 @@
   <title>Phaser Manager</title>
   <link rel="icon" type="image/png" href="assets/logo.png"/>
   <script>
-    // ─── PIN GATE (opțional) ───────────────────────────────────────────────────
-    // Lasă gol "" = fără ecran PIN (recomandat: protejează manager.phaser.ro cu Cloudflare Access).
-    // Dacă pui un PIN aici, nu-l comita în Git — folosește doar în copia deployată sau injectează din Worker.
-    (function(){
-      var PHASER_ACCESS_PIN = "";
-      if (!PHASER_ACCESS_PIN || String(PHASER_ACCESS_PIN).trim() === "") return;
-      var PIN = String(PHASER_ACCESS_PIN).trim();
-      var KEY = "phaser_pin_ok";
-      if(sessionStorage.getItem(KEY) === "1") return;
-      document.addEventListener("DOMContentLoaded", function(){
-        var overlay = document.createElement("div");
-        overlay.id = "pin-gate";
-        overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:#09090b;display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:system-ui,sans-serif";
-        overlay.innerHTML = [
-          '<img src="assets/logo.png" style="width:160px;height:auto;margin-bottom:28px;" onerror="this.style.display=\'none\'"/>',
-          '<div style="font-size:13px;color:#71717a;margin-bottom:28px">Introdu PIN-ul pentru acces</div>',
-          '<div style="display:flex;gap:10px;margin-bottom:16px">',
-            '<input id="pin-inp" type="password" inputmode="numeric" maxlength="6" placeholder="••••" style="padding:12px 18px;font-size:20px;letter-spacing:8px;border-radius:12px;border:2px solid #27272a;background:#18181b;color:#fff;outline:none;width:140px;text-align:center;transition:border .2s"/>',
-            '<button id="pin-btn" style="padding:12px 20px;border-radius:12px;border:none;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:800;font-size:15px;cursor:pointer">→</button>',
-          '</div>',
-          '<div id="pin-err" style="font-size:12px;color:#ef4444;min-height:18px"></div>'
-        ].join("");
-        document.body.appendChild(overlay);
-        var inp = document.getElementById("pin-inp");
-        var btn = document.getElementById("pin-btn");
-        var err = document.getElementById("pin-err");
-        function tryPin(){
-          if(inp.value === PIN){
-            sessionStorage.setItem(KEY,"1");
-            overlay.style.opacity="0";
-            overlay.style.transition="opacity .3s";
-            setTimeout(function(){overlay.remove();},300);
-          } else {
-            err.textContent = "PIN greșit. Încearcă din nou.";
-            inp.value="";
-            inp.style.borderColor="#ef4444";
-            setTimeout(function(){inp.style.borderColor="#27272a";err.textContent="";},1500);
-          }
-        }
-        btn.addEventListener("click", tryPin);
-        inp.addEventListener("keydown", function(e){ if(e.key==="Enter") tryPin(); });
-        inp.focus();
-      });
-    })();
-    // ────────────────────────────────────────────────────────────────────────────
+    // PIN acces aplicație: ecran în React (înainte de login), implicit 0803 — schimbabil din Contul meu.
     window.onerror = function(msg, url, line, col, err) {
       var r = document.getElementById('root');
       if (r) {
@@ -569,6 +525,17 @@ const CONTACT_ADMIN_EMAIL = "contact@phaser.ro";
 const LS_SESSION_MEMBER = "phaser_session_member";
 /** Ultimul profil ales la login — dacă sesiunea Supabase a expirat, sari direct la parolă (fără pasul 1). Se șterge la Deconectare / «Alt profil». */
 const SS_KEY_LOGIN_LAST = "phaser_login_last_pick";
+const LS_KEY_APP_PIN = "phaser_app_access_pin";
+const LS_KEY_PIN_REMEMBER = "phaser_gate_device_trust";
+const SS_KEY_PIN_SESSION = "phaser_pin_session_ok";
+const DEFAULT_APP_PIN = "0803";
+const getAppAccessPin = () => {
+  try {
+    const s = localStorage.getItem(LS_KEY_APP_PIN);
+    if (s != null && String(s).trim() !== "") return String(s).trim();
+  } catch (e) {}
+  return DEFAULT_APP_PIN;
+};
 /** Rol admin în app + aliniere RLS pe member_profiles (dacă îl folosiți). */
 const PHASER_ADMIN_EMAILS = [CONTACT_ADMIN_EMAIL].map(e => e.trim().toLowerCase());
 const sessionUserFromStorage = () => {
@@ -5207,6 +5174,18 @@ function App() {
   const [authResolved, setAuthResolved] = useState(undefined);
   const [authBusy, setAuthBusy] = useState(false);
   const [authErr, setAuthErr] = useState("");
+  const [pinUnlocked, setPinUnlocked] = useState(() => {
+    try {
+      if (localStorage.getItem(LS_KEY_PIN_REMEMBER) === "1") return true;
+      if (sessionStorage.getItem(SS_KEY_PIN_SESSION) === "1") return true;
+    } catch (e) {}
+    return false;
+  });
+  const [gatePinInput, setGatePinInput] = useState("");
+  const [gatePinRemember, setGatePinRemember] = useState(false);
+  const [gatePinErr, setGatePinErr] = useState("");
+  const [pinChangeNew, setPinChangeNew] = useState("");
+  const [pinChangeConfirm, setPinChangeConfirm] = useState("");
   const [loginStep, setLoginStep] = useState("pick"); // "pick" | "signin"
   const [loginPick, setLoginPick] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
@@ -5427,9 +5406,44 @@ function App() {
     try { sessionStorage.setItem(SS_KEY_LOGIN_LAST, loginPick); } catch (e) {}
     setLoginPw("");
   };
+  const tryGatePin = (e) => {
+    e?.preventDefault?.();
+    setGatePinErr("");
+    if (gatePinInput.trim() !== getAppAccessPin()) {
+      setGatePinErr("PIN incorect.");
+      setGatePinInput("");
+      return;
+    }
+    if (gatePinRemember) {
+      try { localStorage.setItem(LS_KEY_PIN_REMEMBER, "1"); } catch (err) {}
+    } else {
+      try { sessionStorage.setItem(SS_KEY_PIN_SESSION, "1"); } catch (err) {}
+    }
+    setPinUnlocked(true);
+    setGatePinInput("");
+    setGatePinRemember(false);
+  };
+  const revokePinBrowserTrust = () => {
+    try { localStorage.removeItem(LS_KEY_PIN_REMEMBER); } catch (e) {}
+    showToast("Am uitat «Salvează în browser». La următoarea deschidere a site-ului vei introduce din nou PIN-ul.");
+  };
+  const saveAppPinFromSettings = () => {
+    const a = (pinChangeNew || "").trim();
+    const b = (pinChangeConfirm || "").trim();
+    if (a.length < 4) { showToast("PIN-ul nou: minim 4 caractere.", "error"); return; }
+    if (a !== b) { showToast("PIN-urile nu coincid.", "error"); return; }
+    try { localStorage.setItem(LS_KEY_APP_PIN, a); } catch (e) { showToast("Nu s-a putut salva.", "error"); return; }
+    showToast("PIN acces actualizat ✓");
+    setPinChangeNew("");
+    setPinChangeConfirm("");
+  };
   const doAuthLogout = async () => {
     try { localStorage.removeItem(LS_SESSION_MEMBER); } catch (e) {}
     try { sessionStorage.removeItem(SS_KEY_LOGIN_LAST); } catch (e) {}
+    try { sessionStorage.removeItem(SS_KEY_PIN_SESSION); } catch (e) {}
+    let remembered = false;
+    try { remembered = localStorage.getItem(LS_KEY_PIN_REMEMBER) === "1"; } catch (e) {}
+    if (!remembered) setPinUnlocked(false);
     setUser(null);
     setLoginStep("pick");
     setLoginPick("");
@@ -6294,12 +6308,33 @@ function App() {
       </div>
     );
   }
+  if (!pinUnlocked) {
+    return (
+      <div style={authShell}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}`}</style>
+        <img src={LOGO_URL} alt="PHASER" style={{width:180,marginBottom:8}}/>
+        <form onSubmit={tryGatePin} style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{textAlign:"center"}}>
+            <h2 style={{fontSize:18,fontWeight:700,color:"#fafafa",margin:0}}>PIN acces</h2>
+            <p style={{fontSize:12,color:"#737373",margin:"8px 0 0",lineHeight:1.45}}>Introdu PIN-ul trupei pentru a continua.</p>
+          </div>
+          <input type="password" inputMode="numeric" autoComplete="one-time-code" value={gatePinInput} onChange={e=>setGatePinInput(e.target.value)} placeholder="PIN" maxLength={12} style={{padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:18,letterSpacing:6,textAlign:"center",fontFamily:"ui-monospace,monospace"}}/>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontSize:13,color:"#a3a3a3",userSelect:"none"}}>
+            <input type="checkbox" checked={gatePinRemember} onChange={e=>setGatePinRemember(e.target.checked)} style={{width:18,height:18,accentColor:"#f59e0b"}}/>
+            Salvează în acest browser (nu mai cer PIN-ul aici)
+          </label>
+          {gatePinErr && <div style={{fontSize:12,color:"#f87171"}}>{gatePinErr}</div>}
+          <button type="submit" style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:"pointer"}}>Continuă</button>
+        </form>
+      </div>
+    );
+  }
   if (!sbSession) {
     const pickedMember = loginPick && loginPick !== "admin" ? MEMBERS.find(x => x.id === loginPick) : null;
     const signInHeading = loginPick === "admin" ? "Cont admin" : pickedMember ? `${pickedMember.short} · ${pickedMember.n}` : "";
     return (
       <div style={authShell}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}.ph-login-card{transition:border-color .15s,background .15s}.ph-login-card:hover{border-color:#f59e0b66!important;background:#1c1c1c!important}`}</style>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}.ph-prof-row{transition:background .12s,border-color .12s}.ph-prof-row:hover{background:#1a1a1a!important;border-color:#3f3f3f!important}`}</style>
         <img src={LOGO_URL} alt="PHASER" style={{width:200,marginBottom:12}}/>
         {loginStep === "signin" && loginPick ? (
           <div style={{width:"100%",maxWidth:400,display:"flex",flexDirection:"column",gap:14}}>
@@ -6329,19 +6364,25 @@ function App() {
               <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 1</div>
               <h2 style={{fontSize:22,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>Alege profilul tău</h2>
             </div>
-            <p style={{fontSize:13,color:"#888",textAlign:"center",lineHeight:1.55,margin:0}}>Apasă pe numele tău din trupă. Apoi îți vom arăta emailul contului și îți vom cere parola — aceeași ca în Supabase.</p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(2, minmax(0,1fr))",gap:10}}>
+            <p style={{fontSize:13,color:"#888",textAlign:"center",lineHeight:1.55,margin:0}}>Alege rândul tău din listă. Apoi: emailul contului și parola Supabase.</p>
+            <div style={{width:"100%",maxWidth:380,borderRadius:12,border:"1px solid #2a2a2a",overflow:"hidden",background:"#111"}}>
               {MEMBERS.map(m=>(
-                <button key={m.id} type="button" className="ph-login-card" onClick={()=>{ setLoginPick(m.id); setLoginEmail(MEMBER_AUTH_EMAIL[m.id]); setAuthErr(""); setLoginStep("signin"); }} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,padding:"18px 12px",borderRadius:14,border:"1px solid #333",background:"#161616",color:"#fff",cursor:"pointer",textAlign:"center",fontFamily:"inherit"}}>
-                  <span style={{fontSize:32,lineHeight:1}} aria-hidden>{m.emoji}</span>
-                  <span style={{fontSize:15,fontWeight:700}}>{m.short}</span>
-                  <span style={{fontSize:11,color:"#737373"}}>{m.r}</span>
+                <button key={m.id} type="button" className="ph-prof-row" onClick={()=>{ setLoginPick(m.id); setLoginEmail(MEMBER_AUTH_EMAIL[m.id]); setAuthErr(""); setLoginStep("signin"); }} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px 14px",border:"none",borderBottom:"1px solid #262626",background:"#141414",color:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                  <span style={{fontSize:22,width:36,textAlign:"center",flexShrink:0,lineHeight:1}} aria-hidden>{m.emoji}</span>
+                  <span style={{flex:1,minWidth:0}}>
+                    <span style={{display:"block",fontWeight:700,fontSize:15}}>{m.short}</span>
+                    <span style={{display:"block",fontSize:12,color:"#737373",marginTop:2}}>{m.n} · {m.r}</span>
+                  </span>
+                  <span style={{color:"#525252",fontSize:20,fontWeight:300,flexShrink:0}}>›</span>
                 </button>
               ))}
-              <button type="button" className="ph-login-card" onClick={()=>{ setLoginPick("admin"); setLoginEmail(CONTACT_ADMIN_EMAIL); setAuthErr(""); setLoginStep("signin"); }} style={{gridColumn:"1 / -1",display:"flex",flexDirection:"row",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:10,padding:"16px 14px",borderRadius:14,border:"1px solid #422006",background:"linear-gradient(180deg,#292013,#1a1508)",color:"#fdba74",cursor:"pointer",fontFamily:"inherit"}}>
-                <span style={{fontSize:22}} aria-hidden>🔐</span>
-                <span style={{fontWeight:700,fontSize:15}}>Admin</span>
-                <span style={{fontSize:11,opacity:0.9,wordBreak:"break-all",textAlign:"center"}}>{CONTACT_ADMIN_EMAIL}</span>
+              <button type="button" className="ph-prof-row" onClick={()=>{ setLoginPick("admin"); setLoginEmail(CONTACT_ADMIN_EMAIL); setAuthErr(""); setLoginStep("signin"); }} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px 14px",border:"none",background:"linear-gradient(180deg,#2a2210,#1a1508)",color:"#fdba74",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                <span style={{fontSize:22,width:36,textAlign:"center",flexShrink:0}} aria-hidden>🔐</span>
+                <span style={{flex:1,minWidth:0}}>
+                  <span style={{display:"block",fontWeight:700,fontSize:15}}>Admin</span>
+                  <span style={{display:"block",fontSize:11,opacity:0.9,marginTop:2,wordBreak:"break-all"}}>{CONTACT_ADMIN_EMAIL}</span>
+                </span>
+                <span style={{color:"#92400e",fontSize:20,fontWeight:300,flexShrink:0}}>›</span>
               </button>
             </div>
           </div>
@@ -7332,6 +7373,23 @@ function App() {
                 <input type="password" autoComplete="new-password" value={pwConfirm} onChange={e=>setPwConfirm(e.target.value)} placeholder="Confirmă parola" minLength={6} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
                 <button type="button" onClick={doPasswordChange} disabled={pwSaveBusy} style={{padding:"10px 16px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:700,fontSize:13,cursor:pwSaveBusy?"wait":"pointer"}}>{pwSaveBusy?"…":"Salvează parola nouă"}</button>
               </div>
+            </div>
+            <div style={{marginBottom:24,padding:16,borderRadius:12,border:`1px solid ${th.b}`,background:th.h}}>
+              <h2 style={{fontSize:15,fontWeight:700,marginBottom:6}}>PIN acces (ecranul de la intrare)</h2>
+              <p style={{fontSize:12,color:th.tm,marginBottom:12,lineHeight:1.5}}>Schimbă codul cerut înainte de login. Toți membrii care știu noul PIN îl pot folosi pe acest dispozitiv.</p>
+              <div style={{display:"flex",flexDirection:"column",gap:10,maxWidth:320}}>
+                <input type="password" inputMode="numeric" autoComplete="new-password" value={pinChangeNew} onChange={e=>setPinChangeNew(e.target.value)} placeholder="PIN nou (min. 4 caractere)" style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                <input type="password" inputMode="numeric" value={pinChangeConfirm} onChange={e=>setPinChangeConfirm(e.target.value)} placeholder="Confirmă PIN-ul" style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                <button type="button" onClick={saveAppPinFromSettings} style={{padding:"10px 16px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontWeight:600,fontSize:13,cursor:"pointer"}}>Salvează PIN nou</button>
+              </div>
+              <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${th.b}`}}>
+                <p style={{fontSize:12,color:th.tm,marginBottom:10,lineHeight:1.45}}>«Salvează în browser» la PIN: revocă aici dacă vrei să fie cerut din nou la următoarea deschidere a site-ului.</p>
+                <button type="button" onClick={revokePinBrowserTrust} style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${th.b}`,background:"transparent",color:th.tm,fontSize:12,cursor:"pointer"}}>Revocă «Salvează în browser» (PIN)</button>
+              </div>
+            </div>
+            <div style={{marginBottom:20,padding:14,borderRadius:12,border:`1px dashed ${th.b}`,background:th.bg}}>
+              <p style={{fontSize:12,color:th.tm,margin:0,lineHeight:1.5}}><strong style={{color:th.t}}>Alt profil în trupă:</strong> deconectează-te și autentifică-te din nou cu alt cont din listă.</p>
+              <button type="button" onClick={doAuthLogout} style={{marginTop:10,padding:"10px 16px",borderRadius:8,border:`1px solid ${th.b}`,background:th.h,color:th.t,fontSize:13,fontWeight:600,cursor:"pointer"}}>Ieși și schimb profilul</button>
             </div>
             {(()=>{
               const m=MEMBERS.find(x=>x.id===user.memberId);
