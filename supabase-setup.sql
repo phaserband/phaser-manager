@@ -13,8 +13,7 @@
 -- Recomandare: dezactivează "Confirm email" ca membrii să poată
 -- intra direct fără să dea click pe un link de confirmare.
 --
--- Parolă inițială (convenită în echipă, vezi STANDARD_BAND_PASSWORD în index.html):
---   phaser5! — setați-o la Add user / Invite sau după reset, pentru fiecare email din MEMBER_AUTH_EMAIL + contact@phaser.ro.
+-- Parolele userilor se setează în Authentication → Users (Add / Invite / reset). Nu le afișați în UI-ul app-ului.
 
 -- ─────────────────────────────────────────────
 -- 1. Tabela app_data (date principale aplicație)

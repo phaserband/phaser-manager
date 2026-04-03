@@ -513,7 +513,7 @@ const MEMBERS = [
   {id:"m4",n:"Arnold Birta",  short:"Arni",  r:"Tobe",   emoji:"🥁"},
   {id:"m5",n:"Sebastian Bârzeianu",short:"Sebi",r:"Chitară",emoji:"🎸"}
 ];
-/** Email Auth pentru fiecare membru — user în Supabase cu această adresă. Parolă inițială comună: STANDARD_BAND_PASSWORD. */
+/** Email Auth pentru fiecare membru — user în Supabase cu această adresă. */
 const MEMBER_AUTH_EMAIL = {
   m1: "carinadumitru@gmail.com",
   m2: "raczradurr@gmail.com",
@@ -521,8 +521,6 @@ const MEMBER_AUTH_EMAIL = {
   m4: "birta.arnold@gmail.com",
   m5: "sebi.barzeianu@gmail.com",
 };
-/** Setați această parolă în Supabase (Authentication → Users) pentru fiecare membru + admin la creare sau după reset. */
-const STANDARD_BAND_PASSWORD = "phaser5!";
 const CONTACT_ADMIN_EMAIL = "contact@phaser.ro";
 const LS_SESSION_MEMBER = "phaser_session_member";
 /** Ultimul profil ales la login — dacă sesiunea Supabase a expirat, sari direct la parolă (fără pasul 1). Se șterge la Deconectare / «Alt profil». */
@@ -5186,6 +5184,12 @@ function App() {
   const [gatePinInput, setGatePinInput] = useState("");
   const [gatePinRemember, setGatePinRemember] = useState(false);
   const [gatePinErr, setGatePinErr] = useState("");
+  const [showGatePin, setShowGatePin] = useState(false);
+  const [showLoginPw, setShowLoginPw] = useState(false);
+  const [showPwNew, setShowPwNew] = useState(false);
+  const [showPwConfirm, setShowPwConfirm] = useState(false);
+  const [showPinChNew, setShowPinChNew] = useState(false);
+  const [showPinChConf, setShowPinChConf] = useState(false);
   const [pinChangeNew, setPinChangeNew] = useState("");
   const [pinChangeConfirm, setPinChangeConfirm] = useState("");
   const [loginStep, setLoginStep] = useState("pick"); // "pick" | "signin"
@@ -6320,7 +6324,10 @@ function App() {
             <h2 style={{fontSize:18,fontWeight:700,color:"#fafafa",margin:0}}>PIN acces</h2>
             <p style={{fontSize:12,color:"#737373",margin:"8px 0 0",lineHeight:1.45}}>Introdu PIN-ul trupei pentru a continua.</p>
           </div>
-          <input type="password" inputMode="numeric" autoComplete="one-time-code" value={gatePinInput} onChange={e=>setGatePinInput(e.target.value)} placeholder="PIN" maxLength={12} style={{padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:18,letterSpacing:6,textAlign:"center",fontFamily:"ui-monospace,monospace"}}/>
+          <div style={{position:"relative",width:"100%"}}>
+            <input type={showGatePin?"text":"password"} inputMode="numeric" autoComplete="one-time-code" value={gatePinInput} onChange={e=>setGatePinInput(e.target.value)} placeholder="PIN" maxLength={12} aria-label="PIN acces" style={{width:"100%",boxSizing:"border-box",padding:"14px 72px 14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:18,letterSpacing:showGatePin?0:6,textAlign:"left",fontFamily:"ui-monospace,monospace"}}/>
+            <button type="button" onClick={()=>setShowGatePin(s=>!s)} aria-label={showGatePin?"Ascunde PIN":"Arată PIN"} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:"#a3a3a3",fontSize:12,cursor:"pointer",padding:"6px 8px",fontFamily:"inherit",fontWeight:600}}>{showGatePin?"Ascunde":"Arată"}</button>
+          </div>
           <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontSize:13,color:"#a3a3a3",userSelect:"none"}}>
             <input type="checkbox" checked={gatePinRemember} onChange={e=>setGatePinRemember(e.target.checked)} style={{width:18,height:18,accentColor:"#f59e0b"}}/>
             Salvează în acest browser (nu mai cer PIN-ul aici)
@@ -6346,7 +6353,6 @@ function App() {
               <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 2 · Autentificare</div>
               <h2 style={{fontSize:20,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>{signInHeading}</h2>
             </div>
-            <p style={{fontSize:12,color:"#888",lineHeight:1.55,margin:0}}>Parolă inițială pentru toți (dacă e setată așa în Supabase): <strong style={{color:"#d4d4d4"}}>{STANDARD_BAND_PASSWORD}</strong>. După login o poți schimba din <strong style={{color:"#a3a3a3"}}>Contul meu → Schimbă parola</strong>.</p>
             <div>
               <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Email</div>
               <div style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#121212",color:"#d4d4d4",fontSize:14,wordBreak:"break-all",lineHeight:1.4}}>{loginEmail}</div>
@@ -6354,7 +6360,10 @@ function App() {
             <form onSubmit={doAuthLogin} style={{display:"flex",flexDirection:"column",gap:12}}>
               <div>
                 <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Parolă</div>
-                <input type="password" autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder={STANDARD_BAND_PASSWORD} required style={{width:"100%",boxSizing:"border-box",padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+                <div style={{position:"relative",width:"100%"}}>
+                  <input type={showLoginPw?"text":"password"} autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parolă" required aria-label="Parolă" style={{width:"100%",boxSizing:"border-box",padding:"14px 72px 14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+                  <button type="button" onClick={()=>setShowLoginPw(s=>!s)} aria-label={showLoginPw?"Ascunde parola":"Arată parola"} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:"#a3a3a3",fontSize:12,cursor:"pointer",padding:"6px 8px",fontFamily:"inherit",fontWeight:600}}>{showLoginPw?"Ascunde":"Arată"}</button>
+                </div>
               </div>
               {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
               <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Intră în aplicație"}</button>
@@ -7371,8 +7380,14 @@ function App() {
               <h2 style={{fontSize:15,fontWeight:700,marginBottom:6}}>Schimbă parola</h2>
               <p style={{fontSize:12,color:th.tm,marginBottom:12,lineHeight:1.5}}>Parola e stocată în Supabase Auth (contul tău). Minim 6 caractere.</p>
               <div style={{display:"flex",flexDirection:"column",gap:10,maxWidth:320}}>
-                <input type="password" autoComplete="new-password" value={pwNew} onChange={e=>setPwNew(e.target.value)} placeholder="Parolă nouă" minLength={6} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
-                <input type="password" autoComplete="new-password" value={pwConfirm} onChange={e=>setPwConfirm(e.target.value)} placeholder="Confirmă parola" minLength={6} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                <div style={{position:"relative",width:"100%"}}>
+                  <input type={showPwNew?"text":"password"} autoComplete="new-password" value={pwNew} onChange={e=>setPwNew(e.target.value)} placeholder="Parolă nouă" minLength={6} aria-label="Parolă nouă" style={{width:"100%",boxSizing:"border-box",padding:"10px 68px 10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                  <button type="button" onClick={()=>setShowPwNew(s=>!s)} aria-label={showPwNew?"Ascunde":"Arată"} style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:th.tm,fontSize:11,cursor:"pointer",padding:"4px 6px",fontFamily:"inherit",fontWeight:600}}>{showPwNew?"Ascunde":"Arată"}</button>
+                </div>
+                <div style={{position:"relative",width:"100%"}}>
+                  <input type={showPwConfirm?"text":"password"} autoComplete="new-password" value={pwConfirm} onChange={e=>setPwConfirm(e.target.value)} placeholder="Confirmă parola" minLength={6} aria-label="Confirmă parola" style={{width:"100%",boxSizing:"border-box",padding:"10px 68px 10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                  <button type="button" onClick={()=>setShowPwConfirm(s=>!s)} aria-label={showPwConfirm?"Ascunde":"Arată"} style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:th.tm,fontSize:11,cursor:"pointer",padding:"4px 6px",fontFamily:"inherit",fontWeight:600}}>{showPwConfirm?"Ascunde":"Arată"}</button>
+                </div>
                 <button type="button" onClick={doPasswordChange} disabled={pwSaveBusy} style={{padding:"10px 16px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:700,fontSize:13,cursor:pwSaveBusy?"wait":"pointer"}}>{pwSaveBusy?"…":"Salvează parola nouă"}</button>
               </div>
             </div>
@@ -7380,8 +7395,14 @@ function App() {
               <h2 style={{fontSize:15,fontWeight:700,marginBottom:6}}>PIN acces (ecranul de la intrare)</h2>
               <p style={{fontSize:12,color:th.tm,marginBottom:12,lineHeight:1.5}}>Schimbă codul cerut înainte de login. Toți membrii care știu noul PIN îl pot folosi pe acest dispozitiv.</p>
               <div style={{display:"flex",flexDirection:"column",gap:10,maxWidth:320}}>
-                <input type="password" inputMode="numeric" autoComplete="new-password" value={pinChangeNew} onChange={e=>setPinChangeNew(e.target.value)} placeholder="PIN nou (min. 4 caractere)" style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
-                <input type="password" inputMode="numeric" value={pinChangeConfirm} onChange={e=>setPinChangeConfirm(e.target.value)} placeholder="Confirmă PIN-ul" style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                <div style={{position:"relative",width:"100%"}}>
+                  <input type={showPinChNew?"text":"password"} inputMode="numeric" autoComplete="new-password" value={pinChangeNew} onChange={e=>setPinChangeNew(e.target.value)} placeholder="PIN nou (min. 4 caractere)" aria-label="PIN nou" style={{width:"100%",boxSizing:"border-box",padding:"10px 68px 10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                  <button type="button" onClick={()=>setShowPinChNew(s=>!s)} aria-label={showPinChNew?"Ascunde":"Arată"} style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:th.tm,fontSize:11,cursor:"pointer",padding:"4px 6px",fontFamily:"inherit",fontWeight:600}}>{showPinChNew?"Ascunde":"Arată"}</button>
+                </div>
+                <div style={{position:"relative",width:"100%"}}>
+                  <input type={showPinChConf?"text":"password"} inputMode="numeric" value={pinChangeConfirm} onChange={e=>setPinChangeConfirm(e.target.value)} placeholder="Confirmă PIN-ul" aria-label="Confirmă PIN" style={{width:"100%",boxSizing:"border-box",padding:"10px 68px 10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                  <button type="button" onClick={()=>setShowPinChConf(s=>!s)} aria-label={showPinChConf?"Ascunde":"Arată"} style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:th.tm,fontSize:11,cursor:"pointer",padding:"4px 6px",fontFamily:"inherit",fontWeight:600}}>{showPinChConf?"Ascunde":"Arată"}</button>
+                </div>
                 <button type="button" onClick={saveAppPinFromSettings} style={{padding:"10px 16px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontWeight:600,fontSize:13,cursor:"pointer"}}>Salvează PIN nou</button>
               </div>
               <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${th.b}`}}>
