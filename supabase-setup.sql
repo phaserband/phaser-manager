@@ -8,10 +8,11 @@
 -- ─────────────────────────────────────────────
 -- În Supabase Dashboard → Authentication → Providers → Email:
 --   ✅ Enable Email provider
---   ☐ Confirm email — DEZACTIVEAZĂ pentru aplicație internă
+--   ☐ Confirm email — LASĂ DEBIFAT (fără confirmare mail) pentru app internă
 --
--- Recomandare: dezactivează "Confirm email" ca membrii să poată
--- intra direct fără să dea click pe un link de confirmare.
+-- Parole: se setează în Dashboard (Users) sau rulezi o dată, local:
+--   scripts/reset-supabase-user-passwords.mjs
+--   (vezi comentariile din script — trebuie service_role key + CONFIRM=YES)
 --
 -- Parolele userilor se setează în Authentication → Users (Add / Invite / reset). Nu le afișați în UI-ul app-ului.
 
