@@ -551,15 +551,26 @@ const getSvcCostBreakdown = (ev, prices) => {
 };
 
 const MEMBERS = [
-  {id:"m1",n:"Carina Dumitru",short:"Carina",r:"Vocal",  email:"carina@phaser.ro",emoji:"🎤"},
-  {id:"m2",n:"Radu Racz",     short:"Radu",  r:"Bass",   email:"raczradurr@gmail.com",emoji:"🎵"},
-  {id:"m3",n:"Lucian Oprișan",short:"Luci",  r:"Clape",  email:"lucian@phaser.ro",emoji:"🎹"},
-  {id:"m4",n:"Arnold Birta",  short:"Arni",  r:"Tobe",   email:"arnold@phaser.ro",emoji:"🥁"},
-  {id:"m5",n:"Sebastian Bârzeianu",short:"Sebi",r:"Chitară",email:"sebi@phaser.ro",emoji:"🎸"}
+  {id:"m1",n:"Carina Dumitru",short:"Carina",r:"Vocal",  emoji:"🎤"},
+  {id:"m2",n:"Radu Racz",     short:"Radu",  r:"Bass",   emoji:"🎵"},
+  {id:"m3",n:"Lucian Oprișan",short:"Luci",  r:"Clape",  emoji:"🎹"},
+  {id:"m4",n:"Arnold Birta",  short:"Arni",  r:"Tobe",   emoji:"🥁"},
+  {id:"m5",n:"Sebastian Bârzeianu",short:"Sebi",r:"Chitară",emoji:"🎸"}
 ];
+/** Email Auth pentru fiecare membru — trebuie creat utilizator în Supabase cu această adresă; parola și-o setează fiecare. */
+const MEMBER_AUTH_EMAIL = {
+  m1: "carinadumitru@gmail.com",
+  m2: "raczradurr@gmail.com",
+  m3: "lucianoprisan90@gmail.com",
+  m4: "birta.arnold@gmail.com",
+  m5: "sebi.barzeianu@gmail.com",
+};
+const CONTACT_ADMIN_EMAIL = "contact@phaser.ro";
 const LS_SESSION_MEMBER = "phaser_session_member";
-/** Emailuri cu drepturi admin în app (tab Cont → cereri acces). */
-const PHASER_ADMIN_EMAILS = ["raczradurr@gmail.com", "contact@phaser.ro"].map(e => e.trim().toLowerCase());
+/** Ultimul profil ales la login — dacă sesiunea Supabase a expirat, sari direct la parolă (fără pasul 1). Se șterge la Deconectare / «Alt profil». */
+const SS_KEY_LOGIN_LAST = "phaser_login_last_pick";
+/** Rol admin în app + aliniere RLS pe member_profiles (dacă îl folosiți). */
+const PHASER_ADMIN_EMAILS = [CONTACT_ADMIN_EMAIL].map(e => e.trim().toLowerCase());
 const sessionUserFromStorage = () => {
   try {
     const mid = localStorage.getItem(LS_SESSION_MEMBER);
@@ -574,20 +585,19 @@ const buildBandUser = (m, email, forceAdmin) => {
   const isAdmin = !!forceAdmin || PHASER_ADMIN_EMAILS.includes(em);
   return { id: m.id, n: m.short || m.n.split(" ")[0], rl: isAdmin ? "admin" : "membru", memberId: m.id };
 };
-/** După login Supabase: potrivește email cu MEMBERS sau profil aprobat + band_member_id. */
+/** După login: doar emailurile din MEMBER_AUTH_EMAIL + CONTACT_ADMIN_EMAIL au acces (fără aprobare în app). */
 async function resolveBandUserAfterAuth(session, sb) {
   const email = session?.user?.email?.trim().toLowerCase();
   if (!email || !sb) return { ok: false, gate: "unknown" };
-  const m = MEMBERS.find(x => (x.email || "").toLowerCase() === email);
-  if (m) return { ok: true, user: buildBandUser(m, email, false) };
-  const { data: prof, error } = await sb.from("member_profiles").select("status,band_member_id,role").eq("user_id", session.user.id).maybeSingle();
-  if (error) console.error("[resolveBandUser]", error);
-  if (!prof) return { ok: false, gate: "unknown" };
-  if (prof.status === "pending") return { ok: false, gate: "pending" };
-  if (prof.status === "rejected") return { ok: false, gate: "rejected" };
-  if (prof.status === "approved" && prof.band_member_id) {
-    const m2 = MEMBERS.find(x => x.id === prof.band_member_id);
-    if (m2) return { ok: true, user: buildBandUser(m2, email, prof.role === "admin") };
+  if (email === CONTACT_ADMIN_EMAIL.trim().toLowerCase()) {
+    const bridge = MEMBERS.find(x => x.id === "m2");
+    if (bridge) return { ok: true, user: buildBandUser(bridge, email, true) };
+    return { ok: false, gate: "unknown" };
+  }
+  const mid = Object.keys(MEMBER_AUTH_EMAIL).find((id) => MEMBER_AUTH_EMAIL[id].trim().toLowerCase() === email);
+  if (mid) {
+    const m = MEMBERS.find(x => x.id === mid);
+    if (m) return { ok: true, user: buildBandUser(m, email, false) };
   }
   return { ok: false, gate: "unknown" };
 }
@@ -743,6 +753,8 @@ const getSbClient = () => {
         autoRefreshToken: true,
         detectSessionInUrl: true,
         flowType: "pkce",
+        storage: typeof window !== "undefined" ? window.localStorage : undefined,
+        storageKey: "phaser-manager-supabase-auth",
       },
     });
     return _sbClient;
@@ -5195,14 +5207,13 @@ function App() {
   const [authResolved, setAuthResolved] = useState(undefined);
   const [authBusy, setAuthBusy] = useState(false);
   const [authErr, setAuthErr] = useState("");
+  const [loginStep, setLoginStep] = useState("pick"); // "pick" | "signin"
+  const [loginPick, setLoginPick] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPw, setLoginPw] = useState("");
-  const [authView, setAuthView] = useState("login");
-  const [regPre, setRegPre] = useState("");
-  const [regNume, setRegNume] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regPw, setRegPw] = useState("");
-  const [approveMidByProfile, setApproveMidByProfile] = useState({});
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwSaveBusy, setPwSaveBusy] = useState(false);
   const [sbMode, setSbMode] = useState("full");
   const [tab, setTab]     = useState("acasa");
   const [evs, setEvs]     = useLocalStorageState(LS_KEYS.evs, loadEvs);
@@ -5327,14 +5338,27 @@ function App() {
       setSbSession(null);
       return;
     }
-    sb.auth.getSession().then(({ data: { session } }) => {
-      setSbSession(session);
-      setAuthReady(true);
-    });
+    sb.auth.getSession()
+      .then(({ data: { session } }) => setSbSession(session))
+      .catch(() => setSbSession(null))
+      .finally(() => setAuthReady(true));
     const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
       setSbSession(session);
     });
     return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const sb = getSbClient();
+    if (!sb) return;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      sb.auth.getSession().then(({ data: { session } }) => {
+        if (session) setSbSession(session);
+      });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   useEffect(() => {
@@ -5362,50 +5386,71 @@ function App() {
     return () => { cancelled = true; };
   }, [authReady, sbSession]);
 
+  useEffect(() => {
+    if (sbSession) return;
+    if (loginStep === "signin" && !loginPick) setLoginStep("pick");
+  }, [sbSession, loginStep, loginPick]);
+
+  /** Fără sesiune dar cu ultimul profil salvat → direct la parolă (ex. token expirat). */
+  useEffect(() => {
+    if (!authReady || sbSession) return;
+    if (!getSbClient()) return;
+    let last = "";
+    try { last = sessionStorage.getItem(SS_KEY_LOGIN_LAST) || ""; } catch (e) { return; }
+    if (!last) return;
+    if (last === "admin") {
+      setLoginPick("admin");
+      setLoginEmail(CONTACT_ADMIN_EMAIL);
+      setLoginStep("signin");
+    } else if (MEMBER_AUTH_EMAIL[last]) {
+      setLoginPick(last);
+      setLoginEmail(MEMBER_AUTH_EMAIL[last]);
+      setLoginStep("signin");
+    }
+  }, [authReady, sbSession]);
+
   const doAuthLogin = async (e) => {
     e?.preventDefault?.();
     setAuthErr("");
     const sb = getSbClient();
     if (!sb) { setAuthErr("Supabase nu e configurat."); return; }
+    if (!loginPick) { setAuthErr("Alege cine te loghezi din listă."); return; }
+    const want = loginPick === "admin" ? CONTACT_ADMIN_EMAIL : MEMBER_AUTH_EMAIL[loginPick];
+    if (!want || loginEmail.trim().toLowerCase() !== want.trim().toLowerCase()) {
+      setAuthErr("Realege contul din listă.");
+      return;
+    }
     setAuthBusy(true);
     const { error } = await sb.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPw });
     setAuthBusy(false);
     if (error) { setAuthErr(error.message || "Autentificare eșuată"); return; }
+    try { sessionStorage.setItem(SS_KEY_LOGIN_LAST, loginPick); } catch (e) {}
     setLoginPw("");
   };
   const doAuthLogout = async () => {
     try { localStorage.removeItem(LS_SESSION_MEMBER); } catch (e) {}
+    try { sessionStorage.removeItem(SS_KEY_LOGIN_LAST); } catch (e) {}
     setUser(null);
+    setLoginStep("pick");
+    setLoginPick("");
+    setLoginEmail("");
+    setLoginPw("");
+    setAuthErr("");
     const sb = getSbClient();
     if (sb) await sb.auth.signOut();
   };
-  const doAuthRegister = async (e) => {
-    e?.preventDefault?.();
-    setAuthErr("");
+  const doPasswordChange = async () => {
+    if ((pwNew || "").length < 6) { showToast("Parola nouă: minim 6 caractere.", "error"); return; }
+    if (pwNew !== pwConfirm) { showToast("Parolele nu coincid.", "error"); return; }
     const sb = getSbClient();
     if (!sb) return;
-    if (!regPre.trim() || !regNume.trim()) { setAuthErr("Completează prenume și nume."); return; }
-    setAuthBusy(true);
-    const email = regEmail.trim().toLowerCase();
-    const { data, error } = await sb.auth.signUp({ email, password: regPw });
-    if (error) { setAuthBusy(false); setAuthErr(error.message); return; }
-    if (data.user) {
-      await sb.from("member_profiles").insert({
-        user_id: data.user.id,
-        prenume: regPre.trim(),
-        nume: regNume.trim(),
-        email,
-        status: "pending",
-        role: "membru",
-      });
-    }
-    setAuthBusy(false);
-    setAuthView("login");
-    showToast("Cont creat — așteaptă aprobarea adminului, apoi autentifică-te.");
-    setRegPw("");
-    setRegEmail("");
-    setRegPre("");
-    setRegNume("");
+    setPwSaveBusy(true);
+    const { error } = await sb.auth.updateUser({ password: pwNew });
+    setPwSaveBusy(false);
+    if (error) { showToast(error.message || "Nu s-a putut actualiza parola.", "error"); return; }
+    showToast("Parolă actualizată ✓");
+    setPwNew("");
+    setPwConfirm("");
   };
 
   // ─── BACKUP STATE ───
@@ -6250,30 +6295,56 @@ function App() {
     );
   }
   if (!sbSession) {
+    const pickedMember = loginPick && loginPick !== "admin" ? MEMBERS.find(x => x.id === loginPick) : null;
+    const signInHeading = loginPick === "admin" ? "Cont admin" : pickedMember ? `${pickedMember.short} · ${pickedMember.n}` : "";
     return (
       <div style={authShell}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}`}</style>
-        <img src={LOGO_URL} alt="PHASER" style={{width:200,marginBottom:8}}/>
-        {authView==="login" ? (
-          <form onSubmit={doAuthLogin} style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:12}}>
-            <div style={{fontSize:13,color:"#888",marginBottom:4}}>Autentificare — același email ca în lista trupei (sau cont aprobat).</div>
-            <input type="email" autoComplete="email" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} placeholder="Email" required style={{padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
-            <input type="password" autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parolă" required style={{padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
-            {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
-            <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Intră"}</button>
-            <button type="button" onClick={()=>{setAuthView("signup");setAuthErr("");}} style={{background:"transparent",border:"none",color:"#737373",fontSize:12,cursor:"pointer"}}>Cont nou (așteaptă aprobare)</button>
-          </form>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}.ph-login-card{transition:border-color .15s,background .15s}.ph-login-card:hover{border-color:#f59e0b66!important;background:#1c1c1c!important}`}</style>
+        <img src={LOGO_URL} alt="PHASER" style={{width:200,marginBottom:12}}/>
+        {loginStep === "signin" && loginPick ? (
+          <div style={{width:"100%",maxWidth:400,display:"flex",flexDirection:"column",gap:14}}>
+            <button type="button" onClick={()=>{ try { sessionStorage.removeItem(SS_KEY_LOGIN_LAST); } catch (e) {} setLoginStep("pick"); setLoginPick(""); setLoginEmail(""); setLoginPw(""); setAuthErr(""); }} style={{alignSelf:"flex-start",background:"transparent",border:"none",color:"#737373",fontSize:13,cursor:"pointer",padding:"4px 0",fontFamily:"inherit"}}>← Alt profil</button>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:40,lineHeight:1,marginBottom:10}}>{loginPick==="admin"?"🔐":(pickedMember?.emoji||"🎵")}</div>
+              <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 2 · Autentificare</div>
+              <h2 style={{fontSize:20,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>{signInHeading}</h2>
+            </div>
+            <p style={{fontSize:12,color:"#888",lineHeight:1.55,margin:0}}>Acest email e cel din contul Supabase pentru profilul ales. Introdu parola ta (cea setată la invitație sau reset). După login o poți schimba din <strong style={{color:"#a3a3a3"}}>Contul meu → Schimbă parola</strong>.</p>
+            <div>
+              <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Email</div>
+              <div style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#121212",color:"#d4d4d4",fontSize:14,wordBreak:"break-all",lineHeight:1.4}}>{loginEmail}</div>
+            </div>
+            <form onSubmit={doAuthLogin} style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Parolă</div>
+                <input type="password" autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parola contului tău" required style={{width:"100%",boxSizing:"border-box",padding:"14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+              </div>
+              {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
+              <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Intră în aplicație"}</button>
+            </form>
+          </div>
         ) : (
-          <form onSubmit={doAuthRegister} style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontSize:13,color:"#888"}}>Înregistrare — adminul te aprobă și te leagă de un membru.</div>
-            <input value={regPre} onChange={e=>setRegPre(e.target.value)} placeholder="Prenume" required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
-            <input value={regNume} onChange={e=>setRegNume(e.target.value)} placeholder="Nume" required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
-            <input type="email" value={regEmail} onChange={e=>setRegEmail(e.target.value)} placeholder="Email" required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
-            <input type="password" value={regPw} onChange={e=>setRegPw(e.target.value)} placeholder="Parolă (min. 6 caractere)" minLength={6} required style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:14}}/>
-            {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
-            <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"#22c55e",color:"#000",fontWeight:800,fontSize:14,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Creează cont"}</button>
-            <button type="button" onClick={()=>{setAuthView("login");setAuthErr("");}} style={{background:"transparent",border:"none",color:"#737373",fontSize:12,cursor:"pointer"}}>← Am deja cont</button>
-          </form>
+          <div style={{width:"100%",maxWidth:440,display:"flex",flexDirection:"column",gap:18}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 1</div>
+              <h2 style={{fontSize:22,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>Alege profilul tău</h2>
+            </div>
+            <p style={{fontSize:13,color:"#888",textAlign:"center",lineHeight:1.55,margin:0}}>Apasă pe numele tău din trupă. Apoi îți vom arăta emailul contului și îți vom cere parola — aceeași ca în Supabase.</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2, minmax(0,1fr))",gap:10}}>
+              {MEMBERS.map(m=>(
+                <button key={m.id} type="button" className="ph-login-card" onClick={()=>{ setLoginPick(m.id); setLoginEmail(MEMBER_AUTH_EMAIL[m.id]); setAuthErr(""); setLoginStep("signin"); }} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,padding:"18px 12px",borderRadius:14,border:"1px solid #333",background:"#161616",color:"#fff",cursor:"pointer",textAlign:"center",fontFamily:"inherit"}}>
+                  <span style={{fontSize:32,lineHeight:1}} aria-hidden>{m.emoji}</span>
+                  <span style={{fontSize:15,fontWeight:700}}>{m.short}</span>
+                  <span style={{fontSize:11,color:"#737373"}}>{m.r}</span>
+                </button>
+              ))}
+              <button type="button" className="ph-login-card" onClick={()=>{ setLoginPick("admin"); setLoginEmail(CONTACT_ADMIN_EMAIL); setAuthErr(""); setLoginStep("signin"); }} style={{gridColumn:"1 / -1",display:"flex",flexDirection:"row",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:10,padding:"16px 14px",borderRadius:14,border:"1px solid #422006",background:"linear-gradient(180deg,#292013,#1a1508)",color:"#fdba74",cursor:"pointer",fontFamily:"inherit"}}>
+                <span style={{fontSize:22}} aria-hidden>🔐</span>
+                <span style={{fontWeight:700,fontSize:15}}>Admin</span>
+                <span style={{fontSize:11,opacity:0.9,wordBreak:"break-all",textAlign:"center"}}>{CONTACT_ADMIN_EMAIL}</span>
+              </button>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -6290,11 +6361,7 @@ function App() {
     return (
       <div style={authShell}>
         <img src={LOGO_URL} alt="" style={{width:160,marginBottom:12}}/>
-        {g==="pending" && <>
-          <p style={{color:"#e5e5e5",fontSize:15,textAlign:"center",maxWidth:340,lineHeight:1.5}}>Contul tău așteaptă <strong style={{color:"#f59e0b"}}>aprobare</strong> de la admin. Vei primi acces după ce ești legat de un membru din trupă.</p>
-        </>}
-        {g==="rejected" && <p style={{color:"#f87171",fontSize:15,textAlign:"center",maxWidth:340}}>Cererea ta a fost respinsă.</p>}
-        {g==="unknown" && <p style={{color:"#a3a3a3",fontSize:14,textAlign:"center",maxWidth:360,lineHeight:1.6}}>Acest email nu e recunoscut. Folosește același email ca în lista oficială a trupei sau cere unui admin să îți aprobe contul și să te asocieze cu un membru.</p>}
+        {g==="unknown" && <p style={{color:"#a3a3a3",fontSize:14,textAlign:"center",maxWidth:380,lineHeight:1.6}}>Acest cont nu e în lista trupei. Accesul e doar pentru cele 5 adrese Gmail + {CONTACT_ADMIN_EMAIL}. Deconectează-te și alege contul corect din listă, sau creează utilizatorul în Supabase cu emailul potrivit.</p>}
         <button type="button" onClick={doAuthLogout} style={{marginTop:8,padding:"12px 24px",borderRadius:10,border:"1px solid #444",background:"transparent",color:"#fff",cursor:"pointer",fontSize:13}}>Deconectare</button>
       </div>
     );
@@ -7257,6 +7324,15 @@ function App() {
               </button>
             </div>
             <p style={{fontSize:13,color:th.tm,marginBottom:20}}>Datele tale apar în footer-ul ofertelor când ești persoana delegată.</p>
+            <div style={{marginBottom:24,padding:16,borderRadius:12,border:`1px solid ${th.b}`,background:th.h}}>
+              <h2 style={{fontSize:15,fontWeight:700,marginBottom:6}}>Schimbă parola</h2>
+              <p style={{fontSize:12,color:th.tm,marginBottom:12,lineHeight:1.5}}>Parola e stocată în Supabase Auth (contul tău). Minim 6 caractere.</p>
+              <div style={{display:"flex",flexDirection:"column",gap:10,maxWidth:320}}>
+                <input type="password" autoComplete="new-password" value={pwNew} onChange={e=>setPwNew(e.target.value)} placeholder="Parolă nouă" minLength={6} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                <input type="password" autoComplete="new-password" value={pwConfirm} onChange={e=>setPwConfirm(e.target.value)} placeholder="Confirmă parola" minLength={6} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:14}}/>
+                <button type="button" onClick={doPasswordChange} disabled={pwSaveBusy} style={{padding:"10px 16px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:700,fontSize:13,cursor:pwSaveBusy?"wait":"pointer"}}>{pwSaveBusy?"…":"Salvează parola nouă"}</button>
+              </div>
+            </div>
             {(()=>{
               const m=MEMBERS.find(x=>x.id===user.memberId);
               if(!m) return null;
@@ -7496,58 +7572,6 @@ function App() {
                 </div>
             }
           </div>}
-
-          {/* PANEL ADMIN — cereri de acces */}
-          {tab==="contul"&&user?.rl==="admin"&&(()=>{
-            const loadRequests = async () => {
-              const sb = getSbClient(); if(!sb) return;
-              const { data } = await sb.from("member_profiles").select("*").eq("status","pending").order("created_at",{ascending:true});
-              setPendingRequests(data||[]);
-            };
-            if(pendingRequests.length===0 && getSbClient()) {
-              getSbClient().from("member_profiles").select("*").eq("status","pending").then(({data})=>setPendingRequests(data||[]));
-            }
-            const approve = async (profileId) => {
-              const sb = getSbClient(); if(!sb) return;
-              const mid = approveMidByProfile[profileId] || "";
-              if (!mid) { showToast("Alege «Membru trupă» înainte de aprobare.", "error"); return; }
-              const { error } = await sb.from("member_profiles").update({ status: "approved", band_member_id: mid }).eq("id", profileId);
-              if (error) { showToast(error.message || "Eroare aprobare", "error"); return; }
-              setPendingRequests(p=>p.filter(r=>r.id!==profileId));
-              showToast("Utilizator aprobat ✓");
-            };
-            const reject = async (profileId) => {
-              const sb = getSbClient(); if(!sb) return;
-              await sb.from("member_profiles").update({status:"rejected"}).eq("id",profileId);
-              setPendingRequests(p=>p.filter(r=>r.id!==profileId));
-              showToast("Cerere respinsă");
-            };
-            if(pendingRequests.length===0) return null;
-            return <div style={{marginTop:28,borderTop:`1px solid ${th.b}`,paddingTop:24}}>
-              <h2 style={{fontSize:16,fontWeight:700,marginBottom:4,color:"#f59e0b"}}>🔔 Cereri de acces ({pendingRequests.length})</h2>
-              <p style={{fontSize:12,color:th.tm,marginBottom:16}}>Utilizatori care au creat cont și așteaptă aprobare.</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {pendingRequests.map(r=>(
-                  <div key={r.id} style={{padding:"12px 16px",borderRadius:10,border:`1px solid ${th.b}`,background:th.h,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    {r.avatar_url ? <img src={r.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/> : <div style={{width:40,height:40,borderRadius:"50%",background:"#333",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{(r.prenume||"?")[0]}</div>}
-                    <div style={{flex:1,minWidth:120}}>
-                      <div style={{fontSize:14,fontWeight:600}}>{r.prenume} {r.nume} {r.nickname?`(${r.nickname})`:""}</div>
-                      <div style={{fontSize:12,color:th.tm}}>{r.email}</div>
-                      <div style={{fontSize:11,color:"#555",marginTop:2}}>{r.role} · {new Date(r.created_at).toLocaleDateString("ro-RO")}</div>
-                    </div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
-                      <select value={approveMidByProfile[r.id] || ""} onChange={e=>setApproveMidByProfile(p=>({...p,[r.id]:e.target.value}))} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${th.b}`,background:th.i,color:th.t,fontSize:12,minWidth:140}}>
-                        <option value="">— Membru trupă —</option>
-                        {MEMBERS.map(m=><option key={m.id} value={m.id}>{m.short} · {m.r}</option>)}
-                      </select>
-                      <button onClick={()=>approve(r.id)} style={{padding:"6px 14px",background:"#22c55e",color:"#000",border:"none",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer"}}>✓ Aprobă</button>
-                      <button onClick={()=>reject(r.id)} style={{padding:"6px 14px",background:"transparent",color:"#ef4444",border:"1px solid #ef4444",borderRadius:7,fontSize:12,cursor:"pointer"}}>✕ Respinge</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>;
-          })()}
 
           {/* FINANȚE */}
           {tab==="finances"&&(()=>{

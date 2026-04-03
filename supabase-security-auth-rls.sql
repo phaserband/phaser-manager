@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Phaser Manager — Securitate: doar utilizatori autentificați (Supabase Auth)
--- Rulează în Supabase → SQL Editor DUPĂ ce fiecare membru are cont Auth
--- (Authentication → Users) cu același email ca în MEMBERS din aplicație.
+-- Rulează în Supabase → SQL Editor după migrare. Accesul în app e whitelist pe email în index.html
+-- (MEMBER_AUTH_EMAIL + CONTACT_ADMIN_EMAIL); parola e doar în Supabase Auth.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- 1) app_data — fără acces anonim
@@ -42,13 +42,10 @@ CREATE POLICY "fisa_public_delete_auth" ON storage.objects
 
 -- Notă: SELECT pe fisa-public rămâne din politica fisa_public_read (orice anonim poate citi URL-ul public — normal pentru linkuri către clienți).
 
--- 4) member_profiles — admini care pot aproba / actualiza orice rând (aliniază cu PHASER_ADMIN_EMAILS din index.html)
+-- 4) member_profiles — doar contact@phaser.ro poate aproba / actualiza rândurile altora (aliniază cu PHASER_ADMIN_EMAILS din index.html)
 DROP POLICY IF EXISTS "member_profiles_update" ON member_profiles;
 CREATE POLICY "member_profiles_update" ON member_profiles
   FOR UPDATE USING (
     auth.uid() = user_id
-    OR lower((SELECT email FROM auth.users WHERE id = auth.uid())) IN (
-      'raczradurr@gmail.com',
-      'contact@phaser.ro'
-    )
+    OR lower((SELECT email FROM auth.users WHERE id = auth.uid())) = 'contact@phaser.ro'
   );

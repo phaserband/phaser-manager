@@ -64,10 +64,7 @@ DROP POLICY IF EXISTS "member_profiles_update" ON member_profiles;
 CREATE POLICY "member_profiles_update" ON member_profiles
   FOR UPDATE USING (
     auth.uid() = user_id
-    OR lower((SELECT email FROM auth.users WHERE id = auth.uid())) IN (
-      'raczradurr@gmail.com',
-      'contact@phaser.ro'
-    )
+    OR lower((SELECT email FROM auth.users WHERE id = auth.uid())) = 'contact@phaser.ro'
   );
 
 -- ─────────────────────────────────────────────
@@ -133,16 +130,12 @@ CREATE POLICY "fisa_public_delete" ON storage.objects
 DROP TABLE IF EXISTS phaser_trusted;
 
 -- ─────────────────────────────────────────────
--- FLUX UTILIZATORI NOU
+-- FLUX UTILIZATORI (login fix în index.html: MEMBER_AUTH_EMAIL + CONTACT_ADMIN_EMAIL)
 -- ─────────────────────────────────────────────
--- 1. Utilizatorul deschide app-ul → alege "Sunt Membru" sau "Sunt Furnizor"
--- 2. Dacă Membru → "Mă autentific" (email + parolă) sau "Cont nou" (formular complet)
--- 3. La "Cont nou" → completează prenume, nume, email, nickname (opțional), poză (opțional)
---    → se creează cont Supabase Auth + profil în member_profiles cu status="pending"
---    → EXCEPȚIE: dacă emailul e recunoscut (din lista MEMBERS sau admin), status="approved" automat
--- 4. Adminul (raczradurr@gmail.com) vede în "Contul meu" secțiunea "Cereri de acces"
---    → poate Aproba sau Respinge fiecare cerere
--- 5. Membrul aprobat se poate loga și accesa aplicația
+-- 1. În Supabase → Authentication: creezi câte un user pentru fiecare email din app (sau Invite).
+-- 2. Fiecare își setează parola (invitație / reset) — parola e în Auth, nu în cod.
+-- 3. La login în app: aleg din listă membru / admin; acces fără aprobare în member_profiles.
+-- 4. Tabela member_profiles rămâne opțională (ex. avatare vechi); RLS update doar pentru contact@phaser.ro.
 
 -- ─────────────────────────────────────────────
 -- MIGRARE LA phaser.ro (când ești gata)

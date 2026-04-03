@@ -2,4 +2,4 @@
 ALTER TABLE member_profiles
   ADD COLUMN IF NOT EXISTS band_member_id TEXT;
 
-COMMENT ON COLUMN member_profiles.band_member_id IS 'ID membru din app (ex. m1) — setat la aprobare dacă emailul nu e în lista MEMBERS hardcodată';
+COMMENT ON COLUMN member_profiles.band_member_id IS 'Opțional / legacy — login-ul curent mapează email Auth la membru din MEMBER_AUTH_EMAIL în index.html';
