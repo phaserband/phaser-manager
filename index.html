@@ -568,6 +568,19 @@ async function resolveBandUserAfterAuth(session, sb) {
   }
   return { ok: false, gate: "unknown" };
 }
+/** Erori frecvente la signInWithPassword — Supabase returnează text în engleză, fără cod stabil. */
+function formatSbPasswordLoginError(error) {
+  const raw = String(error?.message || error || "").trim();
+  if (!raw) return "Autentificare eșuată.";
+  const low = raw.toLowerCase();
+  if (low.includes("invalid login") || low.includes("invalid credentials")) {
+    return "Parolă greșită sau utilizator inexistent în acest proiect Supabase. În Dashboard → Authentication → Users: verifică că există user cu exact acest email, apoi «Reset password» sau rulează local scripts/reset-supabase-user-passwords.mjs (cu SUPABASE_URL + service_role). Dacă ai «Confirm email» activ și nu ai dat click pe link: rulează scripts/confirm-all-auth-emails.sql în SQL Editor.";
+  }
+  if (low.includes("email not confirmed")) {
+    return "Email neconfirmat. Confirmă din mesajul de la înregistrare sau rulează scripts/confirm-all-auth-emails.sql; poți dezactiva «Confirm email» la Providers → Email.";
+  }
+  return raw;
+}
 const SPLIT_PRIVATE = {m1:24,m2:19,m3:19,m4:19,m5:19}; // Carina 24%, restul 19% fiecare
 const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100}; // lei
 const CURS_DEFAULT = 5; // 1€ = 5 lei
@@ -5408,7 +5421,7 @@ function App() {
     setAuthBusy(true);
     const { error } = await sb.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPw });
     setAuthBusy(false);
-    if (error) { setAuthErr(error.message || "Autentificare eșuată"); return; }
+    if (error) { setAuthErr(formatSbPasswordLoginError(error)); return; }
     try { sessionStorage.setItem(SS_KEY_LOGIN_LAST, loginPick); } catch (e) {}
     setLoginPw("");
   };
