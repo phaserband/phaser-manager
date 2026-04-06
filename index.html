@@ -5945,7 +5945,13 @@ function App() {
           showToast(j.error || "Nu pornesc OAuth Google. Deploy Edge Functions + secrete (vezi GOOGLE_CALENDAR_EDGE_SETUP.md).", "error");
           return;
         }
-        window.location.href = j.url;
+        // OAuth Google nu e suportat într-un iframe — navighează fereastra de sus ca să nu rămână „în învârtit” pe accounts.google.com
+        try {
+          if (window.top && window.top !== window) window.top.location.href = j.url;
+          else window.location.href = j.url;
+        } catch (e) {
+          window.location.href = j.url;
+        }
       })();
       return;
     }

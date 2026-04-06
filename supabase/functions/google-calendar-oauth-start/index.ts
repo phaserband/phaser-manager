@@ -59,7 +59,8 @@ Deno.serve(async (req) => {
     response_type: "code",
     scope: GCAL_SCOPE,
     access_type: "offline",
-    prompt: "consent",
+    // consent = refresh token la prima legare; select_account = evită blocaje când Google nu poate alege contul automat
+    prompt: "consent select_account",
     state,
   });
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
