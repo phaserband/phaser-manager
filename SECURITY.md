@@ -55,6 +55,22 @@ După pasul 3, **fără login** nu mai poți citi/scrie `app_data` din client �
 
 - Dacă cheia anon a fost expusă public (repo GitHub deschis etc.), din Supabase **Settings → API** poți **roti** JWT secret / reevalua politicile RLS.
 
+### F) Google Calendar — `Error 400: redirect_uri_mismatch`
+
+Conectarea folosește **Google Identity Services** (`initTokenClient`) cu `GCAL_CLIENT_ID` din `index.html`. Eroarea apare când **originea paginii** nu e permisă pentru acel client OAuth.
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials** → clientul OAuth **Web** cu ID-ul din cod.
+2. **Authorized JavaScript origins** — adaugă **exact** URL-ul fără path, de exemplu:
+   - `https://manager.phaser.ro` (dacă aici host-ezi managerul)
+   - `http://localhost:8080` (dacă testezi local cu server pe portul 8080)
+3. Dacă deschizi app-ul cu `www` sau alt subdomeniu, adaugă și acel origin (ex. `https://www.manager.phaser.ro` dacă e cazul).
+4. Tip client: trebuie să fie **Web application**, nu iOS/Android.
+5. După salvare, așteaptă 1–5 minute și reîncearcă „Conectează Calendar”.
+
+### G) Calendar stabil (refresh token pe server)
+
+Pentru conectare **persistentă** fără „token 1 oră”, vezi **[GOOGLE_CALENDAR_EDGE_SETUP.md](./GOOGLE_CALENDAR_EDGE_SETUP.md)** — Edge Functions + tabel `google_calendar_credentials`. În `index.html`, `GCAL_USE_SERVER_OAUTH = true` activează acest flux.
+
 ## Rezumat
 
 | Măsură                         | Efort | Efect                          |

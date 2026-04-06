@@ -454,8 +454,13 @@ const FISA_EXTRA_TYPES = [
 const CLAUDE_API_KEY = "";
 
 // ─── GOOGLE CALENDAR CONFIG ───
+// OAuth Web client (tip „Web application”). În Google Cloud → Credentials → acest Client ID:
+// Authorized JavaScript origins = ORIGIN exact al paginii (fără path): https://manager.phaser.ro, http://localhost:8080, etc.
+// www ≠ apex: adaugă ambele dacă folosești ambele. Pentru GIS token flow nu completezi redirect URI-uri speciale în mod normal.
 const GCAL_CLIENT_ID = "166600809896-bkch0s9678ahv7l9fofe0ti47btc4pum.apps.googleusercontent.com";
 const GCAL_SCOPE     = "https://www.googleapis.com/auth/calendar.events";
+/** true = OAuth cu refresh token pe Supabase Edge Functions (`supabase/functions/…`). false = flux vechi doar în browser (GIS). */
+const GCAL_USE_SERVER_OAUTH = true;
 const GCAL_LS_TOKEN  = "gcal_token";
 const GCAL_LS_EXPIRY = "gcal_expiry";
 const dU  = d => { if(!d) return 999; return Math.ceil((new Date(d+"T00:00:00")-new Date())/864e5); };
@@ -5685,13 +5690,18 @@ function App() {
 
   // ─── GOOGLE CALENDAR STATE ───
   const [gcalToken, setGcalToken] = useState(() => {
+    if (GCAL_USE_SERVER_OAUTH) return null;
     const t = localStorage.getItem(GCAL_LS_TOKEN);
     const exp = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
     return (t && exp > Date.now()) ? t : null;
   });
+  const [gcalServerConnected, setGcalServerConnected] = useState(false);
+  const gcalEdgeCacheRef = useRef({ token: "", exp: 0 });
+  const gcalActive = GCAL_USE_SERVER_OAUTH ? gcalServerConnected : !!gcalToken;
   const tokenClientRef = useRef(null);
   const gcalSilentRef = useRef(false); // previne multiple silent refresh simultane
   const gcalPendingSyncsRef = useRef([]); // syncuri în așteptare după refresh token
+  const gcalManualConnectToastRef = useRef(false); // toast doar la click „Conectează Calendar”, nu la refresh silențios
 
   // Salvează token GCal în Supabase (cloud) — oricine reconectează, toți beneficiază
   const saveGCalToCloud = async (token, exp) => {
@@ -5718,6 +5728,7 @@ function App() {
   };
 
   useEffect(() => {
+    if (GCAL_USE_SERVER_OAUTH) return;
     const tryInit = () => {
       if (typeof google === "undefined" || !google.accounts?.oauth2) { setTimeout(tryInit, 600); return; }
       tokenClientRef.current = google.accounts.oauth2.initTokenClient({
@@ -5743,7 +5754,10 @@ function App() {
               }, 500);
             }
             if(resp.error) return; // silent refresh eșuat silențios
-            if(!pending.length) showToast("📅 Google Calendar conectat!");
+            if(!pending.length && gcalManualConnectToastRef.current) {
+              gcalManualConnectToastRef.current = false;
+              showToast("📅 Google Calendar conectat!");
+            }
           }
         },
         error_callback: () => { gcalSilentRef.current = false; if(gcalSilentTimerRef.current){clearTimeout(gcalSilentTimerRef.current);gcalSilentTimerRef.current=null;} }
@@ -5775,8 +5789,33 @@ function App() {
     setTimeout(tryInit, 800);
   }, []);
 
-  // Auto-refresh cu 5 minute înainte de expirare
+  // După login Supabase: token GCal e în `app_data` — la primul mount Cererea rulează înainte de sesiune, deci cu RLS nu citea `phaser_gcal`. Reîncercăm când sesiunea e gata ca să nu mai cerem „Conectează Calendar” la fiecare deschidere. (Doar flux vechi GIS.)
   useEffect(() => {
+    if (GCAL_USE_SERVER_OAUTH) return;
+    if (!authReady || !sbSession) return;
+    const localT = localStorage.getItem(GCAL_LS_TOKEN);
+    const localExp = parseInt(localStorage.getItem(GCAL_LS_EXPIRY) || "0", 10);
+    if (localT && localExp > Date.now() + 30_000) {
+      setGcalToken(localT);
+      return;
+    }
+    const client = getSbClient();
+    if (!client) return;
+    client.from("app_data").select("data").eq("id", "phaser_gcal").maybeSingle().then(({ data: row }) => {
+      const blob = row?.data;
+      if (blob?.token && blob.exp > Date.now()) {
+        localStorage.setItem(GCAL_LS_TOKEN, blob.token);
+        localStorage.setItem(GCAL_LS_EXPIRY, String(blob.exp));
+        setGcalToken(blob.token);
+      } else if (tokenClientRef.current) {
+        setTimeout(() => trySilentRefresh(), 600);
+      }
+    });
+  }, [authReady, sbSession?.user?.id]);
+
+  // Auto-refresh cu 5 minute înainte de expirare (flux vechi GIS)
+  useEffect(() => {
+    if (GCAL_USE_SERVER_OAUTH) return;
     if(!gcalToken) return;
     const exp = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
     const msUntilRefresh = exp - Date.now() - 5*60*1000; // cu 5 min înainte
@@ -5785,8 +5824,9 @@ function App() {
     return () => clearTimeout(timer);
   }, [gcalToken]);
 
-  // Revenire în tab / focus: tokenul expiră la ~1h — reîncarcă din Supabase sau silent refresh (fără popup dacă ești logat în Google în același browser)
+  // Revenire în tab / focus: tokenul expiră la ~1h — reîncarcă din Supabase sau silent refresh (fără popup dacă ești logat în Google în același browser). Flux vechi GIS.
   useEffect(() => {
+    if (GCAL_USE_SERVER_OAUTH) return;
     const restoreGCalIfNeeded = () => {
       if (document.visibilityState && document.visibilityState !== "visible") return;
       const exp = parseInt(localStorage.getItem(GCAL_LS_EXPIRY) || "0", 10);
@@ -5818,15 +5858,126 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!GCAL_USE_SERVER_OAUTH) return;
+    try {
+      const u = new URL(window.location.href);
+      const st = u.searchParams.get("gcal_oauth");
+      if (st === "ok") {
+        showToast("📅 Google Calendar conectat (persistă cu refresh token)!");
+        setGcalServerConnected(true);
+        gcalEdgeCacheRef.current = { token: "", exp: 0 };
+        u.searchParams.delete("gcal_oauth");
+        u.searchParams.delete("reason");
+        const q1 = u.searchParams.toString();
+        window.history.replaceState({}, "", u.pathname + (q1 ? "?" + q1 : "") + u.hash);
+      } else if (st === "err") {
+        showToast("Calendar: " + (u.searchParams.get("reason") || "eroare"), "error");
+        u.searchParams.delete("gcal_oauth");
+        u.searchParams.delete("reason");
+        const q2 = u.searchParams.toString();
+        window.history.replaceState({}, "", u.pathname + (q2 ? "?" + q2 : "") + u.hash);
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    if (!GCAL_USE_SERVER_OAUTH || !authReady || !sbSession) return;
+    const run = async () => {
+      const sb = getSbClient();
+      if (!sb) return;
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) return;
+      const base = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
+      try {
+        const r = await fetch(`${base}/google-calendar-connection-status`, {
+          headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key },
+        });
+        if (r.ok) {
+          const j = await r.json();
+          setGcalServerConnected(!!j.connected);
+        }
+      } catch (e) {}
+    };
+    run();
+  }, [authReady, sbSession?.user?.id]);
+
+  const getGcalAccessTokenUnified = async () => {
+    if (GCAL_USE_SERVER_OAUTH) {
+      const c = gcalEdgeCacheRef.current;
+      if (c.token && c.exp > Date.now() + 20_000) return c.token;
+      const sb = getSbClient();
+      if (!sb) return null;
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) return null;
+      const base = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
+      const r = await fetch(`${base}/google-calendar-access-token`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key },
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (!j.access_token) return null;
+      const ttl = (Number(j.expires_in) || 3600) * 1000;
+      gcalEdgeCacheRef.current = { token: j.access_token, exp: Date.now() + ttl - 120_000 };
+      return j.access_token;
+    }
+    const t = localStorage.getItem(GCAL_LS_TOKEN);
+    const exp = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0", 10);
+    if (!t || exp < Date.now()) return null;
+    return t;
+  };
+
   const connectGCal = () => {
+    if (GCAL_USE_SERVER_OAUTH) {
+      (async () => {
+        const sb = getSbClient();
+        if (!sb) { showToast("Nu ești autentificat.", "error"); return; }
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session) { showToast("Sesiune expirată — autentifică-te din nou.", "error"); return; }
+        const base = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
+        const r = await fetch(`${base}/google-calendar-oauth-start`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key },
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.url) {
+          showToast(j.error || "Nu pornesc OAuth Google. Deploy Edge Functions + secrete (vezi GOOGLE_CALENDAR_EDGE_SETUP.md).", "error");
+          return;
+        }
+        window.location.href = j.url;
+      })();
+      return;
+    }
     if (tokenClientRef.current) {
-      // Cerem acces offline ca să avem refresh token / reînnoire fără a cere din nou consimțământ la fiecare refresh.
-      tokenClientRef.current.requestAccessToken({ prompt: "consent", access_type: "offline", include_granted_scopes: true });
+      gcalManualConnectToastRef.current = true;
+      // GIS Token Client: doar opțiuni documentate (prompt, include_granted_scopes, hint). NU `access_type` — poate forța un flux cu redirect_uri invalid → Error 400 redirect_uri_mismatch.
+      tokenClientRef.current.requestAccessToken({ prompt: "consent", include_granted_scopes: true });
     }
     else showToast("Google API nu s-a încărcat încă, încearcă din nou");
   };
 
   const disconnectGCal = () => {
+    if (GCAL_USE_SERVER_OAUTH) {
+      gcalEdgeCacheRef.current = { token: "", exp: 0 };
+      (async () => {
+        const client = getSbClient();
+        if (client) {
+          const { data: { session } } = await client.auth.getSession();
+          if (session) {
+            const base = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
+            await fetch(`${base}/google-calendar-disconnect`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key },
+            });
+          }
+          try { await client.from("app_data").delete().eq("id","phaser_gcal"); } catch (e) {}
+        }
+        setGcalServerConnected(false);
+        showToast("Calendar deconectat");
+      })();
+      return;
+    }
     localStorage.removeItem(GCAL_LS_TOKEN);
     localStorage.removeItem(GCAL_LS_EXPIRY);
     setGcalToken(null);
@@ -5836,9 +5987,8 @@ function App() {
   };
 
   const syncToGCal = async (ev) => {
-    const token = localStorage.getItem(GCAL_LS_TOKEN);
-    const exp   = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
-    if (!token || exp < Date.now() || !ev.date) return null;
+    let token = await getGcalAccessTokenUnified();
+    if (!token || !ev.date) return null;
     const startRaw = ev.ss || ev.li || "20:00";
     const startTime = startRaw.includes("T") ? startRaw.split("T")[1].slice(0,5) : startRaw;
     const startDate = startRaw.includes("T") ? startRaw.split("T")[0] : ev.date;
@@ -5891,9 +6041,22 @@ function App() {
         body: JSON.stringify(body)
       });
       if (res.status === 401) {
-        // Token expirat — pune evenimentul în coada de retry și încearcă silent refresh
-        gcalPendingSyncsRef.current.push(ev);
-        trySilentRefresh();
+        if (GCAL_USE_SERVER_OAUTH) {
+          gcalEdgeCacheRef.current = { token: "", exp: 0 };
+          token = await getGcalAccessTokenUnified();
+          if (token) {
+            const res2 = await fetch(url, {
+              method: ev.gcalId ? "PUT" : "POST",
+              headers: { "Authorization":`Bearer ${token}`, "Content-Type":"application/json" },
+              body: JSON.stringify(body)
+            });
+            const r2 = await res2.json().catch(()=>({}));
+            return res2.ok ? (r2.id || null) : null;
+          }
+        } else {
+          gcalPendingSyncsRef.current.push(ev);
+          trySilentRefresh();
+        }
         return null;
       }
       const r = await res.json();
@@ -5904,9 +6067,8 @@ function App() {
   // Șterge un eveniment din Google Calendar după gcalId
   const deleteFromGCal = async (gcalId) => {
     if(!gcalId) return;
-    const token = localStorage.getItem(GCAL_LS_TOKEN);
-    const exp   = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
-    if(!token || exp < Date.now()) { trySilentRefresh(); return; }
+    const token = await getGcalAccessTokenUnified();
+    if(!token) { if(!GCAL_USE_SERVER_OAUTH) trySilentRefresh(); return; }
     try {
       await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${gcalId}`, {
         method: "DELETE",
@@ -5917,9 +6079,8 @@ function App() {
 
   // Sincronizează un bloc "Ocupat" în Google Calendar (creare/actualizare)
   const syncBlockToGCal = async (b) => {
-    const token = localStorage.getItem(GCAL_LS_TOKEN);
-    const exp   = parseInt(localStorage.getItem(GCAL_LS_EXPIRY)||"0");
-    if(!token || exp < Date.now() || !b.date) return null;
+    const token = await getGcalAccessTokenUnified();
+    if(!token || !b.date) return null;
     const mem = MEMBERS.find(x => x.id === b.memberId);
     const name = mem?.short || mem?.n || "?";
     const ndObj = new Date(b.date+"T00:00:00"); ndObj.setDate(ndObj.getDate()+1);
@@ -5994,7 +6155,7 @@ function App() {
       showToast(rs ? `Actualizat! ${rs}` : "Eveniment actualizat!");
       // Sync în background cu Google Calendar
       // gcalId: ia din evs (state curent) ca să fie sigur că nu e stale
-      if(gcalToken) {
+      if(gcalActive) {
         const latestEv = evs.find(e=>e.id===mData.id);
         syncToGCal({...updated, gcalId: latestEv?.gcalId||mData.gcalId}).then(gcalId=>{
           if(gcalId) { setEvs(p=>p.map(e=>e.id===mData.id?{...e,gcalId}:e)); showToast("📅 Actualizat în Google Calendar!"); }
@@ -6005,14 +6166,14 @@ function App() {
       const nev = {...merged, id:uid(), cr:new Date().toISOString().split("T")[0], videos:dataBody.videos||tplVideosNew, covers:dataBody.covers||tplPlaylist, st:"cerere", offerNr:null};
       setEvs(p=>[...p,nev]); closeModal(); openModal("detail",nev.id);
       showToast("Cerere adăugată!");
-      if(gcalToken) syncToGCal(nev).then(gcalId=>{
+      if(gcalActive) syncToGCal(nev).then(gcalId=>{
         if(gcalId) { setEvs(p=>p.map(e=>e.id===nev.id?{...e,gcalId}:e)); showToast("📅 Adăugat în Google Calendar!"); }
       });
     } else if (directEvent) {
       const nev = {...merged, id:uid(), cr:new Date().toISOString().split("T")[0], videos:dataBody.videos||tplVideosNew, covers:dataBody.covers||tplPlaylist, st: merged.st||"confirmat", offerNr: null};
       setEvs(p=>[...p,nev]); closeModal(); openModal("detail",nev.id);
       showToast(rs ? `Eveniment adăugat! ${rs}` : "Eveniment adăugat!");
-      if(gcalToken) syncToGCal(nev).then(gcalId=>{
+      if(gcalActive) syncToGCal(nev).then(gcalId=>{
         if(gcalId) { setEvs(p=>p.map(e=>e.id===nev.id?{...e,gcalId}:e)); showToast("📅 Adăugat în Google Calendar!"); }
       });
     } else {
@@ -6020,7 +6181,7 @@ function App() {
       const nev = {...merged, id:uid(), cr:new Date().toISOString().split("T")[0], videos:dataBody.videos||tplVideosNew, covers:dataBody.covers||tplPlaylist, offerNr:nextNr};
       setEvs(p=>[...p,nev]); openModal("oferta",nev.id);
       showToast(rs ? `Ofertă creată! ${rs}` : "Ofertă creată!");
-      if(gcalToken) syncToGCal(nev).then(gcalId=>{
+      if(gcalActive) syncToGCal(nev).then(gcalId=>{
         if(gcalId) { setEvs(p=>p.map(e=>e.id===nev.id?{...e,gcalId}:e)); showToast("📅 Adăugat în Google Calendar!"); }
       });
     }
@@ -6028,7 +6189,7 @@ function App() {
 
   const delEv = async (id) => {
     // Șterge din Google Calendar dacă există gcalId
-    if(gcalToken) {
+    if(gcalActive) {
       const ev = evs.find(e => e.id===id);
       if(ev?.gcalId) {
         deleteFromGCal(ev.gcalId);
@@ -6107,7 +6268,7 @@ function App() {
     setEvs(p => p.map(e => e.id===id ? {...e, st} : e));
     showToast(`Status: ${ST[st]?.l}`);
     // Sync GCal în afara updater-ului (side effects nu se pun în setEvs)
-    if(gcalToken) {
+    if(gcalActive) {
       const ev = evs.find(e => e.id===id);
       if(ev?.gcalId) {
         const updatedEv = {...ev, st};
@@ -6491,11 +6652,11 @@ function App() {
 
         {/* Google Calendar connect */}
         <div style={{padding:"10px 12px 0",borderTop:`1px solid ${th.sbb}`}}>
-          <button data-tour="gcal-btn" onClick={gcalToken ? disconnectGCal : connectGCal}
-            title={sbMode==="mini"?(gcalToken?"Calendar conectat ✓":"Conectează Calendar Google"):undefined}
-            style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:gcalToken?"rgba(34,197,94,.12)":"transparent",color:gcalToken?"#22c55e":th.sbt,fontSize:11,cursor:"pointer",width:"100%",transition:"all .2s"}}>
+          <button data-tour="gcal-btn" onClick={gcalActive ? disconnectGCal : connectGCal}
+            title={sbMode==="mini"?(gcalActive?"Calendar conectat ✓":"Conectează Calendar Google"):undefined}
+            style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:gcalActive?"rgba(34,197,94,.12)":"transparent",color:gcalActive?"#22c55e":th.sbt,fontSize:11,cursor:"pointer",width:"100%",transition:"all .2s"}}>
             <span style={{fontSize:13}}>📅</span>
-            {sbMode==="full"&&<span>{gcalToken?"Calendar conectat ✓":"Conectează Calendar"}</span>}
+            {sbMode==="full"&&<span>{gcalActive?"Calendar conectat ✓":"Conectează Calendar"}</span>}
           </button>
         </div>
         <div style={{padding:"8px 12px 14px",display:"flex",flexDirection:"column",gap:4}}>
@@ -6736,7 +6897,7 @@ function App() {
           </div>}
 
           {/* CERERI */}
-          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pickCerere",null):undefined} onStatusChange={updSt} onBulkStatusChange={p.e?bulkUpdSt:undefined} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;const becomesConfirmed=newDp&&ev.st==="plata_avans";const updatedEv={...ev,dp:newDp,...(becomesConfirmed?{st:"confirmat"}:{})};setEvs(p=>p.map(e=>e.id===id?updatedEv:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");if(becomesConfirmed&&gcalToken&&updatedEv.gcalId){syncToGCal(updatedEv).then(newId=>{if(newId)showToast("📅 Calendar actualizat: Confirmat");});}}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
+          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pickCerere",null):undefined} onStatusChange={updSt} onBulkStatusChange={p.e?bulkUpdSt:undefined} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;const becomesConfirmed=newDp&&ev.st==="plata_avans";const updatedEv={...ev,dp:newDp,...(becomesConfirmed?{st:"confirmat"}:{})};setEvs(p=>p.map(e=>e.id===id?updatedEv:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");if(becomesConfirmed&&gcalActive&&updatedEv.gcalId){syncToGCal(updatedEv).then(newId=>{if(newId)showToast("📅 Calendar actualizat: Confirmat");});}}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
 
           {/* DOCS — Documente, rider, playlist, press kit — template pentru oferte */}
           {tab==="docs"&&<div style={{animation:"su .3s ease"}}>
@@ -7362,7 +7523,7 @@ function App() {
                     setCalNewOccTent(false);
                     showToast("Ocupare adăugată ✓");
                     // Sync în Google Calendar
-                    if(gcalToken) syncBlockToGCal(nb).then(gcalId=>{
+                    if(gcalActive) syncBlockToGCal(nb).then(gcalId=>{
                       if(gcalId) setCalBlocks(prev=>(prev||[]).map(x=>x.id===nb.id?{...x,gcalId}:x));
                     });
                   }} style={{...sty.b,width:"100%",fontSize:12,padding:"10px 14px"}}>+ Adaugă ocupare</button>
@@ -7373,7 +7534,7 @@ function App() {
                       <div style={{fontSize:13,fontWeight:700}}>{b.tentative?<span style={{color:"#f59e0b"}}>? </span>:null}Ocupat: {mem?.short||mem?.n||"?"}</div>
                       {b.note?<div style={{fontSize:11,color:th.tm,marginTop:4,whiteSpace:"pre-wrap"}}>{b.note}</div>:null}
                       <div style={{fontSize:10,color:th.tm,marginTop:6}}>Apasă pentru detalii / ștergere</div>
-                      <button type="button" onClick={(e)=>{e.stopPropagation();if(gcalToken&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});}} style={{marginTop:8,padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${th.b}`,background:"transparent",color:"#ef4444",cursor:"pointer"}}>Șterge rapid</button>
+                      <button type="button" onClick={(e)=>{e.stopPropagation();if(gcalActive&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});}} style={{marginTop:8,padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${th.b}`,background:"transparent",color:"#ef4444",cursor:"pointer"}}>Șterge rapid</button>
                     </div>;
                   })}
                 </div>
@@ -8107,7 +8268,7 @@ function App() {
                 Încă neconfirmat (?) — linie întreruptă în calendar
               </label>
               <div style={{display:"flex",flexDirection:mob?"column":"row",gap:10,marginTop:8}}>
-                <button type="button" onClick={()=>{if(gcalToken&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});closeModal();showToast("Ocupare ștearsă");}} style={{flex:1,padding:"12px 16px",borderRadius:10,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",fontWeight:600,cursor:"pointer",fontSize:13}}>Șterge ocupare</button>
+                <button type="button" onClick={()=>{if(gcalActive&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});closeModal();showToast("Ocupare ștearsă");}} style={{flex:1,padding:"12px 16px",borderRadius:10,border:"1px solid #ef4444",background:"transparent",color:"#ef4444",fontWeight:600,cursor:"pointer",fontSize:13}}>Șterge ocupare</button>
                 <button type="button" onClick={closeModal} style={{...sty.b,flex:1,padding:"12px 16px",fontSize:13}}>Închide</button>
               </div>
             </div>
@@ -8313,7 +8474,7 @@ function App() {
                     closeModal();
                     setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);
                     showToast("Ofertă generată!");
-                    if(gcalToken&&ev.gcalId) syncToGCal({...updated});
+                    if(gcalActive&&ev.gcalId) syncToGCal({...updated});
                   }} style={{...sty.b,fontSize:13}}>📄 Generează ofertă</button>
                   <button onClick={()=>{updSt(ev.id,"asteptare");closeModal();}} style={{...sty.bg,fontSize:13}}>⏭ Salt direct la Așt. contract</button>
                   {p.e&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("form",ev.id),80);}} style={{...sty.bg,fontSize:13}}>✏️ Editează date</button>}
@@ -8330,7 +8491,7 @@ function App() {
               {/* DE PLATIT AVANS — doar plăți + butoane (fără Fișa) */}
               {ev.st==="plata_avans"&&<>
                 <div style={{display:"flex",gap:10,marginBottom:16}}>
-                  <div onClick={()=>{const nd=!ev.dp;const patch={dp:nd,...(nd?{st:"confirmat"}:{})};updEv(patch);showToast(nd?"Avans încasat ✓ — eveniment confirmat":"Avans: neîncasat");if(gcalToken&&ev.gcalId){const updatedEv={...ev,...patch};syncToGCal(updatedEv);}}} style={{flex:1,padding:16,borderRadius:10,border:`2px solid ${ev.dp?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.dp?"rgba(34,197,94,.06)":"transparent"}}>
+                  <div onClick={()=>{const nd=!ev.dp;const patch={dp:nd,...(nd?{st:"confirmat"}:{})};updEv(patch);showToast(nd?"Avans încasat ✓ — eveniment confirmat":"Avans: neîncasat");if(gcalActive&&ev.gcalId){const updatedEv={...ev,...patch};syncToGCal(updatedEv);}}} style={{flex:1,padding:16,borderRadius:10,border:`2px solid ${ev.dp?"#22c55e":th.b}`,cursor:"pointer",textAlign:"center",background:ev.dp?"rgba(34,197,94,.06)":"transparent"}}>
                     <div style={{fontSize:18,marginBottom:4}}>{ev.dp?"✅":"⬜"}</div>
                     <div style={{fontSize:10,color:th.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Platit avans</div>
                     <div style={{fontSize:14,fontWeight:700,color:ev.dp?"#22c55e":"#ef4444"}}>{fFmt(ev.dep||0,ev.valuta)}</div>
@@ -9024,7 +9185,7 @@ function App() {
           setEvs(p=>p.map(e=>e.id===id?{...e,...up}:e));
           // Sync GCal în afara updater-ului (side effects nu se pun în setEvs)
           const gcalFields=["responsabilPrincipal","type","date","venue","city","st"];
-          if(gcalToken && Object.keys(up).some(k=>gcalFields.includes(k))){
+          if(gcalActive && Object.keys(up).some(k=>gcalFields.includes(k))){
             const ev=evs.find(e=>e.id===id);
             if(ev?.gcalId){
               const updatedEv={...ev,...up};
