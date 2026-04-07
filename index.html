@@ -810,11 +810,12 @@ const computeFinanceDistribution = (ev, servicePrices) => {
     roundedShares, roundedSharesLei, leadAmt, adminAmt, socialAmt, stageAmt
   };
 };
-/** Finanțe profil: aceleași algoritm ca în modalul Fișa — întâi «Parte cantat» vs total bonus rol la rt rotunjit, apoi bonus împărțit pe Lead/Admin/Stage; la Carina (m1) Social e în pachetul «cantat» ca în fișă, apoi separat interpretare vs Social în euro/lei. */
+/** Finanțe profil: aceleași pași ca în Fișa — la «Tot pe firmă» rotunjirea pool-ului e în lei, deci «Parte cantat» / bonus se calculează din rtLei (pcL/prL), nu din rt €; apoi împărțire Cantat interpretare / Social lei ca în fișă. */
 const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
   const d = computeFinanceDistribution(ev, servicePrices);
-  const { CURS, isLei, baseShares, roleBonus, leadAmt, adminAmt, socialAmt, stageAmt, roundedShares } = d;
+  const { CURS, isLei, restFirma, baseShares, roleBonus, leadAmt, adminAmt, socialAmt, stageAmt, roundedShares, roundedSharesLei } = d;
   const rt = roundedShares[mId] || 0;
+  const rtLei = roundedSharesLei[mId] || 0;
   const base = baseShares[mId] || 0;
   const rol = roleBonus[mId] || 0;
   const rawW = base + rol;
@@ -825,61 +826,103 @@ const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
   const baseDisp = socialInCantat ? base + socialAmt : base;
   const rolDisp = socialInCantat ? Math.max(0, rol - socialAmt) : rol;
 
-  let cantat = Math.round(rt * (baseDisp / rawW) * 100) / 100;
-  let rolTotal = Math.round((rt - cantat) * 100) / 100;
-  let driftC = Math.round((rt - cantat - rolTotal) * 100) / 100;
-  if (Math.abs(driftC) >= 0.005) cantat = Math.round((cantat + driftC) * 100) / 100;
-  rolTotal = Math.round((rt - cantat) * 100) / 100;
+  const useLeiCore = !!restFirma && rtLei > 0;
+  let cantat;
+  let rolTotal;
+  if (useLeiCore) {
+    let pcL = Math.round(rtLei * (baseDisp / rawW) * 100) / 100;
+    let prL = Math.round((rtLei - pcL) * 100) / 100;
+    const driftL = Math.round((rtLei - pcL - prL) * 100) / 100;
+    if (Math.abs(driftL) >= 0.005) pcL = Math.round((pcL + driftL) * 100) / 100;
+    prL = Math.round((rtLei - pcL) * 100) / 100;
+    cantat = pcL;
+    rolTotal = prL;
+  } else {
+    let pcE = Math.round(rt * (baseDisp / rawW) * 100) / 100;
+    let prE = Math.round((rt - pcE) * 100) / 100;
+    const driftE = Math.round((rt - pcE - prE) * 100) / 100;
+    if (Math.abs(driftE) >= 0.005) pcE = Math.round((pcE + driftE) * 100) / 100;
+    prE = Math.round((rt - pcE) * 100) / 100;
+    cantat = pcE;
+    rolTotal = prE;
+  }
 
   let outBase = 0;
   let outLead = 0;
   let outAdmin = 0;
   let outSocial = 0;
   let outStage = 0;
+  let outSocialLei = 0;
 
-  if (socialInCantat && baseDisp > 0) {
-    outBase = Math.round(cantat * (base / baseDisp) * 100) / 100;
-    outSocial = Math.round((cantat - outBase) * 100) / 100;
-    const dB = Math.round((cantat - outBase - outSocial) * 100) / 100;
-    if (Math.abs(dB) >= 0.005) outBase = Math.round((outBase + dB) * 100) / 100;
-    outSocial = Math.round((cantat - outBase) * 100) / 100;
-  } else {
-    outBase = cantat;
-  }
-
-  if (rolDisp > 0.005 && rolTotal > 0.005) {
+  const splitRolBonus = (toEur) => {
+    if (rolDisp <= 0.005 || rolTotal <= 0.005) return;
     const rw = [];
     if (ev.leadId === mId && !ev.leadCustom && leadAmt > 0) rw.push({ k: "lead", w: leadAmt });
     if (ev.adminId === mId && adminAmt > 0) rw.push({ k: "admin", w: adminAmt });
     if (ev.stageId === mId && stageAmt > 0) rw.push({ k: "stage", w: stageAmt });
-
     const sumRw = rw.reduce((s, x) => s + x.w, 0);
-    if (sumRw > 0) {
-      let acc = 0;
-      rw.forEach((x, i) => {
-        let val;
-        if (i === rw.length - 1) val = Math.round((rolTotal - acc) * 100) / 100;
-        else {
-          val = Math.round(rolTotal * (x.w / sumRw) * 100) / 100;
-          acc += val;
-        }
-        if (x.k === "lead") outLead = val;
-        else if (x.k === "admin") outAdmin = val;
-        else if (x.k === "stage") outStage = val;
-        else if (x.k === "social") outSocial = val;
-      });
+    if (sumRw <= 0) {
+      const add = toEur ? rolTotal : Math.round((rolTotal / CURS) * 100) / 100;
+      outBase = Math.round((outBase + add) * 100) / 100;
+      return;
+    }
+    let acc = 0;
+    rw.forEach((x, i) => {
+      let val;
+      if (i === rw.length - 1) val = Math.round((rolTotal - acc) * 100) / 100;
+      else {
+        val = Math.round(rolTotal * (x.w / sumRw) * 100) / 100;
+        acc += val;
+      }
+      const valE = toEur ? val : Math.round((val / CURS) * 100) / 100;
+      if (x.k === "lead") outLead = valE;
+      else if (x.k === "admin") outAdmin = valE;
+      else if (x.k === "stage") outStage = valE;
+    });
+  };
+
+  if (useLeiCore) {
+    if (socialInCantat && baseDisp > 0) {
+      let oBL = Math.round(cantat * (base / baseDisp) * 100) / 100;
+      let oSL = Math.round((cantat - oBL) * 100) / 100;
+      const dB = Math.round((cantat - oBL - oSL) * 100) / 100;
+      if (Math.abs(dB) >= 0.005) oBL = Math.round((oBL + dB) * 100) / 100;
+      oSL = Math.round((cantat - oBL) * 100) / 100;
+      outBase = Math.round((oBL / CURS) * 100) / 100;
+      outSocialLei = oSL;
+      outSocial = Math.round((oSL / CURS) * 100) / 100;
     } else {
+      outBase = Math.round((cantat / CURS) * 100) / 100;
+    }
+    splitRolBonus(false);
+    if (rolDisp <= 0.005 && rolTotal > 0.005) {
+      outBase = Math.round((outBase + Math.round((rolTotal / CURS) * 100) / 100) * 100) / 100;
+    }
+  } else {
+    if (socialInCantat && baseDisp > 0) {
+      outBase = Math.round(cantat * (base / baseDisp) * 100) / 100;
+      outSocial = Math.round((cantat - outBase) * 100) / 100;
+      const dB = Math.round((cantat - outBase - outSocial) * 100) / 100;
+      if (Math.abs(dB) >= 0.005) outBase = Math.round((outBase + dB) * 100) / 100;
+      outSocial = Math.round((cantat - outBase) * 100) / 100;
+    } else {
+      outBase = cantat;
+    }
+    splitRolBonus(true);
+    if (rolDisp <= 0.005 && rolTotal > 0.005) {
       outBase = Math.round((outBase + rolTotal) * 100) / 100;
     }
-  } else if (rolTotal > 0.005) {
-    outBase = Math.round((outBase + rolTotal) * 100) / 100;
   }
 
   const sumP = Math.round((outBase + outLead + outAdmin + outSocial + outStage) * 100) / 100;
   const driftF = Math.round((rt - sumP) * 100) / 100;
   if (Math.abs(driftF) >= 0.005) outBase = Math.round((outBase + driftF) * 100) / 100;
 
-  const socialLei = mId === "m1" ? (isLei ? outSocial : Math.round(outSocial * CURS * 100) / 100) : 0;
+  let socialLei = 0;
+  if (mId === "m1") {
+    if (useLeiCore) socialLei = outSocialLei;
+    else socialLei = isLei ? outSocial : Math.round(outSocial * CURS * 100) / 100;
+  }
   return { base: outBase, lead: outLead, admin: outAdmin, social: outSocial, stage: outStage, total: rt, socialLei, curs: CURS, isLei };
 };
 const calcFond7 = (ev) => {
@@ -2728,9 +2771,37 @@ function defaultCap51Text() {
 function defaultCap52Text() {
   return ["se obligă să păstreze confidențialitatea acestui contract.", "se obligă să respecte termenele de plată menționate la art. 4.2.", "se obligă să respecte necesarul tehnic și de ospitalitate din anexa 1 a contractului.", "se obligă să organizeze evenimentul în condiții de legalitate, siguranță, protecție și securitate, la data, locația și ora menționată în art.1.2.", "se obligă să se consulte cu Prestatorul în vederea disponibilității locației pentru efectuarea probelor de sunet necesare bunei desfășurări a serviciilor susținute de Prestator (indicat ~6 ore înainte de eveniment).", "se obligă să se consulte cu Prestatorul cu cel puțin 14 zile înainte de eveniment în vederea stabilirii programului pe ore, urmând a fi stabilită ora exactă de începere a fiecărui set de interpretare artistică și să trimită pe adresa de mail a Prestatorului programul pe ore cu cel puțin 7 zile înainte.", "să asigure spațiul necesar, acoperit, asigurat în cazul vremii nefavorabile, cu suprafața de minim 6×4 metri.", "Beneficiarul va acționa cu diligență în asigurarea bunei desfășurări a evenimentului și soluționarea eventualelor diferențe dintre participanți la eveniment.", "În situația în care echipamentul Prestatorului va suferi daune în cadrul evenimentului din vina exclusivă a Beneficiarului sau a participanților, Beneficiarul va intermedia recuperarea/înlocuirea echipamentului deteriorat."].join("\n");
 }
+/** Rânduri CAP.1 Prestator — câte un rând; folosește **text** pentru îngroșat. */
+function defaultCap1PrestatorBlock() {
+  return [
+    "**Societatea comercială:** PHASER MUSIC SRL",
+    "**Sediul:** Timișoara, Str. Răsăritului 17, Bl. 24, Sc. A, Et. 4, Ap. 9",
+    "**Oficiul Național al Registrului Comerțului:** Nr: J35/750/14.03.2017",
+    "**Cod unic de înregistrare:** 37199434",
+    "**Contul bancar numărul:** RO79INGB00009999906674059",
+    "**Banca:** ING Bank N.V.",
+    "**Adresă mail:** contact@phaser.ro  |  **Telefon:** 0744 771 488",
+    "reprezentată legal de **RACZ ANDREI RADU**, în calitate de asociat, denumită în continuare în prezentul contract **Prestator**."
+  ].join("\n");
+}
+function formatContractCap1Inline(s) {
+  const parts = String(s || "").split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) => {
+    const m = p.match(/^\*\*(.+)\*\*$/);
+    if (m) return <strong key={i}>{m[1]}</strong>;
+    return <span key={i}>{p}</span>;
+  });
+}
 function getDefaultContractModelPrivate() {
   return {
     v: 1,
+    cap1SectionTitle: "CAP. 1. PĂRȚILE CONTRACTANTE",
+    cap1Art11Title: "Art.1.1 Prestatorul",
+    cap1PrestatorBlock: defaultCap1PrestatorBlock(),
+    cap1Art12Title: "Art.1.2 Beneficiarul",
+    cap1BeneficiarPartyLabel: "Persoană fizică:",
+    cap1BeneficiarIdIntro: "cu următoarele date de identificare:",
+    cap1BeneficiarClosing: "în calitate de BENEFICIAR, denumit în continuare în prezentul contract **Beneficiar**.",
     art21: "Art.2.1 Obiectul prezentului contract constă în îndeplinirea activității de interpretare artistică de către Prestator prin actul artistic „PHASER\" în cadrul unui eveniment privat organizat de Beneficiar.",
     art23Intro: "Art.2.3 Durata recitalului artistic este de aproximativ ",
     art23Mid: " minute, împărțit în ",
@@ -2753,7 +2824,11 @@ function getDefaultContractModelPrivate() {
 }
 function getDefaultContractModelPublic() {
   const p = getDefaultContractModelPrivate();
-  return { ...p, art21: "Art.2.1 Obiectul prezentului contract constă în îndeplinirea activității de interpretare artistică de către Prestator prin actul artistic „PHASER\" în cadrul unui eveniment public organizat de Beneficiar." };
+  return {
+    ...p,
+    art21: "Art.2.1 Obiectul prezentului contract constă în îndeplinirea activității de interpretare artistică de către Prestator prin actul artistic „PHASER\" în cadrul unui eveniment public organizat de Beneficiar.",
+    cap1BeneficiarPartyLabel: "Beneficiar / organizator:",
+  };
 }
 function mergeContractModelFromTemplates(templates, isPrivate) {
   const def = isPrivate ? getDefaultContractModelPrivate() : getDefaultContractModelPublic();
@@ -2815,6 +2890,7 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
 
   const cap51Lines = String(m.cap51 || "").split("\n").map((s) => s.trim()).filter(Boolean);
   const cap52Lines = String(m.cap52 || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  const cap1PrestatorLines = String(m.cap1PrestatorBlock ?? defaultCap1PrestatorBlock()).split("\n").map((s) => s.trim()).filter(Boolean);
 
   return (
     <div style={{ background: "#fff", color: "#111", padding: "32px 40px", fontFamily: "Georgia,serif", fontSize: 13, lineHeight: 1.85, maxWidth: 720, margin: "0 auto", boxSizing: "border-box" }}>
@@ -2835,25 +2911,20 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
       </div>
 
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 10 }}>CAP. 1. PĂRȚILE CONTRACTANTE</div>
-        <p style={{ marginBottom: 8, fontStyle: "italic" }}>Art.1.1 Prestatorul</p>
-        <p><strong>Societatea comercială:</strong> PHASER MUSIC SRL</p>
-        <p><strong>Sediul:</strong> Timișoara, Str. Răsăritului 17, Bl. 24, Sc. A, Et. 4, Ap. 9</p>
-        <p><strong>Oficiul Național al Registrului Comerțului:</strong> Nr: J35/750/14.03.2017</p>
-        <p><strong>Cod unic de înregistrare:</strong> 37199434</p>
-        <p><strong>Contul bancar numărul:</strong> RO79INGB00009999906674059</p>
-        <p><strong>Banca:</strong> ING Bank N.V.</p>
-        <p><strong>Adresă mail:</strong> contact@phaser.ro &nbsp;|&nbsp; <strong>Telefon:</strong> 0744 771 488</p>
-        <p style={{ marginTop: 6 }}>reprezentată legal de <strong>RACZ ANDREI RADU</strong>, în calitate de asociat, denumită în continuare în prezentul contract <strong>Prestator</strong>.</p>
+        <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 10 }}>{m.cap1SectionTitle || "CAP. 1. PĂRȚILE CONTRACTANTE"}</div>
+        <p style={{ marginBottom: 8, fontStyle: "italic" }}>{m.cap1Art11Title || "Art.1.1 Prestatorul"}</p>
+        {cap1PrestatorLines.map((line, i) => (
+          <p key={i} style={i === cap1PrestatorLines.length - 1 ? { marginTop: 6 } : {}}>{formatContractCap1Inline(line)}</p>
+        ))}
 
-        <p style={{ margin: "14px 0 8px", fontStyle: "italic" }}>Art.1.2 Beneficiarul</p>
-        <p><strong>Persoană fizică:</strong> <Fi k="clientNume" w={200} placeholder={ev.cn || "Numele beneficiarului"} align="left" /></p>
-        <p style={{ marginTop: 4 }}>cu următoarele date de identificare:</p>
+        <p style={{ margin: "14px 0 8px", fontStyle: "italic" }}>{m.cap1Art12Title || "Art.1.2 Beneficiarul"}</p>
+        <p><strong>{(m.cap1BeneficiarPartyLabel || (isP ? "Persoană fizică:" : "Beneficiar / organizator:")).replace(/:\s*$/, "")}:</strong> <Fi k="clientNume" w={200} placeholder={ev.cn || "Numele beneficiarului"} align="left" /></p>
+        <p style={{ marginTop: 4 }}>{m.cap1BeneficiarIdIntro || "cu următoarele date de identificare:"}</p>
         <p><strong>Locul de domiciliu:</strong> Jud. <Fi k="jud" w={100} placeholder="Județ" /> , Mun./Or. <Fi k="mun" w={120} placeholder="Municipiu" /> , Str. <Fi k="str" w={150} placeholder="Strada" align="left" /> , nr. <Fi k="nr2" w={50} placeholder="nr" /> , ap. <Fi k="ap" w={50} placeholder="ap" /></p>
         <p><strong>Cartea de identitate:</strong> seria <Fi k="ciSeria" w={50} placeholder="XX" /> , nr. <Fi k="ciNr" w={80} placeholder="000000" /> , CNP: <Fi k="cnp" w={140} placeholder="0000000000000" /></p>
         <p><strong>Adresă mail:</strong> <Fi k="clientEmail" w={200} placeholder={ev.ce || "email@..."} align="left" /></p>
         <p><strong>Telefon:</strong> <Fi k="clientTel" w={150} placeholder={ev.cp || "+40..."} align="left" /></p>
-        <p style={{ marginTop: 6 }}>în calitate de BENEFICIAR, denumit în continuare în prezentul contract <strong>Beneficiar</strong>.</p>
+        <p style={{ marginTop: 6 }}>{formatContractCap1Inline(m.cap1BeneficiarClosing || "în calitate de BENEFICIAR, denumit în continuare în prezentul contract **Beneficiar**.")}</p>
       </div>
 
       <div style={{ marginBottom: 20 }}>
@@ -7913,6 +7984,17 @@ function App() {
                     <span style={{fontSize:11,color:th.tm,alignSelf:"center"}}>Versiune model: <strong>v{cm.v ?? 1}</strong> ({isPr ? "privat" : "public"})</span>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{paddingBottom:12,borderBottom:`1px solid ${th.bl}`,marginBottom:4}}>
+                      <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:8}}>CAP. 1 — Părți (Prestator / Beneficiar)</div>
+                      <p style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.5}}>Text separat pentru model <strong>{isPr ? "Privat" : "Public"}</strong>. Câte un rând pentru Prestator; folosește <code>**îngroșat**</code> în text. Câmpurile beneficiarului (nume, CI, adresă) rămân în ofertă.</p>
+                      <div><label style={sty.l}>Titlu capitol</label><input value={cm.cap1SectionTitle||""} onChange={e=>patchCm({ cap1SectionTitle: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                      <div><label style={sty.l}>Art. 1.1 (titlu)</label><input value={cm.cap1Art11Title||""} onChange={e=>patchCm({ cap1Art11Title: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                      <div><label style={sty.l}>Bloc Prestator — rânduri</label><textarea value={cm.cap1PrestatorBlock||""} onChange={e=>patchCm({ cap1PrestatorBlock: e.target.value })} style={{...sty.i,minHeight:160,resize:"vertical",fontSize:12}} placeholder={"Câte un rând...\n**Etichetă:** valoare"}/></div>
+                      <div><label style={sty.l}>Art. 1.2 (titlu)</label><input value={cm.cap1Art12Title||""} onChange={e=>patchCm({ cap1Art12Title: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                      <div><label style={sty.l}>Etichetă înainte de nume beneficiar (ex. Persoană fizică)</label><input value={cm.cap1BeneficiarPartyLabel||""} onChange={e=>patchCm({ cap1BeneficiarPartyLabel: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                      <div><label style={sty.l}>Text «cu următoarele date...»</label><input value={cm.cap1BeneficiarIdIntro||""} onChange={e=>patchCm({ cap1BeneficiarIdIntro: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                      <div><label style={sty.l}>Încheiere Beneficiar (înainte de Cap. 2)</label><textarea value={cm.cap1BeneficiarClosing||""} onChange={e=>patchCm({ cap1BeneficiarClosing: e.target.value })} style={{...sty.i,minHeight:48,resize:"vertical",fontSize:12}} placeholder={"**Beneficiar** pentru îngroșat"}/></div>
+                    </div>
                     {[{ k:"art21", l:"Art. 2.1 (obiect)" },{ k:"art31", l:"Art. 3.1" },{ k:"art42", l:"Art. 4.2 (plată RON)" },{ k:"art43Intro", l:"Art. 4.3 introducere" },{ k:"art43a", l:"Art. 4.3 a)" },{ k:"art43b", l:"Art. 4.3 b)" },{ k:"art44", l:"Art. 4.4 penalități" }].map(({k,l})=>(
                       <div key={k}><label style={sty.l}>{l}</label><textarea value={cm[k]||""} onChange={e=>patchCm({ [k]: e.target.value })} style={{...sty.i,minHeight:56,resize:"vertical",fontSize:12}} /></div>
                     ))}
@@ -8907,7 +8989,7 @@ function App() {
                   </div>
                 </div>
                 <div style={{fontSize:11,color:th.tm,lineHeight:1.55,marginBottom:14,padding:"10px 12px",borderRadius:10,background:th.h,border:`1px solid ${th.bl}`}}>
-                  Aceleași sume ca în <strong>Fișa financiară</strong>: total după rotunjire (10 € sau 10 lei) și împărțire proporțională între Cantat și bonusuri de rol. <strong>Social Media Mgr</strong> e afișat în lei.
+                  Aceleași reguli ca în <strong>Fișa financiară</strong>: la <strong>plată pe firmă</strong> împărțirea se face în <strong>lei</strong> (ca «Parte cantat» / bonus din fișă), apoi Cantat (€) și Social apar ca acolo; altfel, în euro. Totalul rotunjit e 10 € sau 10 lei/persoană ca în fișă.
                 </div>
                 {totPaid>0&&<div style={{...sty.cd,marginBottom:16}}>
                   <div style={{fontSize:11,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Sumar sursă câștig (încasat)</div>
