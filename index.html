@@ -6352,6 +6352,30 @@ function App() {
     run();
   }, [gcalActive, authReady, sbSession?.user?.id, gcalTaskSyncKey]);
 
+  // Backfill: pentru iteme vechi fără gcalId, creăm legătura în Google o singură dată.
+  useEffect(() => {
+    if (!gcalActive || !authReady || !sbSession) return;
+    let cancelled = false;
+    const run = async () => {
+      const missingEvents = evs.filter(e => e?.date && !e?.gcalId).slice(0, 40);
+      const missingBlocks = (calBlocks || []).filter(b => b?.date && !b?.gcalId).slice(0, 40);
+      if (!missingEvents.length && !missingBlocks.length) return;
+
+      for (const ev of missingEvents) {
+        if (cancelled) return;
+        const gid = await syncToGCal(ev);
+        if (gid) setEvs(prev => prev.map(x => x.id === ev.id ? { ...x, gcalId: gid } : x));
+      }
+      for (const b of missingBlocks) {
+        if (cancelled) return;
+        const gid = await syncBlockToGCal(b);
+        if (gid) setCalBlocks(prev => (prev || []).map(x => x.id === b.id ? { ...x, gcalId: gid } : x));
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [gcalActive, authReady, sbSession?.user?.id, evs.length, (calBlocks || []).length]);
+
   // Sincronizează un bloc "Ocupat" în Google Calendar (creare/actualizare)
   const syncBlockToGCal = async (b) => {
     const token = await getGcalAccessTokenUnified();
