@@ -5989,22 +5989,17 @@ function App() {
 
   const connectGCal = () => {
     if (GCAL_USE_SERVER_OAUTH) {
-      // Deschidem fereastra SINCRON din click (înainte de orice await) — altfel Chrome
-      // expiră gestul utilizatorului și blochează navigarea ca popup.
-      // Scriem un redirect în documentul about:blank (rulează din contextul popup-ului,
-      // nu din cel async al părintelui) — bypass complet la popup blocker.
-      const oauthWin = window.open("about:blank", "gcal_oauth_popup", "width=520,height=660,left=200,top=100");
+      // Flux robust: fără popup (evită popup blockers și tab-uri blocate în loading).
+      // După ce primim URL-ul OAuth de la Edge Function, facem redirect full-page.
       (async () => {
         const sb = getSbClient();
         if (!sb) {
           showToast("Nu ești autentificat.", "error");
-          if (oauthWin && !oauthWin.closed) oauthWin.close();
           return;
         }
         const { data: { session } } = await sb.auth.getSession();
         if (!session) {
           showToast("Sesiune expirată — autentifică-te din nou.", "error");
-          if (oauthWin && !oauthWin.closed) oauthWin.close();
           return;
         }
         const base = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
@@ -6015,65 +6010,9 @@ function App() {
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j.url) {
           showToast(j.error || "Nu pornesc OAuth Google. Deploy Edge Functions + secrete (vezi GOOGLE_CALENDAR_EDGE_SETUP.md).", "error");
-          if (oauthWin && !oauthWin.closed) oauthWin.close();
           return;
         }
-        if (oauthWin && !oauthWin.closed) {
-          // Scriem direct în documentul popup-ului un script de redirect —
-          // rulează în contextul PROPRIU al popup-ului, nu e blocat de Chrome/Safari
-          try {
-            oauthWin.document.open();
-            oauthWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-              <title>Se conectează Google Calendar...</title>
-              <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8f9fa;}p{color:#555;font-size:15px;}</style>
-            </head><body><p>⏳ Se conectează Google Calendar...</p>
-            <script>window.location.replace(${JSON.stringify(j.url)});<\/script>
-            </body></html>`);
-            oauthWin.document.close();
-          } catch(e) {
-            // Dacă browser-ul blochează și document.write, navigăm direct pagina principală
-            oauthWin.close();
-            window.location.href = j.url;
-            return; // full-page redirect — nu pornim polling
-          }
-          // ── Polling Supabase: fallback fără localStorage, pur cloud ──
-          // Detectăm când callback-ul a salvat tokenul în DB, indiferent de browser.
-          // BroadcastChannel e mai rapid dacă e suportat; polling e garanția universală.
-          if (gcalPollingRef.current) clearInterval(gcalPollingRef.current);
-          const pollStart = Date.now();
-          gcalPollingRef.current = setInterval(async () => {
-            // Oprim polling-ul dacă popup-ul s-a închis sau dacă a trecut 3 minute
-            if (!oauthWin || oauthWin.closed || Date.now() - pollStart > 180_000) {
-              clearInterval(gcalPollingRef.current);
-              gcalPollingRef.current = null;
-              return;
-            }
-            try {
-              const sb2 = getSbClient();
-              if (!sb2) return;
-              const { data: { session: sess2 } } = await sb2.auth.getSession();
-              if (!sess2) return;
-              const base2 = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
-              const pr = await fetch(`${base2}/google-calendar-connection-status`, {
-                headers: { Authorization: `Bearer ${sess2.access_token}`, apikey: SUPABASE_CFG.key },
-              });
-              if (pr.ok) {
-                const pj = await pr.json();
-                if (pj.connected) {
-                  clearInterval(gcalPollingRef.current);
-                  gcalPollingRef.current = null;
-                  gcalEdgeCacheRef.current = { token: "", exp: 0 };
-                  setGcalServerConnected(true);
-                  showToast("📅 Google Calendar conectat (persistă cu refresh token)!");
-                  if (!oauthWin.closed) oauthWin.close();
-                }
-              }
-            } catch(pe) {}
-          }, 1500);
-        } else {
-          // Popup a fost blocat sau închis — navigăm direct (full-page redirect)
-          window.location.href = j.url;
-        }
+        window.location.assign(j.url);
       })();
       return;
     }
