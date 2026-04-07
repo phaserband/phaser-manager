@@ -5703,6 +5703,15 @@ function App() {
   const gcalSilentRef = useRef(false); // previne multiple silent refresh simultane
   const gcalPendingSyncsRef = useRef([]); // syncuri în așteptare după refresh token
   const gcalManualConnectToastRef = useRef(false); // toast doar la click „Conectează Calendar”, nu la refresh silențios
+  const gcalMirrorDeleteBusyRef = useRef(false); // evită rulări paralele pentru reconcilierea delete-urilor din Google
+  const gcalLinkedEventsKey = useMemo(
+    () => evs.filter(e => e?.gcalId).map(e => `${e.id}:${e.gcalId}`).join("|"),
+    [evs]
+  );
+  const gcalLinkedBlocksKey = useMemo(
+    () => (calBlocks || []).filter(b => b?.gcalId).map(b => `${b.id}:${b.gcalId}`).join("|"),
+    [calBlocks]
+  );
 
   // Salvează token GCal în Supabase (cloud) — oricine reconectează, toți beneficiază
   const saveGCalToCloud = async (token, exp) => {
@@ -6144,6 +6153,80 @@ function App() {
       });
     } catch(e) {}
   };
+
+  // Reconciliere inversă: dacă un item sincronizat a fost șters manual din Google Calendar,
+  // îl ștergem și din aplicație (atât evenimente, cât și ocupări/calBlocks).
+  useEffect(() => {
+    if (!GCAL_USE_SERVER_OAUTH || !gcalActive || !authReady || !sbSession) return;
+    let cancelled = false;
+
+    const runMirrorDeleteReconcile = async () => {
+      if (gcalMirrorDeleteBusyRef.current) return;
+      const linkedEvents = evs.filter(e => e?.gcalId);
+      const linkedBlocks = (calBlocks || []).filter(b => b?.gcalId);
+      if (!linkedEvents.length && !linkedBlocks.length) return;
+
+      gcalMirrorDeleteBusyRef.current = true;
+      try {
+        let token = await getGcalAccessTokenUnified();
+        if (!token) return;
+        const removedEventIds = [];
+        const removedBlockIds = [];
+        const batchEvents = linkedEvents.slice(0, 120); // limităm costul pentru conturi mari
+        const batchBlocks = linkedBlocks.slice(0, 120);
+
+        for (const ev of batchEvents) {
+          if (cancelled) return;
+          try {
+            const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${ev.gcalId}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.status === 401) {
+              gcalEdgeCacheRef.current = { token: "", exp: 0 };
+              token = await getGcalAccessTokenUnified();
+              if (!token) return;
+              continue;
+            }
+            if (res.status === 404) removedEventIds.push(ev.id);
+          } catch (e) {}
+        }
+
+        for (const b of batchBlocks) {
+          if (cancelled) return;
+          try {
+            const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${b.gcalId}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.status === 401) {
+              gcalEdgeCacheRef.current = { token: "", exp: 0 };
+              token = await getGcalAccessTokenUnified();
+              if (!token) return;
+              continue;
+            }
+            if (res.status === 404) removedBlockIds.push(b.id);
+          } catch (e) {}
+        }
+
+        if ((!removedEventIds.length && !removedBlockIds.length) || cancelled) return;
+        const nextEvs = removedEventIds.length ? evs.filter(e => !removedEventIds.includes(e.id)) : evs;
+        const nextBlocks = removedBlockIds.length ? (calBlocks || []).filter(b => !removedBlockIds.includes(b.id)) : (calBlocks || []);
+        if (removedEventIds.length) setEvs(nextEvs);
+        if (removedBlockIds.length) setCalBlocks(nextBlocks);
+        saveNow({ evs: nextEvs, calBlocks: nextBlocks });
+        const removedTotal = removedEventIds.length + removedBlockIds.length;
+        showToast(`📅 ${removedTotal} item(uri) șterse din Google au fost șterse și din aplicație.`);
+      } finally {
+        gcalMirrorDeleteBusyRef.current = false;
+      }
+    };
+
+    runMirrorDeleteReconcile();
+    const t = setInterval(runMirrorDeleteReconcile, 120000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [GCAL_USE_SERVER_OAUTH, gcalActive, authReady, sbSession?.user?.id, gcalLinkedEventsKey, gcalLinkedBlocksKey]);
 
   // Sincronizează un bloc "Ocupat" în Google Calendar (creare/actualizare)
   const syncBlockToGCal = async (b) => {
