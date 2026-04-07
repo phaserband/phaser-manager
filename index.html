@@ -202,6 +202,18 @@ const buildShareableHtmlPublicUrl = (sb, objectPath, shareBaseResolved) => {
   const { data } = sb.storage.from(FISA_PUBLIC_BUCKET).getPublicUrl(p);
   return data?.publicUrl || "";
 };
+/** HEAD către linkul proxy (CORS pe worker) — detectează 404 pe root sau worker nealiniat cu Supabase. */
+const verifyShareableProxyUrl = async (url) => {
+  const u = String(url || "");
+  if (!/^https?:\/\//i.test(u)) return true;
+  if (!/workers\.dev|html-proxy|offer\.phaser\.ro/i.test(u)) return true;
+  try {
+    const r = await fetch(u, { method: "HEAD", mode: "cors", cache: "no-store" });
+    return r.ok;
+  } catch (_) {
+    return false;
+  }
+};
 const generatePdfFromHtml = async (html, timeoutMs) => {
   if (!PDF_WORKER_URL || !PDF_WORKER_URL.startsWith("http") || !html) return null;
   const ctrl = new AbortController();
@@ -3203,6 +3215,14 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       setOfferLinkUrl(publicUrl);
       setOfferLinkPanelOpen(true);
       syncOffer({ offerUrl: publicUrl });
+      verifyShareableProxyUrl(publicUrl).then((proxyOk) => {
+        if (!proxyOk) {
+          showToast&&showToast(
+            "Linkul folosește proxy-ul Cloudflare, dar acesta nu răspunde OK. Deploy: html-public-proxy → npx wrangler deploy; în Worker, SUPABASE_PUBLIC_OBJECT_BASE = aceeași bază ca în README (…/public/fisa-public). Deschide URL-ul cu /offer-….html complet, nu doar domeniul.",
+            "error",
+          );
+        }
+      });
       const copiedOk = await copyTextToClipboardSafe(publicUrl);
       if (copiedOk) {
         setOfferLinkCopied(true);
@@ -3853,6 +3873,14 @@ function FisaLinkButton({ ev, showToast, pdfLoading, getSbClient, updEv, htmlPro
       if (updEv) updEv({ fisaUrl: publicUrl });
       setShow(true);
       showToast?.("Link generat ✓");
+      verifyShareableProxyUrl(publicUrl).then((proxyOk) => {
+        if (!proxyOk) {
+          showToast?.(
+            "Proxy HTML nu răspunde OK — rulează deploy la html-public-proxy și verifică SUPABASE_PUBLIC_OBJECT_BASE în Cloudflare.",
+            "error",
+          );
+        }
+      });
     } catch (e) {
       const raw = (e?.message || e?.error_description || "").trim();
       let msg = "Eroare: " + (raw || "Upload esuat.");
@@ -9518,38 +9546,62 @@ function App() {
         if(ev.stageId){ roleBonus[ev.stageId]=(roleBonus[ev.stageId]||0)+stageAmt; }
         const shares={};
         MEMBERS.forEach(m=>{ shares[m.id]=(baseShares[m.id]||0)+(roleBonus[m.id]||0); });
-        /* Rotunjire:
-           - Direct (fără firmă): 10€
-           - Doar avans pe firmă: 10€ (restul în euro cash)
-           - Tot pe firmă (rest pe firmă): sumele se rotunjesc în LEI la 10 lei (curs ev.cursLei); € e doar referință — ajustarea e în lei, nu „fura” sute de € din fond din cauza rotunjirii la 1€ */
+        /* Rotunjire „închisă” la pool: fiecare sumă e coborâtă la multiplu de 10 (lei sau €), apoi restul până la pool se distribuie în tranșe de 10 către membrii cu cel mai mare rest proporțional (nu mai apare minus uriaș la fond din rotunjiri independente). Rămâne doar rest < 10 lei / < 10 € de numărător. */
         const roundedShares={};
         const roundedSharesLei={};
         let roundingInLei=false;
         let roundUnit=10;
         let roundingAdjFond=0;
         let roundingAdjLei=0;
-        if (restFirma) {
+        const allocateSteps = (targetUnits, step, quotaFn) => {
+          const alloc = {};
+          MEMBERS.forEach(m => {
+            const q = Math.max(0, quotaFn(m.id));
+            alloc[m.id] = Math.floor(q / step) * step;
+          });
+          let slack = targetUnits - MEMBERS.reduce((s, m) => s + (alloc[m.id] || 0), 0);
+          while (slack >= step - 1e-9) {
+            let pick = MEMBERS[0].id;
+            let best = -Infinity;
+            MEMBERS.forEach(m => {
+              const rem = Math.max(0, quotaFn(m.id)) - (alloc[m.id] || 0);
+              if (rem > best) {
+                best = rem;
+                pick = m.id;
+              }
+            });
+            alloc[pick] += step;
+            slack -= step;
+          }
+          return { alloc, slackRemain: slack };
+        };
+        if (pool <= 0) {
+          MEMBERS.forEach(m => {
+            roundedSharesLei[m.id] = 0;
+            roundedShares[m.id] = 0;
+          });
+        } else if (restFirma) {
           roundingInLei=true;
           roundUnit=10;
           const poolLei=pool*CURS;
+          const targetBani=Math.round(poolLei*100);
+          const stepBani=1000;
+          const quotaBani=(id)=>targetBani*((shares[id]||0)/pool);
+          const { alloc: baniAlloc } = allocateSteps(targetBani, stepBani, quotaBani);
           MEMBERS.forEach(m=>{
-            const s=shares[m.id]||0;
-            const lei=s*CURS;
-            roundedSharesLei[m.id]=Math.round(lei/10)*10;
+            roundedSharesLei[m.id]=baniAlloc[m.id]/100;
+            roundedShares[m.id]=Math.round((roundedSharesLei[m.id]/CURS)*100)/100;
           });
-          const sumLei=MEMBERS.reduce((acc,m)=>acc+(roundedSharesLei[m.id]||0),0);
-          roundingAdjLei=Math.round((poolLei-sumLei)*100)/100;
-          MEMBERS.forEach(m=>{
-            roundedShares[m.id]=Math.round(((roundedSharesLei[m.id]||0)/CURS)*100)/100;
-          });
+          roundingAdjLei=Math.round((poolLei-MEMBERS.reduce((s,m)=>s+(roundedSharesLei[m.id]||0),0))*100)/100;
           const roundedPoolTotalEur=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
           roundingAdjFond=Math.round((pool-roundedPoolTotalEur)*100)/100;
         } else {
           roundUnit=10;
-          MEMBERS.forEach(m=>{
-            const s=shares[m.id]||0;
-            roundedShares[m.id]=Math.round(s/roundUnit)*roundUnit;
-          });
+          const targetCents=Math.round(pool*100);
+          const stepCents=1000;
+          const quotaC=(id)=>targetCents*((shares[id]||0)/pool);
+          const { alloc: centAlloc } = allocateSteps(targetCents, stepCents, quotaC);
+          MEMBERS.forEach(m=>{ roundedShares[m.id]=Math.round(centAlloc[m.id]/100*100)/100; });
           const roundedPoolTotal=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
           roundingAdjFond=Math.round((pool-roundedPoolTotal)*100)/100;
         }

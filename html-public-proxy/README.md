@@ -22,3 +22,12 @@ Verifică în `wrangler.toml` că `SUPABASE_PUBLIC_OBJECT_BASE` indică bucket-u
 ## Fallback workers.dev
 
 **`PHASER_CF_WORKERS_SUBDOMAIN`** = partea din mijloc (ex. `phaserband` → `*.phaserband.workers.dev`). Folosit dacă `WORKER_PUBLIC_HTML_BASE` e gol sau pentru PDF/AI fără domeniu propriu. Opțional: suprascrie în app (widget AI → ⚙️).
+
+## Depanare: «Not found» sau 502 pe link
+
+1. **URL complet** — trebuie `https://…workers.dev/offer-xxxx.html` (sau contract/fisa). Doar domeniul fără path → 404.
+2. **Variabila `SUPABASE_PUBLIC_OBJECT_BASE` în Cloudflare** (Workers → phaser-html-proxy → Settings → Variables) trebuie să fie exact:
+   `https://<PROJECT_REF>.supabase.co/storage/v1/object/public/fisa-public`  
+   același `<PROJECT_REF>` ca `SUPABASE_URL` din `index.html` al aplicației. Dacă e alt proiect sau lipsește `fisa-public`, worker-ul dă 404/502.
+3. Repornește deploy după modificare: `cd html-public-proxy && npx wrangler deploy`.
+4. Verificare rapidă: în terminal, `curl -sI "https://<PROJECT_REF>.supabase.co/storage/v1/object/public/fisa-public/offer-XXX.html"` → trebuie 200; apoi același path pe worker → tot 200.
