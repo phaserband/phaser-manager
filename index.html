@@ -5726,6 +5726,7 @@ function App() {
   const gcalManualConnectToastRef = useRef(false); // toast doar la click „Conectează Calendar”, nu la refresh silențios
   const gcalMirrorDeleteBusyRef = useRef(false); // evită rulări paralele pentru reconcilierea delete-urilor din Google
   const gcalTaskSyncBusyRef = useRef(false);
+  const gcalCreateInFlightRef = useRef(new Map()); // key -> Promise<gcalId|null>, previne dubluri la create
   const gcalLinkedEventsKey = useMemo(
     () => evs.filter(e => e?.gcalId).map(e => `${e.id}:${e.gcalId}`).join("|"),
     [evs]
@@ -6111,6 +6112,11 @@ function App() {
   };
 
   const syncToGCal = async (ev) => {
+    const createKey = !ev?.gcalId && ev?.id ? `ev:${ev.id}` : "";
+    if (createKey && gcalCreateInFlightRef.current.has(createKey)) {
+      return await gcalCreateInFlightRef.current.get(createKey);
+    }
+    const run = async () => {
     let token = await getGcalAccessTokenUnified();
     if (!token || !ev.date) return null;
     const startRaw = ev.ss || ev.li || "20:00";
@@ -6186,6 +6192,15 @@ function App() {
       const r = await res.json();
       return r.id || null;
     } catch(e) { return null; }
+    };
+    if (!createKey) return await run();
+    const p = run();
+    gcalCreateInFlightRef.current.set(createKey, p);
+    try {
+      return await p;
+    } finally {
+      gcalCreateInFlightRef.current.delete(createKey);
+    }
   };
 
   // Șterge un eveniment din Google Calendar după gcalId
@@ -6390,6 +6405,11 @@ function App() {
 
   // Sincronizează un bloc "Ocupat" în Google Calendar (creare/actualizare)
   const syncBlockToGCal = async (b) => {
+    const createKey = !b?.gcalId && b?.id ? `block:${b.id}` : "";
+    if (createKey && gcalCreateInFlightRef.current.has(createKey)) {
+      return await gcalCreateInFlightRef.current.get(createKey);
+    }
+    const run = async () => {
     const token = await getGcalAccessTokenUnified();
     if(!token || !b.date) return null;
     const mem = MEMBERS.find(x => x.id === b.memberId);
@@ -6411,9 +6431,23 @@ function App() {
       const r = await res.json();
       return r.id || null;
     } catch(e) { return null; }
+    };
+    if (!createKey) return await run();
+    const p = run();
+    gcalCreateInFlightRef.current.set(createKey, p);
+    try {
+      return await p;
+    } finally {
+      gcalCreateInFlightRef.current.delete(createKey);
+    }
   };
 
   const syncTaskToGCal = async (t) => {
+    const createKey = !t?.gcalId && t?.id ? `task:${t.id}` : "";
+    if (createKey && gcalCreateInFlightRef.current.has(createKey)) {
+      return await gcalCreateInFlightRef.current.get(createKey);
+    }
+    const run = async () => {
     if (!t?.due) return null;
     let token = await getGcalAccessTokenUnified();
     if (!token) return null;
@@ -6449,6 +6483,15 @@ function App() {
       return res.ok ? (r.id || t.gcalId || null) : null;
     } catch (e) {
       return null;
+    }
+    };
+    if (!createKey) return await run();
+    const p = run();
+    gcalCreateInFlightRef.current.set(createKey, p);
+    try {
+      return await p;
+    } finally {
+      gcalCreateInFlightRef.current.delete(createKey);
     }
   };
 
