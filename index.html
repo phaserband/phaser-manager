@@ -715,14 +715,18 @@ const canonMemId = (id) => {
   const m = MEMBERS.find((x) => String(x.id) === String(id));
   return m ? m.id : null;
 };
-/** Pool + cote + rotunjire 10€/10 lei — aceeași logică ca modalul „Fișa financiară”. */
-const computeFinanceDistribution = (ev, servicePrices) => {
+/**
+ * Un singur model de fișă pentru eveniment — **aceeași buclă** ca în modalul „Fișa financiară”.
+ * Modalul și profilul pe membru apelează astfel aceeași sursă (zero cod paralel / drift).
+ */
+const buildFinanceFisaModel = (ev, servicePrices) => {
   const CURS = ev.cursLei || CURS_DEFAULT;
   const isLei = ev.valuta === "lei";
   const MULT = isLei ? CURS : 1;
   const isPrivate = ev.cat === "private";
   const avFirma = ev.avFirma ?? (ev.payType === "firma");
   const restFirma = ev.restFirma ?? (ev.payType === "firma");
+  const anyFirma = avFirma || restFirma;
   const svcTot = Object.entries(ev.svcp || {}).reduce((s, [k, v]) => s + (ev.svc?.[k] ? v : 0), 0);
   const total = (ev.fee || 0) + svcTot;
   const dep = ev.dep || 0;
@@ -743,33 +747,46 @@ const computeFinanceDistribution = (ev, servicePrices) => {
   const dupaFond = netDupaFixed - fond7;
   const div16 = restFirma ? Math.round(dupaFond * 0.16 * 100) / 100 : 0;
   const dupaDiv = dupaFond - div16;
+  const onFirma = anyFirma;
   const leadPct = isPrivate ? 0.02 : 0.01;
-  const leadM = canonMemId(ev.leadId);
-  const adminM = canonMemId(ev.adminId);
-  const stageM = canonMemId(ev.stageId);
-  const leadAmt = (ev.leadCustom || leadM) ? Math.round(dupaDiv * leadPct * 100) / 100 : 0;
-  const adminAmt = adminM ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
+  const leadMc = canonMemId(ev.leadId);
+  const adminMc = canonMemId(ev.adminId);
+  const stageMc = canonMemId(ev.stageId);
+  const leadName = ev.leadCustom || MEMBERS.find(m => m.id === leadMc)?.short || "";
+  const leadAmt = (ev.leadCustom || leadMc) ? Math.round(dupaDiv * leadPct * 100) / 100 : 0;
+  const adminAmt = adminMc ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
   const socialAmt = Math.round(dupaDiv * 0.02 * 100) / 100;
-  const stageAmt = stageM ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
+  const stageAmt = stageMc ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
   const totalRoluri = leadAmt + adminAmt + socialAmt + stageAmt;
   const avansInFond = ev.dp ? dep : 0;
   const pool = Math.max(0, dupaDiv - totalRoluri - avansInFond);
   const baseShares = {};
   const roleBonus = {};
-  MEMBERS.forEach(mm => {
-    baseShares[mm.id] = isPrivate
-      ? Math.round(pool * (SPLIT_PRIVATE[mm.id] || 0) / 100 * 100) / 100
+  MEMBERS.forEach(m => {
+    baseShares[m.id] = isPrivate
+      ? Math.round(pool * (SPLIT_PRIVATE[m.id] || 0) / 100 * 100) / 100
       : Math.round((pool / 5) * 100) / 100;
-    roleBonus[mm.id] = 0;
+    roleBonus[m.id] = 0;
   });
-  if (leadM && !ev.leadCustom) roleBonus[leadM] = (roleBonus[leadM] || 0) + leadAmt;
-  if (adminM) roleBonus[adminM] = (roleBonus[adminM] || 0) + adminAmt;
+  if (leadMc && !ev.leadCustom) roleBonus[leadMc] = (roleBonus[leadMc] || 0) + leadAmt;
+  if (adminMc) roleBonus[adminMc] = (roleBonus[adminMc] || 0) + adminAmt;
   roleBonus["m1"] = (roleBonus["m1"] || 0) + socialAmt;
-  if (stageM) roleBonus[stageM] = (roleBonus[stageM] || 0) + stageAmt;
+  if (stageMc) roleBonus[stageMc] = (roleBonus[stageMc] || 0) + stageAmt;
   const shares = {};
-  MEMBERS.forEach(mm => { shares[mm.id] = (baseShares[mm.id] || 0) + (roleBonus[mm.id] || 0); });
-  const shareTotal = MEMBERS.reduce((s, mm) => s + (shares[mm.id] || 0), 0);
+  MEMBERS.forEach(m => { shares[m.id] = (baseShares[m.id] || 0) + (roleBonus[m.id] || 0); });
+  const shareTotal = MEMBERS.reduce((s, m) => s + (shares[m.id] || 0), 0);
   const poolLeiExact = pool * CURS;
+  const exactLeiNormalized = {};
+  MEMBERS.forEach(m => {
+    exactLeiNormalized[m.id] =
+      shareTotal > 0 && pool > 0 ? poolLeiExact * ((shares[m.id] || 0) / shareTotal) : 0;
+  });
+  const roundedShares = {};
+  const roundedSharesLei = {};
+  let roundingInLei = false;
+  let roundUnit = 10;
+  let roundingAdjFond = 0;
+  let roundingAdjLei = 0;
   const allocateSteps = (targetUnits, step, quotaFn) => {
     const alloc = {};
     MEMBERS.forEach(m => {
@@ -791,32 +808,65 @@ const computeFinanceDistribution = (ev, servicePrices) => {
     }
     return { alloc, slackRemain: slack };
   };
-  const roundedShares = {};
-  const roundedSharesLei = {};
   if (pool <= 0) {
-    MEMBERS.forEach(mm => { roundedShares[mm.id] = 0; roundedSharesLei[mm.id] = 0; });
+    MEMBERS.forEach(m => {
+      roundedSharesLei[m.id] = 0;
+      roundedShares[m.id] = 0;
+    });
   } else if (restFirma) {
-    const targetBani = Math.round(poolLeiExact * 100);
+    roundingInLei = true;
+    roundUnit = 10;
+    const poolLei = poolLeiExact;
+    const targetBani = Math.round(poolLei * 100);
     const stepBani = 1000;
     const quotaBani = (id) => (shareTotal <= 0 ? targetBani / MEMBERS.length : targetBani * ((shares[id] || 0) / shareTotal));
     const { alloc: baniAlloc } = allocateSteps(targetBani, stepBani, quotaBani);
-    MEMBERS.forEach(mm => {
-      roundedSharesLei[mm.id] = baniAlloc[mm.id] / 100;
-      roundedShares[mm.id] = Math.round((roundedSharesLei[mm.id] / CURS) * 100) / 100;
+    MEMBERS.forEach(m => {
+      roundedSharesLei[m.id] = baniAlloc[m.id] / 100;
+      roundedShares[m.id] = Math.round((roundedSharesLei[m.id] / CURS) * 100) / 100;
     });
+    roundingAdjLei = Math.round((poolLei - MEMBERS.reduce((s, m) => s + (roundedSharesLei[m.id] || 0), 0)) * 100) / 100;
+    const roundedPoolTotalEur = MEMBERS.reduce((acc, m) => acc + (roundedShares[m.id] || 0), 0);
+    roundingAdjFond = Math.round((pool - roundedPoolTotalEur) * 100) / 100;
   } else {
+    roundUnit = 10;
     const targetCents = Math.round(pool * 100);
     const stepCents = 1000;
     const quotaC = (id) => (shareTotal <= 0 ? targetCents / MEMBERS.length : targetCents * ((shares[id] || 0) / shareTotal));
     const { alloc: centAlloc } = allocateSteps(targetCents, stepCents, quotaC);
-    MEMBERS.forEach(mm => {
-      roundedShares[mm.id] = Math.round(centAlloc[mm.id] / 100 * 100) / 100;
-      roundedSharesLei[mm.id] = Math.round(roundedShares[mm.id] * CURS * 100) / 100;
-    });
+    MEMBERS.forEach(m => { roundedShares[m.id] = Math.round(centAlloc[m.id] / 100 * 100) / 100; });
+    const roundedPoolTotal = MEMBERS.reduce((acc, m) => acc + (roundedShares[m.id] || 0), 0);
+    roundingAdjFond = Math.round((pool - roundedPoolTotal) * 100) / 100;
   }
+  const hasRounding = roundingInLei ? Math.abs(roundingAdjLei) >= 0.01 : Math.abs(roundingAdjFond) > 0.001;
   return {
-    CURS, isLei, restFirma, pool, baseShares, roleBonus, shares, shareTotal,
-    roundedShares, roundedSharesLei, leadAmt, adminAmt, socialAmt, stageAmt
+    CURS, isLei, MULT, isPrivate, avFirma, restFirma, anyFirma, onFirma,
+    svcTot, total, dep, rest, impVenit, svcCostEur, svcCost, netDupaTax,
+    fc, fcLeiTotal, fcEur, fcBase, fc16, fcEurEffective, netDupaFixed,
+    fondDupCheltPct, fond7, dupaFond, div16, dupaDiv,
+    leadPct, leadMc, adminMc, stageMc, leadName,
+    leadAmt, adminAmt, socialAmt, stageAmt, totalRoluri, avansInFond, pool,
+    baseShares, roleBonus, shares, shareTotal, poolLeiExact, exactLeiNormalized,
+    roundedShares, roundedSharesLei, roundingInLei, roundUnit, roundingAdjFond, roundingAdjLei, hasRounding,
+  };
+};
+const computeFinanceDistribution = (ev, servicePrices) => {
+  const M = buildFinanceFisaModel(ev, servicePrices);
+  return {
+    CURS: M.CURS,
+    isLei: M.isLei,
+    restFirma: M.restFirma,
+    pool: M.pool,
+    baseShares: M.baseShares,
+    roleBonus: M.roleBonus,
+    shares: M.shares,
+    shareTotal: M.shareTotal,
+    roundedShares: M.roundedShares,
+    roundedSharesLei: M.roundedSharesLei,
+    leadAmt: M.leadAmt,
+    adminAmt: M.adminAmt,
+    socialAmt: M.socialAmt,
+    stageAmt: M.stageAmt,
   };
 };
 /**
@@ -825,7 +875,7 @@ const computeFinanceDistribution = (ev, servicePrices) => {
  * Dacă în fișă **nu** apar sub-liniile «Parte cantat / Bonus», pentru membru «Parte cantat» afișată = **totalul rotunjit rt** (ex. Carina 790€).
  */
 const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
-  const d = computeFinanceDistribution(ev, servicePrices);
+  const d = buildFinanceFisaModel(ev, servicePrices);
   const { CURS, isLei, baseShares, roleBonus, socialAmt, roundedShares } = d;
   const rt = roundedShares[mId] || 0;
   const baseM = baseShares[mId] || 0;
@@ -8903,7 +8953,7 @@ function App() {
                         const d=memberDetail(ev,finMember);
                         const amt=isBonus?d.bonusRol:isSocial?d.socialLei:d[roleKey];
                         if(isBonus){if(d.bonusRol<=0.005) return null;} else if(amt<=0) return null;
-                        const desc=isBonus?(d.rolLabel||"—"):(ev.desc||"—");
+                        const desc=isBonus?(d.rolLabel||"—"):"Parte cantat";
                         return <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer"}} onMouseOver={e=>e.currentTarget.style.background=th.h} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                           <td style={{padding:"8px 10px"}}>{fEvDate(ev)}</td>
                           <td style={{padding:"8px 10px"}}>{ev.type||"—"}</td>
@@ -9842,152 +9892,17 @@ function App() {
           const ne={...e,...patch};
           return {...ne,sp:calcShares(ne)};
         }));
-        const CURS=ev.cursLei||CURS_DEFAULT;
-        const isLei=ev.valuta==="lei";
-        const MULT=isLei?CURS:1; // multiplicator: conversia EUR→moneda evenimentului
-        const isPrivate=ev.cat==="private";
-        // Partial firmă: avans și/sau rest separat
-        const avFirma=ev.avFirma??(ev.payType==="firma");
-        const restFirma=ev.restFirma??(ev.payType==="firma");
-        const anyFirma=avFirma||restFirma;
-
-        // Total brut
-        const svcTot=Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
-        const total=(ev.fee||0)+svcTot;
-        const dep=ev.dep||0; const rest=total-dep;
-
-        // 1. Impozit pe venit 1% — doar pe porțiunea pe firmă
-        const impVenit=Math.round(((avFirma?dep:0)+(restFirma?rest:0))*0.01*100)/100;
-        const svcCostEur=typeof getSvcCost==="function"?getSvcCost(ev,templates?.servicePrices):0;
-        const svcCost=Math.round(svcCostEur*MULT*100)/100; // în moneda evenimentului
-        const netDupaTax=Math.max(0,total-impVenit-svcCost);
-
-        // 2. Cheltuieli fixe — în moneda evenimentului
-        const fc={...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{})};
-        const fcLeiTotal=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0);
-        const fcEur=fcLeiTotal/CURS;
-        const fcBase=isLei?fcLeiTotal:fcEur; // în moneda evenimentului
-        // Dacă restul e pe firmă, logistica se bruttifică cu 16% dividende
-        const fc16=restFirma?Math.round(fcBase*0.16*100)/100:0;
-        const fcEurEffective=fcBase+fc16; // în moneda evenimentului
-
-        // 3. Net după cheltuieli fixe
-        const netDupaFixed=Math.max(0,netDupaTax-fcEurEffective);
-
-        // 4. Fond după cheltuieli (implicit 7%, editabil pe eveniment)
-        const fondDupCheltPct=Math.min(100,Math.max(0,Number(ev.fondDupCheltPct??7)));
-        const fond7=Math.round(netDupaFixed*fondDupCheltPct/100*100)/100;
-        const dupaFond=netDupaFixed-fond7;
-
-        // 5. Dividende 16% pe profit — doar când restul e pe firmă
-        const div16=restFirma?Math.round(dupaFond*0.16*100)/100:0;
-        const dupaDiv=dupaFond-div16;
-        // alias pentru compatibilitate cu rezumat
-        const onFirma=anyFirma;
-
-        // 6. Roluri
-        const leadPct=isPrivate?0.02:0.01;
-        const leadMc=canonMemId(ev.leadId),adminMc=canonMemId(ev.adminId),stageMc=canonMemId(ev.stageId);
-        const leadName=ev.leadCustom||MEMBERS.find(m=>m.id===leadMc)?.short||"";
-        const leadAmt=(ev.leadCustom||leadMc)?Math.round(dupaDiv*leadPct*100)/100:0;
-        const adminAmt=adminMc?Math.round(dupaDiv*0.02*100)/100:0;
-        const socialAmt=Math.round(dupaDiv*0.02*100)/100; // Carina întotdeauna
-        const stageAmt=stageMc?Math.round(dupaDiv*0.02*100)/100:0;
-        const totalRoluri=leadAmt+adminAmt+socialAmt+stageAmt;
-
-        // 7. Pool de împărțit
-        const avansInFond=ev.dp?dep:0;
-        const pool=Math.max(0,dupaDiv-totalRoluri-avansInFond);
-
-        // 8. Split per membru — partea de cantat (base) și roluri separate
-        const baseShares={};
-        const roleBonus={};
-        MEMBERS.forEach(m=>{
-          const base=isPrivate?Math.round(pool*(SPLIT_PRIVATE[m.id]||0)/100*100)/100:Math.round(pool/5*100)/100;
-          baseShares[m.id]=base;
-          roleBonus[m.id]=0;
-        });
-        if(leadMc&&!ev.leadCustom){ roleBonus[leadMc]=(roleBonus[leadMc]||0)+leadAmt; }
-        if(adminMc){ roleBonus[adminMc]=(roleBonus[adminMc]||0)+adminAmt; }
-        roleBonus["m1"]=(roleBonus["m1"]||0)+socialAmt; // Carina Social Media
-        if(stageMc){ roleBonus[stageMc]=(roleBonus[stageMc]||0)+stageAmt; }
-        const shares={};
-        MEMBERS.forEach(m=>{ shares[m.id]=(baseShares[m.id]||0)+(roleBonus[m.id]||0); });
-        /* Rotunjire la pași de 10 lei / 10 €, dar cotele folosesc ÎNTOTDEAUNA suma(shares) ca numitor — rotunjirile la „cantat” fac ca Σ shares ≠ pool; fără normalizare, quota/pool depășea 100% și „ajustarea fond” exploda. */
-        const shareTotal = MEMBERS.reduce((s, m) => s + (shares[m.id] || 0), 0);
-        const poolLeiExact = pool * CURS;
-        const exactLeiNormalized = {};
-        MEMBERS.forEach(m => {
-          exactLeiNormalized[m.id] =
-            shareTotal > 0 && pool > 0 ? poolLeiExact * ((shares[m.id] || 0) / shareTotal) : 0;
-        });
-        const roundedShares={};
-        const roundedSharesLei={};
-        let roundingInLei=false;
-        let roundUnit=10;
-        let roundingAdjFond=0;
-        let roundingAdjLei=0;
-        const allocateSteps = (targetUnits, step, quotaFn) => {
-          const alloc = {};
-          MEMBERS.forEach(m => {
-            const q = Math.max(0, quotaFn(m.id));
-            alloc[m.id] = Math.floor(q / step) * step;
-          });
-          let slack = targetUnits - MEMBERS.reduce((s, m) => s + (alloc[m.id] || 0), 0);
-          let guard = 0;
-          while (slack >= step - 1e-9 && guard++ < 10000) {
-            let pick = MEMBERS[0].id;
-            let best = -Infinity;
-            MEMBERS.forEach(m => {
-              const rem = quotaFn(m.id) - (alloc[m.id] || 0);
-              if (rem > best) {
-                best = rem;
-                pick = m.id;
-              }
-            });
-            if (best <= 1e-9) break;
-            alloc[pick] += step;
-            slack -= step;
-          }
-          return { alloc, slackRemain: slack };
-        };
-        if (pool <= 0) {
-          MEMBERS.forEach(m => {
-            roundedSharesLei[m.id] = 0;
-            roundedShares[m.id] = 0;
-          });
-        } else if (restFirma) {
-          roundingInLei=true;
-          roundUnit=10;
-          const poolLei=poolLeiExact;
-          const targetBani=Math.round(poolLei*100);
-          const stepBani=1000;
-          const quotaBani=(id)=>{
-            if (shareTotal <= 0) return targetBani / MEMBERS.length;
-            return targetBani * ((shares[id]||0) / shareTotal);
-          };
-          const { alloc: baniAlloc } = allocateSteps(targetBani, stepBani, quotaBani);
-          MEMBERS.forEach(m=>{
-            roundedSharesLei[m.id]=baniAlloc[m.id]/100;
-            roundedShares[m.id]=Math.round((roundedSharesLei[m.id]/CURS)*100)/100;
-          });
-          roundingAdjLei=Math.round((poolLei-MEMBERS.reduce((s,m)=>s+(roundedSharesLei[m.id]||0),0))*100)/100;
-          const roundedPoolTotalEur=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
-          roundingAdjFond=Math.round((pool-roundedPoolTotalEur)*100)/100;
-        } else {
-          roundUnit=10;
-          const targetCents=Math.round(pool*100);
-          const stepCents=1000;
-          const quotaC=(id)=>{
-            if (shareTotal <= 0) return targetCents / MEMBERS.length;
-            return targetCents * ((shares[id]||0) / shareTotal);
-          };
-          const { alloc: centAlloc } = allocateSteps(targetCents, stepCents, quotaC);
-          MEMBERS.forEach(m=>{ roundedShares[m.id]=Math.round(centAlloc[m.id]/100*100)/100; });
-          const roundedPoolTotal=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
-          roundingAdjFond=Math.round((pool-roundedPoolTotal)*100)/100;
-        }
-        const hasRounding=roundingInLei?Math.abs(roundingAdjLei)>=0.01:Math.abs(roundingAdjFond)>0.001;
+        const fisaM = buildFinanceFisaModel(ev, templates?.servicePrices);
+        const {
+          CURS, isLei, MULT, isPrivate, avFirma, restFirma, anyFirma, onFirma,
+          svcTot, total, dep, rest, impVenit, svcCost, netDupaTax,
+          fc, fcLeiTotal, fcEur, fcBase, fc16, fcEurEffective, netDupaFixed,
+          fondDupCheltPct, fond7, dupaFond, div16, dupaDiv,
+          leadPct, leadMc, adminMc, stageMc, leadName,
+          leadAmt, adminAmt, socialAmt, stageAmt, totalRoluri, avansInFond, pool,
+          baseShares, roleBonus, shares, shareTotal, poolLeiExact, exactLeiNormalized,
+          roundedShares, roundedSharesLei, roundingInLei, roundUnit, roundingAdjFond, roundingAdjLei, hasRounding,
+        } = fisaM;
 
         const fv=(v)=>v.toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+(isLei?" lei":"€");
         const fvl=(v)=>Math.round(v).toLocaleString("ro-RO")+" lei";
