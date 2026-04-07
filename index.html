@@ -5258,6 +5258,7 @@ function App() {
     if (modal === "pick") return payload;
     if (modal === "pickEvent") return payload;
     if (modal === "calQuickAdd") return payload;
+    if (modal === "calOccNew") return payload;
     if (modal === "calDay") return typeof payload === "string" ? payload : null;
     if (modal === "calOcc") return typeof payload === "string" ? (calBlocks || []).find(b => b.id === payload) || null : payload;
     if (modal === "calTask") return typeof payload === "string" ? findTaskInTree(tasks, payload) || null : payload;
@@ -6158,15 +6159,28 @@ function App() {
 
   // Șterge un eveniment din Google Calendar după gcalId
   const deleteFromGCal = async (gcalId) => {
-    if(!gcalId) return;
-    const token = await getGcalAccessTokenUnified();
-    if(!token) { if(!GCAL_USE_SERVER_OAUTH) trySilentRefresh(); return; }
+    if(!gcalId) return false;
+    let token = await getGcalAccessTokenUnified();
+    if(!token) { if(!GCAL_USE_SERVER_OAUTH) trySilentRefresh(); return false; }
     try {
-      await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${gcalId}`, {
+      const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${gcalId}`;
+      let res = await fetch(url, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });
-    } catch(e) {}
+      if (res.status === 401 && GCAL_USE_SERVER_OAUTH) {
+        gcalEdgeCacheRef.current = { token: "", exp: 0 };
+        token = await getGcalAccessTokenUnified();
+        if (!token) return false;
+        res = await fetch(url, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+      }
+      return res.ok || res.status === 404;
+    } catch(e) {
+      return false;
+    }
   };
 
   // Reconciliere inversă: dacă un item sincronizat a fost șters manual din Google Calendar,
@@ -6236,7 +6250,7 @@ function App() {
     };
 
     runMirrorDeleteReconcile();
-    const t = setInterval(runMirrorDeleteReconcile, 120000);
+    const t = setInterval(runMirrorDeleteReconcile, 15000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -6358,8 +6372,9 @@ function App() {
     if(gcalActive) {
       const ev = evs.find(e => e.id===id);
       if(ev?.gcalId) {
-        deleteFromGCal(ev.gcalId);
-        showToast("📅 Șters din Google Calendar");
+        const deletedInGoogle = await deleteFromGCal(ev.gcalId);
+        if (deletedInGoogle) showToast("📅 Șters din Google Calendar");
+        else showToast("Nu am putut șterge din Google Calendar (mai încearcă).", "error");
       }
     }
     const storageErr = await deleteStoredHtmlPagesForEventIds([id]);
@@ -7709,26 +7724,11 @@ function App() {
                 <div style={{marginTop:18,paddingTop:16,borderTop:`1px solid ${th.b}`}}>
                   <div style={{fontSize:12,fontWeight:700,marginBottom:4,color:th.t}}>Ocupat / indisponibil</div>
                   <div style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.4}}>Marchează dacă cineva nu poate (ex. ar pleca). Bifează „Neconfirmat” când nu e sigur încă — apare cu <strong>?</strong> și linie întreruptă.</div>
-                  <select value={calNewOccMember} onChange={e=>setCalNewOccMember(e.target.value)} className="modernSel" style={{...sty.i,width:"100%",marginBottom:8,fontSize:13}}>
-                    <option value="">— Cine e ocupat? —</option>
-                    {MEMBERS.map(m=><option key={m.id} value={m.id}>{m.short} ({m.n})</option>)}
-                  </select>
-                  <input value={calNewOccNote} onChange={e=>setCalNewOccNote(e.target.value)} placeholder="Notă opțională (ex. plecat, nu răspunde încă…)" style={{...sty.i,width:"100%",marginBottom:8,fontSize:13,padding:"10px 12px"}}/>
-                  <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,cursor:"pointer",marginBottom:10,userSelect:"none"}}>
-                    <input type="checkbox" checked={calNewOccTent} onChange={e=>setCalNewOccTent(e.target.checked)} style={{accentColor:th.a,width:16,height:16}}/>
-                    Încă neconfirmat (?)
-                  </label>
                   <button type="button" onClick={()=>{
-                    if(!calNewOccMember){ showToast("Alege cine e ocupat", "error"); return; }
-                    const nb={id:uid(),date:calSidebarDate,memberId:calNewOccMember,note:(calNewOccNote||"").trim(),tentative:!!calNewOccTent};
-                    setCalBlocks(prev=>[...(prev||[]),nb]);
+                    setCalNewOccMember("");
                     setCalNewOccNote("");
                     setCalNewOccTent(false);
-                    showToast("Ocupare adăugată ✓");
-                    // Sync în Google Calendar
-                    if(gcalActive) syncBlockToGCal(nb).then(gcalId=>{
-                      if(gcalId) setCalBlocks(prev=>(prev||[]).map(x=>x.id===nb.id?{...x,gcalId}:x));
-                    });
+                    openModal("calOccNew",{date:calSidebarDate});
                   }} style={{...sty.b,width:"100%",fontSize:12,padding:"10px 14px"}}>+ Adaugă ocupare</button>
                   {dayOcc.length>0&&<div style={{fontSize:11,fontWeight:600,color:th.tm,marginTop:14,marginBottom:6}}>Înregistrate</div>}
                   {dayOcc.map(b=>{
@@ -8374,7 +8374,7 @@ function App() {
             <button type="button" onClick={()=>{const d=mData.date;closeModal();setTimeout(()=>openModal("pickEvent",{date:d}),80);}} style={{background:"#fff",border:"2px solid #333",cursor:"pointer",textAlign:"center",padding:mob?18:16,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?88:80}}>
               <div style={{fontSize:22,marginBottom:6}}>🎉</div><div style={{fontWeight:700,fontSize:13}}>Eveniment</div><div style={{fontSize:9,color:"#666",marginTop:3}}>Fără ofertă, confirmat</div>
             </button>
-            <button type="button" onClick={()=>{const d=mData.date;const dt=new Date(d+"T12:00:00");closeModal();setCalM(new Date(dt.getFullYear(),dt.getMonth()));setCalDateSearch(d);setCalSidebarDate(d);setTab("calendar");showToast("Alege cine e ocupat în panou");}} style={{background:"#fff",border:"2px solid #f59e0b",cursor:"pointer",textAlign:"center",padding:mob?18:16,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?88:80}}>
+            <button type="button" onClick={()=>{const d=mData.date;closeModal();setCalNewOccMember("");setCalNewOccNote("");setCalNewOccTent(false);setTimeout(()=>openModal("calOccNew",{date:d}),80);}} style={{background:"#fff",border:"2px solid #f59e0b",cursor:"pointer",textAlign:"center",padding:mob?18:16,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?88:80}}>
               <div style={{fontSize:22,marginBottom:6}}>🚫</div><div style={{fontWeight:700,fontSize:13}}>Ocupat</div><div style={{fontSize:9,color:"#666",marginTop:3}}>Indisponibilitate</div>
             </button>
             <button type="button" onClick={()=>{const d=mData.date;const nt={...fullTask("Task — "+fD(d),"medium"),due:d};setTasks(p=>[...p,nt]);setTaskCalendarFocusId(nt.id);closeModal();setTab("tasks");showToast("Task adăugat");}} style={{background:"#fff",border:"2px solid #6366f1",cursor:"pointer",textAlign:"center",padding:mob?18:16,borderRadius:10,color:"#111",boxShadow:"0 2px 8px rgba(0,0,0,.2)",minHeight:mob?88:80}}>
@@ -8433,6 +8433,48 @@ function App() {
                 })}
               </>}
               <button type="button" onClick={closeModal} style={{...sty.bg,width:"100%",marginTop:4}}>Închide</button>
+            </div>
+          </div>
+        </div>;
+      })()}
+
+      {modal==="calOccNew"&&mData?.date&&(()=>{
+        const ds = mData.date;
+        return <div style={{position:"fixed",inset:0,background:th.ov,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={closeModal}>
+          <div style={{background:th.c,border:`1px solid ${th.b}`,borderRadius:mob?0:14,width:mob?"100%":420,maxWidth:"100%",maxHeight:mob?"100vh":"90vh",overflow:"auto",boxShadow:"0 12px 40px rgba(0,0,0,.25)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"18px 22px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <h2 style={{fontSize:18,fontWeight:700,color:th.t,margin:0}}>Ocupat / indisponibil</h2>
+                <div style={{fontSize:12,color:th.tm,marginTop:6}}>{fD(ds)}</div>
+              </div>
+              <button type="button" onClick={closeModal} style={{padding:6,border:"none",background:"transparent",color:th.tm,cursor:"pointer"}}><IcX s={18}/></button>
+            </div>
+            <div style={{padding:20,display:"flex",flexDirection:"column",gap:12}}>
+              <select value={calNewOccMember} onChange={e=>setCalNewOccMember(e.target.value)} className="modernSel" style={{...sty.i,width:"100%",fontSize:14}}>
+                <option value="">— Cine e ocupat? —</option>
+                {MEMBERS.map(m=><option key={m.id} value={m.id}>{m.short} ({m.n})</option>)}
+              </select>
+              <input value={calNewOccNote} onChange={e=>setCalNewOccNote(e.target.value)} placeholder="Notă opțională (ex. plecat, nu răspunde încă…)" style={{...sty.i,width:"100%",fontSize:14,padding:"10px 12px"}}/>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer",userSelect:"none"}}>
+                <input type="checkbox" checked={calNewOccTent} onChange={e=>setCalNewOccTent(e.target.checked)} style={{accentColor:th.a,width:16,height:16}}/>
+                Încă neconfirmat (?)
+              </label>
+              <div style={{display:"flex",flexDirection:mob?"column":"row",gap:10,marginTop:6}}>
+                <button type="button" onClick={closeModal} style={{...sty.bg,flex:1,justifyContent:"center"}}>Anulează</button>
+                <button type="button" onClick={()=>{
+                  if(!calNewOccMember){ showToast("Alege cine e ocupat", "error"); return; }
+                  const nb={id:uid(),date:ds,memberId:calNewOccMember,note:(calNewOccNote||"").trim(),tentative:!!calNewOccTent};
+                  setCalBlocks(prev=>[...(prev||[]),nb]);
+                  setCalNewOccMember("");
+                  setCalNewOccNote("");
+                  setCalNewOccTent(false);
+                  closeModal();
+                  showToast("Ocupare adăugată ✓");
+                  if(gcalActive) syncBlockToGCal(nb).then(gcalId=>{
+                    if(gcalId) setCalBlocks(prev=>(prev||[]).map(x=>x.id===nb.id?{...x,gcalId}:x));
+                  });
+                }} style={{...sty.b,flex:1,justifyContent:"center"}}>Adaugă ocupare</button>
+              </div>
             </div>
           </div>
         </div>;
