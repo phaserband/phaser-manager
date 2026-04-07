@@ -371,9 +371,6 @@ const evExactDayCountdown = (ev) => (getEventDateKind(ev) === "day" && ev.date &
 const evMatchesCalendarCell = (ev, ds, y, m0, dayNum) => {
   const k = getEventDateKind(ev);
   if (k === "day" || (!ev.dateKind && ev.date && /^\d{4}-\d{2}-\d{2}$/.test(ev.date))) return ev.date === ds;
-  const mStr = String(m0 + 1).padStart(2, "0");
-  if (k === "month" && ev.dateMonth) return ev.dateMonth === `${y}-${mStr}` && dayNum === 1;
-  if (k === "year" && ev.dateYear != null && ev.dateYear !== "") return Number(ev.dateYear) === y && dayNum === 1;
   if (k === "multi" && (ev.dateOptions || []).includes(ds)) return true;
   return false;
 };
