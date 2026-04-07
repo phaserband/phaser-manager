@@ -9613,7 +9613,14 @@ function App() {
         if(ev.stageId){ roleBonus[ev.stageId]=(roleBonus[ev.stageId]||0)+stageAmt; }
         const shares={};
         MEMBERS.forEach(m=>{ shares[m.id]=(baseShares[m.id]||0)+(roleBonus[m.id]||0); });
-        /* Rotunjire „închisă” la pool: fiecare sumă e coborâtă la multiplu de 10 (lei sau €), apoi restul până la pool se distribuie în tranșe de 10 către membrii cu cel mai mare rest proporțional (nu mai apare minus uriaș la fond din rotunjiri independente). Rămâne doar rest < 10 lei / < 10 € de numărător. */
+        /* Rotunjire la pași de 10 lei / 10 €, dar cotele folosesc ÎNTOTDEAUNA suma(shares) ca numitor — rotunjirile la „cantat” fac ca Σ shares ≠ pool; fără normalizare, quota/pool depășea 100% și „ajustarea fond” exploda. */
+        const shareTotal = MEMBERS.reduce((s, m) => s + (shares[m.id] || 0), 0);
+        const poolLeiExact = pool * CURS;
+        const exactLeiNormalized = {};
+        MEMBERS.forEach(m => {
+          exactLeiNormalized[m.id] =
+            shareTotal > 0 && pool > 0 ? poolLeiExact * ((shares[m.id] || 0) / shareTotal) : 0;
+        });
         const roundedShares={};
         const roundedSharesLei={};
         let roundingInLei=false;
@@ -9627,16 +9634,18 @@ function App() {
             alloc[m.id] = Math.floor(q / step) * step;
           });
           let slack = targetUnits - MEMBERS.reduce((s, m) => s + (alloc[m.id] || 0), 0);
-          while (slack >= step - 1e-9) {
+          let guard = 0;
+          while (slack >= step - 1e-9 && guard++ < 10000) {
             let pick = MEMBERS[0].id;
             let best = -Infinity;
             MEMBERS.forEach(m => {
-              const rem = Math.max(0, quotaFn(m.id)) - (alloc[m.id] || 0);
+              const rem = quotaFn(m.id) - (alloc[m.id] || 0);
               if (rem > best) {
                 best = rem;
                 pick = m.id;
               }
             });
+            if (best <= 1e-9) break;
             alloc[pick] += step;
             slack -= step;
           }
@@ -9650,10 +9659,13 @@ function App() {
         } else if (restFirma) {
           roundingInLei=true;
           roundUnit=10;
-          const poolLei=pool*CURS;
+          const poolLei=poolLeiExact;
           const targetBani=Math.round(poolLei*100);
           const stepBani=1000;
-          const quotaBani=(id)=>targetBani*((shares[id]||0)/pool);
+          const quotaBani=(id)=>{
+            if (shareTotal <= 0) return targetBani / MEMBERS.length;
+            return targetBani * ((shares[id]||0) / shareTotal);
+          };
           const { alloc: baniAlloc } = allocateSteps(targetBani, stepBani, quotaBani);
           MEMBERS.forEach(m=>{
             roundedSharesLei[m.id]=baniAlloc[m.id]/100;
@@ -9666,7 +9678,10 @@ function App() {
           roundUnit=10;
           const targetCents=Math.round(pool*100);
           const stepCents=1000;
-          const quotaC=(id)=>targetCents*((shares[id]||0)/pool);
+          const quotaC=(id)=>{
+            if (shareTotal <= 0) return targetCents / MEMBERS.length;
+            return targetCents * ((shares[id]||0) / shareTotal);
+          };
           const { alloc: centAlloc } = allocateSteps(targetCents, stepCents, quotaC);
           MEMBERS.forEach(m=>{ roundedShares[m.id]=Math.round(centAlloc[m.id]/100*100)/100; });
           const roundedPoolTotal=MEMBERS.reduce((acc,m)=>acc+(roundedShares[m.id]||0),0);
@@ -9895,11 +9910,13 @@ function App() {
                   const base=baseShares[m.id]||0;
                   const rol=roleBonus[m.id]||0;
                   const total=shares[m.id]||0;
+                  const exactEurNorm=shareTotal>0?pool*((shares[m.id]||0)/shareTotal):0;
                   const socialInCantat=m.id==="m1";
                   const baseDisp=socialInCantat?base+socialAmt:base;
                   const rolDisp=socialInCantat?rol-socialAmt:rol;
                   const hasRol=rolDisp>0.005;
                   const rolLabel=ev.leadId===m.id&&!ev.leadCustom?"Lead":ev.adminId===m.id?"Administrator":ev.stageId===m.id?"Stage Manager":null;
+                  const exLei=exactLeiNormalized[m.id]||0;
                   return (
                   <div key={m.id} style={{padding:"8px 0",borderBottom:`1px solid ${th.bl}`}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -9909,10 +9926,10 @@ function App() {
                       {roundingInLei?<>
                         <div style={{fontSize:13,fontWeight:700}}>{(roundedSharesLei[m.id]||0).toLocaleString("ro-RO")} lei</div>
                         <div style={{fontSize:9,color:th.tm}}>≈ {fv(roundedShares[m.id])} (ref. €)</div>
-                        {hasRounding&&Math.abs((roundedSharesLei[m.id]||0)-(shares[m.id]||0)*CURS)>=1&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{Math.round((shares[m.id]||0)*CURS).toLocaleString("ro-RO")} lei · {fv(shares[m.id])}</div>}
+                        {hasRounding&&Math.abs((roundedSharesLei[m.id]||0)-exLei)>=0.5&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{Math.round(exLei).toLocaleString("ro-RO")} lei · {fv(exactEurNorm)} <span style={{opacity:.85}}>(ref. închis la pool)</span></div>}
                       </>:<>
                         <div style={{fontSize:13,fontWeight:700}}>{hasRounding?fv(roundedShares[m.id]):fv(total)}</div>
-                        {hasRounding&&roundedShares[m.id]!==total&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{fv(total)}</div>}
+                        {hasRounding&&Math.abs((roundedShares[m.id]||0)-exactEurNorm)>=0.05&&<div style={{fontSize:9,color:th.tm,textDecoration:"line-through",textAlign:"right"}}>{fv(exactEurNorm)} <span style={{opacity:.85}}>(ref. închis la pool)</span></div>}
                       </>}
                     </div>
                     </div>
