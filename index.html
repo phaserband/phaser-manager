@@ -1226,6 +1226,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
   const [newPrio, setNewPrio] = useState("medium");
   const [newDue, setNewDue] = useState("");
   const [newRepeat, setNewRepeat] = useState("none");
+  const [newDueOpen, setNewDueOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [taskModalId, setTaskModalId] = useState(null);
   const [viewMode, setViewMode] = useState("list"); // list | calendar | kanban
@@ -1256,6 +1257,8 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
     setNewText("");
     setNewAssignee("");
     setNewDue("");
+    setNewRepeat("none");
+    setNewDueOpen(false);
   };
   const toggle = id => setTasks(p => {
     const t = findTaskInTree(p, id);
@@ -1634,7 +1637,16 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
         <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
           <input value={newText} onChange={e=>setNewText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
             style={{...sty.i,width:"100%",padding:"12px 14px",fontSize:15,borderRadius:12,border:`1px solid ${th.bl}`}} placeholder="Task nou — Enter pentru a adăuga"/>
-          <input type="date" value={newDue} onChange={e=>setNewDue(e.target.value)} style={{...sty.i,width:"100%",padding:"8px 12px",fontSize:13,borderRadius:10}} title="Deadline (opțional)"/>
+          <button type="button" onClick={()=>setNewDueOpen(o=>!o)} style={{...sty.i,width:"100%",padding:"10px 12px",fontSize:12,borderRadius:10,textAlign:"left",cursor:"pointer",color:newDue?th.t:th.tm}}>
+            {newDue ? new Date(newDue+"T12:00:00").toLocaleDateString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric"}) : "Deadline / repetare…"}{newRepeat!=="none" ? ` · 🔁 ${REPEAT_OPTS.find(o=>o.v===newRepeat)?.l||""}` : ""}
+          </button>
+          {newDueOpen && <div style={{display:"flex",flexDirection:"column",gap:8,padding:10,borderRadius:10,border:`1px solid ${th.bl}`,background:th.h}}>
+            <input type="date" value={newDue} onChange={e=>setNewDue(e.target.value)} style={{...sty.i,width:"100%",padding:"8px 10px",fontSize:13,borderRadius:8}} />
+            <select value={newRepeat} onChange={e=>setNewRepeat(e.target.value)} className="modernSel" style={{...sty.i,width:"100%",padding:"8px 12px",fontSize:12,borderRadius:8}}>
+              {REPEAT_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+            <button type="button" onClick={()=>setNewDueOpen(false)} style={{...sty.bg,alignSelf:"flex-end",padding:"6px 12px",fontSize:11}}>Gata</button>
+          </div>}
           <button type="button" onClick={add} style={{...sty.b,padding:"10px 16px",borderRadius:10,fontWeight:600,fontSize:13,alignSelf:"flex-start"}}><IcPlus s={15}/> Adaugă</button>
         </div>
       ) : (
@@ -1699,8 +1711,63 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
             </div>
           </div>
           <div style={{marginBottom:14}}>
-            <label style={{display:"block",fontSize:10,color:th.tm,fontWeight:700,marginBottom:6,letterSpacing:0.3}}>Deadline (opțional)</label>
-            <input type="date" value={newDue} onChange={e=>setNewDue(e.target.value)} style={{...sty.i,maxWidth:320,padding:"11px 14px",fontSize:14,borderRadius:10}} />
+            <label style={{display:"block",fontSize:10,color:th.tm,fontWeight:700,marginBottom:6,letterSpacing:0.3}}>Deadline și repetare (opțional)</label>
+            <button
+              type="button"
+              onClick={()=>setNewDueOpen(o=>!o)}
+              style={{
+                ...sty.i,
+                maxWidth:480,
+                width:"100%",
+                padding:"11px 14px",
+                fontSize:14,
+                borderRadius:10,
+                cursor:"pointer",
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"space-between",
+                gap:10,
+                textAlign:"left",
+                fontFamily:"inherit",
+                background:th.bg==="#09090b"?th.i:th.c,
+                border:`1px solid ${th.bl}`,
+              }}
+            >
+              <span style={{color:newDue?th.t:th.tm,flex:1,minWidth:0}}>
+                {newDue
+                  ? new Date(newDue+"T12:00:00").toLocaleDateString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric"})
+                  : "Apasă pentru a alege data și repetarea…"}
+              </span>
+              {newRepeat!=="none" && (
+                <span style={{fontSize:11,color:"#a78bfa",fontWeight:600,whiteSpace:"nowrap"}}>🔁 {REPEAT_OPTS.find(o=>o.v===newRepeat)?.l}</span>
+              )}
+              <span style={{fontSize:10,color:th.tm,opacity:.6}}>{newDueOpen?"▴":"▾"}</span>
+            </button>
+            {newDueOpen && (
+              <div style={{marginTop:10,padding:16,borderRadius:12,border:`1px solid ${th.bl}`,background:th.bg==="#09090b"?th.h:"#fafaf9",display:"flex",flexDirection:"column",gap:14}}>
+                <div>
+                  <span style={{display:"block",fontSize:10,color:th.tm,fontWeight:700,marginBottom:6}}>Data limită</span>
+                  <input type="date" value={newDue} onChange={e=>setNewDue(e.target.value)} style={{...sty.i,width:"100%",maxWidth:320,padding:"11px 14px",fontSize:14,borderRadius:10}} />
+                </div>
+                <div>
+                  <span style={{display:"block",fontSize:10,color:th.tm,fontWeight:700,marginBottom:6}}>Se repetă</span>
+                  <select value={newRepeat} onChange={e=>setNewRepeat(e.target.value)} className="modernSel" style={{...sty.i,width:"100%",maxWidth:360,padding:"11px 14px",fontSize:14,borderRadius:10}}>
+                    {REPEAT_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                  </select>
+                  <p style={{fontSize:11,color:th.tm,lineHeight:1.45,margin:"10px 0 0"}}>
+                    Dacă nu e „O dată”, la bifarea task-ului ca finalizat se creează automat următoarea instanță, cu următorul termen (zilnic / săptămânal / lunar / anual).
+                  </p>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"center",borderTop:`1px solid ${th.bl}`,paddingTop:12}}>
+                  <button type="button" onClick={()=>{setNewDue("");setNewRepeat("none");}} style={{...sty.bg,padding:"8px 14px",fontSize:12}}>
+                    Șterge deadline și repetare
+                  </button>
+                  <button type="button" onClick={()=>setNewDueOpen(false)} style={{...sty.b,padding:"8px 18px",fontSize:12,marginLeft:"auto"}}>
+                    Gata
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <div style={{display:"flex",flexWrap:"wrap",gap:12,alignItems:"center",paddingTop:4,borderTop:`1px solid ${th.bl}`}}>
             <button type="button" onClick={add} style={{...sty.b,padding:"12px 22px",borderRadius:12,fontWeight:700,fontSize:14,display:"inline-flex",alignItems:"center",gap:8}}>
