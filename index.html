@@ -90,13 +90,14 @@
       }
       .mob-bottom-nav-btn span.nav-lbl {
         display: block;
-        font-size: 9.5px;
+        font-size: 8px;
         font-weight: 500;
         letter-spacing: .01em;
-        line-height: 1;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        line-height: 1.15;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        text-align: center;
         max-width: 100%;
       }
       .mob-bottom-nav-badge {
@@ -6528,14 +6529,14 @@ function App() {
   const unreadNotifCount = bandNotifications.filter(n => n.memberId === user?.memberId && !n.read).length;
   const navItems = [
     {id:"acasa",    Ic:IcDash,  l:"Acasă"},
-    {id:"events",   Ic:IcMusic, l:"Evenimente"},
+    {id:"events",   Ic:IcMusic, l:"Evenimente", ml:"Evenim."},
     {id:"offers",   Ic:IcSend,  l:"Cereri",  badge:pendingCount},
     {id:"docs", Ic:IcFile, l:"Docs"},
     {id:"tasks",    Ic:IcTask,  l:"Tasks",    badge:activeTaskCount},
     {id:"music",    Ic:IcMicro, l:"Muzică",   badge:songs.filter(s=>s.status==="idee").length||undefined},
-    {id:"calendar", Ic:IcCal,   l:"Calendar"},
-    ...(p.f?[{id:"finances", Ic:IcMoney, l:"Finanțe"}]:[]),
-    ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu", badge: unreadNotifCount}]:[]),
+    {id:"calendar", Ic:IcCal,   l:"Calendar", ml:"Cal."},
+    ...(p.f?[{id:"finances", Ic:IcMoney, l:"Finanțe", ml:"Fin."}]:[]),
+    ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu", ml:"Cont", badge: unreadNotifCount}]:[]),
   ];
 
   const sbW = mob ? 0 : (sbMode==="full"?220:56);
@@ -6745,7 +6746,7 @@ function App() {
             style={{color:tab===it.id?th.a:th.sbt}}>
             {it.badge>0&&<span className="mob-bottom-nav-badge"/>}
             <it.Ic s={tab===it.id?24:21}/>
-            <span className="nav-lbl" style={{opacity:tab===it.id?1:.5}}>{it.l}</span>
+            <span className="nav-lbl" style={{opacity:tab===it.id?1:.5}}>{mob ? (it.ml || it.l) : it.l}</span>
           </button>
         ))}
         <button className="mob-bottom-nav-btn" onClick={doAuthLogout}
