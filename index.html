@@ -829,7 +829,7 @@ const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
   const rol = roleBonus[mId] || 0;
   const rawW = base + rol;
   if (rawW <= 0) {
-    return { base: 0, lead: 0, admin: 0, social: 0, stage: 0, total: 0, socialLei: 0, curs: CURS, isLei };
+    return { base: 0, lead: 0, admin: 0, social: 0, stage: 0, bonusRol: 0, rolLabel: null, total: 0, socialLei: 0, curs: CURS, isLei };
   }
   const socialInCantat = mId === "m1";
   const baseDisp = socialInCantat ? base + socialAmt : base;
@@ -932,7 +932,13 @@ const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
     if (useLeiCore) socialLei = outSocialLei;
     else socialLei = isLei ? outSocial : Math.round(outSocial * CURS * 100) / 100;
   }
-  return { base: outBase, lead: outLead, admin: outAdmin, social: outSocial, stage: outStage, total: rt, socialLei, curs: CURS, isLei };
+  const bonusRol = Math.round((outLead + outAdmin + outStage) * 100) / 100;
+  const rl = [];
+  if (canonMemId(ev.leadId) === mId && !ev.leadCustom) rl.push("Lead");
+  if (canonMemId(ev.adminId) === mId) rl.push("Admin");
+  if (canonMemId(ev.stageId) === mId) rl.push("Stage");
+  const rolLabel = rl.length ? rl.join(" + ") : null;
+  return { base: outBase, lead: outLead, admin: outAdmin, social: outSocial, stage: outStage, bonusRol, rolLabel, total: rt, socialLei, curs: CURS, isLei };
 };
 const calcFond7 = (ev) => {
   const CURS = ev.cursLei||CURS_DEFAULT;
@@ -8914,6 +8920,7 @@ function App() {
           {tab==="finances"&&(()=>{
             // ── shared helpers ──
             const fv2=v=>v.toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+"€";
+            const fvBonusRound=v=>Math.round(Number(v||0)).toLocaleString("ro-RO")+"€";
             const fSocialLei=v=>(Number(v||0)).toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+" lei";
             const fD2=d=>d?new Date(d).toLocaleDateString("ro-RO",{day:"numeric",month:"short",year:"numeric"}):"";
             const memberDetail=(ev,mId)=>computeMemberPayoutBreakdown(ev,mId,templates?.servicePrices);
@@ -8928,42 +8935,46 @@ function App() {
               const totPaid=paid.reduce((s,e)=>s+memberDetail(e,finMember).total,0);
               const totWait=waiting.reduce((s,e)=>s+memberDetail(e,finMember).total,0);
               const totBase=paid.reduce((s,e)=>s+memberDetail(e,finMember).base,0);
-              const totLead=paid.reduce((s,e)=>s+memberDetail(e,finMember).lead,0);
-              const totAdmin=paid.reduce((s,e)=>s+memberDetail(e,finMember).admin,0);
+              const totBonus=paid.reduce((s,e)=>s+memberDetail(e,finMember).bonusRol,0);
               const totSocialLei=paid.reduce((s,e)=>s+memberDetail(e,finMember).socialLei,0);
-              const totStage=paid.reduce((s,e)=>s+memberDetail(e,finMember).stage,0);
               const totBaseAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).base,0);
-              const totLeadAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).lead,0);
-              const totAdminAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).admin,0);
+              const totBonusAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).bonusRol,0);
               const totSocialLeiAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).socialLei,0);
-              const totStageAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).stage,0);
-              const ROLES=[{k:"base",l:"🎵 Cantat",c:"#a5b4fc",bg:"rgba(99,102,241,.15)"},{k:"lead",l:"⭐ Lead",c:"#fbbf24",bg:"rgba(245,158,11,.15)"},{k:"admin",l:"🗂 Admin",c:"#fbbf24",bg:"rgba(245,158,11,.15)"},{k:"social",l:"📱 Social Media Mgr",c:"#c4b5fd",bg:"rgba(139,92,246,.15)"},{k:"stage",l:"🎭 Stage Mgr",c:"#fbbf24",bg:"rgba(245,158,11,.15)"}];
-              const RoleSection=({roleKey,roleLabel,roleColor,roleBg,tot})=>{
+              const ROLES=[
+                {k:"base",l:"🎵 Parte cantat",c:"#a5b4fc",bg:"rgba(99,102,241,.15)",round:false},
+                {k:"bonusRol",l:"⭐ Bonus rol",c:"#f59e0b",bg:"rgba(245,158,11,.15)",round:true},
+                {k:"social",l:"📱 Social Media Mgr",c:"#c4b5fd",bg:"rgba(139,92,246,.15)",round:false}
+              ];
+              const RoleSection=({roleKey,roleLabel,roleColor,roleBg,tot,roundDisplay})=>{
                 const isSocial=roleKey==="social";
-                const fmt=isSocial?fSocialLei:fv2;
+                const isBonus=roleKey==="bonusRol";
+                const fmt=isSocial?fSocialLei:(roundDisplay?fvBonusRound:fv2);
                 const evsForRole=allEvs.filter(ev=>{
                   const d=memberDetail(ev,finMember);
+                  if(isBonus)return d.bonusRol>0.005;
                   return (isSocial?d.socialLei:d[roleKey])>0;
                 });
                 if(evsForRole.length===0) return null;
                 return <div style={{...sty.cd,marginBottom:16,border:`1px solid ${roleBg.replace(".15",".3")}`}}>
                   <div style={{fontSize:11,color:roleColor,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span>{roleLabel}</span>
-                    <span style={{fontSize:14,fontWeight:800}}>{fmt(tot)}</span>
+                    <span style={{fontSize:14,fontWeight:800}}>{roundDisplay?fvBonusRound(tot):isSocial?fSocialLei(tot):fv2(tot)}</span>
                   </div>
                   <div className={mob?"table-scroll-mob":""} style={{overflow:mob?"auto":"hidden"}}>
                     <table style={{width:"100%",minWidth:mob?480:undefined,fontSize:12,borderCollapse:"collapse"}}>
                       <thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
-                        {["Data","Tipul","Descriere","Suma","Status"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
+                        {["Data","Tipul","Rol (ca în fișă)","Suma","Status"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
                       </tr></thead>
                       <tbody>{evsForRole.map(ev=>{
-                        const d=memberDetail(ev,finMember); const amt=isSocial?d.socialLei:d[roleKey];
-                        if(amt<=0) return null;
+                        const d=memberDetail(ev,finMember);
+                        const amt=isBonus?d.bonusRol:isSocial?d.socialLei:d[roleKey];
+                        if(isBonus){if(d.bonusRol<=0.005) return null;} else if(amt<=0) return null;
+                        const desc=isBonus?(d.rolLabel||"—"):(ev.desc||"—");
                         return <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer"}} onMouseOver={e=>e.currentTarget.style.background=th.h} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                           <td style={{padding:"8px 10px"}}>{fEvDate(ev)}</td>
                           <td style={{padding:"8px 10px"}}>{ev.type||"—"}</td>
-                          <td style={{padding:"8px 10px",fontSize:11,color:th.tm,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={ev.desc||""}>{ev.desc||"—"}</td>
-                          <td style={{padding:"8px 10px",fontWeight:700,color:roleColor}}>{fmt(amt)}</td>
+                          <td style={{padding:"8px 10px",fontSize:11,color:th.tm,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={desc}>{desc}</td>
+                          <td style={{padding:"8px 10px",fontWeight:700,color:roleColor}}>{isBonus?fvBonusRound(amt):fmt(amt)}</td>
                           <td style={{padding:"8px 10px",fontSize:10,color:ev.restPaid?"#22c55e":"#f59e0b"}}>{ev.restPaid?"✅ primit":"⏳ în așteptare"}</td>
                         </tr>;
                       })}</tbody>
@@ -8998,34 +9009,26 @@ function App() {
                   </div>
                 </div>
                 <div style={{fontSize:11,color:th.tm,lineHeight:1.55,marginBottom:14,padding:"10px 12px",borderRadius:10,background:th.h,border:`1px solid ${th.bl}`}}>
-                  Sumele se calculează din <strong>același eveniment</strong> ca în Fișa: rolurile (Lead, Admin, Stage) trebuie setate și salvate pe ofertă — apoi apar și aici pe surse. La <strong>plată pe firmă</strong> împărțirea urmează lei rotunjiți ca în fișă; altfel, în euro.
+                  Aceleași linii ca în <strong>Fișa financiară</strong> pe membru: «Parte cantat», apoi un singur <strong>Bonus rol</strong> (ex. Admin + Stage sau Lead) și Social în lei. Bonusul e afișat <strong>rotunjit la euro întreg</strong>, ca în sumarul practic al fișei.
                 </div>
                 {totPaid>0&&<div style={{...sty.cd,marginBottom:16}}>
                   <div style={{fontSize:11,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Sumar sursă câștig (încasat)</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                     {totBase>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(99,102,241,.1)",border:"1px solid rgba(99,102,241,.2)"}}>
-                      <div style={{fontSize:9,color:"#a5b4fc",textTransform:"uppercase",letterSpacing:1}}>🎵 Cantat</div>
+                      <div style={{fontSize:9,color:"#a5b4fc",textTransform:"uppercase",letterSpacing:1}}>🎵 Parte cantat</div>
                       <div style={{fontSize:16,fontWeight:700,color:"#a5b4fc"}}>{fv2(totBase)}</div>
                     </div>}
-                    {totLead>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.2)"}}>
-                      <div style={{fontSize:9,color:"#fbbf24",textTransform:"uppercase",letterSpacing:1}}>⭐ Lead</div>
-                      <div style={{fontSize:16,fontWeight:700,color:"#fbbf24"}}>{fv2(totLead)}</div>
-                    </div>}
-                    {totAdmin>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.2)"}}>
-                      <div style={{fontSize:9,color:"#fbbf24",textTransform:"uppercase",letterSpacing:1}}>🗂 Admin</div>
-                      <div style={{fontSize:16,fontWeight:700,color:"#fbbf24"}}>{fv2(totAdmin)}</div>
+                    {totBonus>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.2)"}}>
+                      <div style={{fontSize:9,color:"#fbbf24",textTransform:"uppercase",letterSpacing:1}}>⭐ Bonus rol</div>
+                      <div style={{fontSize:16,fontWeight:700,color:"#fbbf24"}}>{fvBonusRound(totBonus)}</div>
                     </div>}
                     {totSocialLei>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(139,92,246,.1)",border:"1px solid rgba(139,92,246,.2)"}}>
                       <div style={{fontSize:9,color:"#c4b5fd",textTransform:"uppercase",letterSpacing:1}}>📱 Social Media Mgr</div>
                       <div style={{fontSize:16,fontWeight:700,color:"#c4b5fd"}}>{fSocialLei(totSocialLei)}</div>
                     </div>}
-                    {totStage>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.2)"}}>
-                      <div style={{fontSize:9,color:"#fbbf24",textTransform:"uppercase",letterSpacing:1}}>🎭 Stage Mgr</div>
-                      <div style={{fontSize:16,fontWeight:700,color:"#fbbf24"}}>{fv2(totStage)}</div>
-                    </div>}
                   </div>
                 </div>}
-                {ROLES.map(r=><RoleSection key={r.k} roleKey={r.k} roleLabel={r.l} roleColor={r.c} roleBg={r.bg} tot={{base:totBaseAll,lead:totLeadAll,admin:totAdminAll,social:totSocialLeiAll,stage:totStageAll}[r.k]}/>)}
+                {ROLES.map(r=><RoleSection key={r.k} roleKey={r.k} roleLabel={r.l} roleColor={r.c} roleBg={r.bg} tot={{base:totBaseAll,bonusRol:totBonusAll,social:totSocialLeiAll}[r.k]} roundDisplay={r.round}/>)}
                 {allEvs.length===0&&<div style={{padding:40,textAlign:"center",color:th.tm,fontSize:13}}>Niciun eveniment confirmat încă</div>}
               </div>;
             }
