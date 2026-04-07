@@ -89,7 +89,7 @@
         background: rgba(128,128,128,.14);
       }
       .mob-bottom-nav-btn span.nav-lbl {
-        display: block;
+        display: none;
         font-size: 8px;
         font-weight: 500;
         letter-spacing: .01em;
@@ -99,6 +99,10 @@
         text-overflow: clip;
         text-align: center;
         max-width: 100%;
+      }
+      .mob-bottom-nav-btn.nav-active span.nav-lbl,
+      .mob-bottom-nav-btn.nav-show-label span.nav-lbl {
+        display: block;
       }
       .mob-bottom-nav-badge {
         position: absolute; top: 8px; right: calc(50% - 12px);
@@ -5221,6 +5225,7 @@ function App() {
   const [contulSub, setContulSub] = useState("activitate"); // "activitate" | "setari" — subsecțiuni în Contul meu
   const [sbMode, setSbMode] = useState("full");
   const [tab, setTab]     = useState("acasa");
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [evs, setEvs]     = useLocalStorageState(LS_KEYS.evs, loadEvs);
   const [genExp, setGE]   = useLocalStorageState(LS_KEYS.genExp, loadGenExp);
   const [annualCosts, setAC] = useLocalStorageState(LS_KEYS.annualCosts, loadAnnualCosts);
@@ -6621,6 +6626,25 @@ function App() {
     ...(p.f?[{id:"finances", Ic:IcMoney, l:"Finanțe", ml:"Fin."}]:[]),
     ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu", ml:"Cont", badge: unreadNotifCount}]:[]),
   ];
+  const mobileBaseNavIds = ["acasa", "events", "offers", "calendar"];
+  const mobilePrimaryNav = useMemo(() => {
+    const byId = new Map(navItems.map(it => [it.id, it]));
+    const primary = mobileBaseNavIds.map(id => byId.get(id)).filter(Boolean);
+    const active = byId.get(tab);
+    if (active && !primary.some(it => it.id === active.id)) {
+      if (primary.length >= 4) primary[3] = active;
+      else primary.push(active);
+    }
+    return primary;
+  }, [navItems, tab]);
+  const mobileMoreNav = useMemo(
+    () => navItems.filter(it => !mobilePrimaryNav.some(pn => pn.id === it.id)),
+    [navItems, mobilePrimaryNav]
+  );
+
+  useEffect(() => {
+    if (!mob && mobileMoreOpen) setMobileMoreOpen(false);
+  }, [mob, mobileMoreOpen]);
 
   const sbW = mob ? 0 : (sbMode==="full"?220:56);
   const authShell = { minHeight:"100vh", fontFamily:"'Inter',system-ui,sans-serif", background:"#0c0c0c", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 28px", gap:20 };
@@ -6824,7 +6848,7 @@ function App() {
 
       {/* MOBILE BOTTOM NAV — vizibil doar pe mobil prin CSS */}
       <nav className="mob-bottom-nav" style={{"--nav-bg":th.sb, background:th.sb, borderTopColor:"transparent"}}>
-        {navItems.map(it=>(
+        {mobilePrimaryNav.map(it=>(
           <button key={it.id} data-tour={"nav-"+it.id} className={"mob-bottom-nav-btn"+(tab===it.id?" nav-active":"")} onClick={()=>setTab(it.id)}
             style={{color:tab===it.id?th.a:th.sbt}}>
             {it.badge>0&&<span className="mob-bottom-nav-badge"/>}
@@ -6832,12 +6856,30 @@ function App() {
             <span className="nav-lbl" style={{opacity:tab===it.id?1:.5}}>{mob ? (it.ml || it.l) : it.l}</span>
           </button>
         ))}
-        <button className="mob-bottom-nav-btn" onClick={doAuthLogout}
+        <button className={"mob-bottom-nav-btn"+(mobileMoreOpen?" nav-show-label":"")} onClick={()=>setMobileMoreOpen(v=>!v)}
           style={{color:th.sbt}}>
-          <IcOut s={21}/>
-          <span className="nav-lbl" style={{opacity:.45}}>Ieșire</span>
+          <IcMenu s={21}/>
+          <span className="nav-lbl" style={{opacity:.8}}>Meniu</span>
         </button>
       </nav>
+      {mob && mobileMoreOpen && (
+        <div onClick={()=>setMobileMoreOpen(false)} style={{position:"fixed",inset:0,zIndex:900,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"flex-end"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",background:th.c,borderTopLeftRadius:16,borderTopRightRadius:16,border:`1px solid ${th.b}`,borderBottom:"none",padding:"10px 14px calc(14px + env(safe-area-inset-bottom))",maxHeight:"68vh",overflow:"auto"}}>
+            <div style={{fontSize:11,color:th.tm,fontWeight:700,letterSpacing:.6,textTransform:"uppercase",marginBottom:8}}>Mai multe</div>
+            {mobileMoreNav.map(it=>(
+              <button key={"more-"+it.id} onClick={()=>{ setTab(it.id); setMobileMoreOpen(false); }} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 10px",borderRadius:10,border:"none",background:tab===it.id?th.h:"transparent",color:tab===it.id?th.a:th.t,cursor:"pointer",fontSize:14}}>
+                <it.Ic s={18}/>
+                <span style={{flex:1,textAlign:"left"}}>{it.l}</span>
+                {it.badge>0&&<span style={{background:"#f59e0b",color:"#111",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 7px"}}>{it.badge}</span>}
+              </button>
+            ))}
+            <button onClick={()=>{ setMobileMoreOpen(false); doAuthLogout(); }} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 10px",borderRadius:10,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer",fontSize:14,marginTop:4}}>
+              <IcOut s={18}/>
+              <span>Ieșire</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MAIN — un singur strat scroll pe mobil (.app-main-scroll); părintele rămâne overflow:hidden */}
       <div style={{flex:1,minHeight:0,overflow:"hidden",display:"flex",flexDirection:"column",position:"relative"}}>
