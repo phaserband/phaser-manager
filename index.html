@@ -709,6 +709,58 @@ function formatSbPasswordLoginError(error) {
 const SPLIT_PRIVATE = {m1:24,m2:19,m3:19,m4:19,m5:19}; // Carina 24%, restul 19% fiecare
 const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100}; // lei
 const CURS_DEFAULT = 5; // 1€ = 5 lei
+/** Împărțire „cantat” + roluri ca în fișa financiară (fond % editabil, cost furnizori, avans la fond). Fără rotunjire la 10€ — aceeaia apare doar în modalul finance. */
+const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
+  const CURS = ev.cursLei || CURS_DEFAULT;
+  const isLei = ev.valuta === "lei";
+  const MULT = isLei ? CURS : 1;
+  const isPrivate = ev.cat === "private";
+  const avFirma = ev.avFirma ?? (ev.payType === "firma");
+  const restFirma = ev.restFirma ?? (ev.payType === "firma");
+  const svcTot = Object.entries(ev.svcp || {}).reduce((s, [k, v]) => s + (ev.svc?.[k] ? v : 0), 0);
+  const total = (ev.fee || 0) + svcTot;
+  const dep = ev.dep || 0;
+  const rest = total - dep;
+  const impVenit = Math.round(((avFirma ? dep : 0) + (restFirma ? rest : 0)) * 0.01 * 100) / 100;
+  const svcCostEur = typeof getSvcCost === "function" ? getSvcCost(ev, servicePrices) : 0;
+  const svcCost = Math.round(svcCostEur * MULT * 100) / 100;
+  const netDupaTax = Math.max(0, total - impVenit - svcCost);
+  const fc = { ...DEFAULT_FIXED_COSTS, ...(ev.fixedCosts || {}) };
+  const fcLeiTotal = (fc.technician || 0) + (fc.equipment || 0) + (fc.soundman || 0) + (fc.transport || 0);
+  const fcEur = fcLeiTotal / CURS;
+  const fcBase = isLei ? fcLeiTotal : fcEur;
+  const fc16 = restFirma ? Math.round(fcBase * 0.16 * 100) / 100 : 0;
+  const fcEurEffective = fcBase + fc16;
+  const netDupaFixed = Math.max(0, netDupaTax - fcEurEffective);
+  const fondDupCheltPct = Math.min(100, Math.max(0, Number(ev.fondDupCheltPct ?? 7)));
+  const fond7 = Math.round(netDupaFixed * fondDupCheltPct / 100 * 100) / 100;
+  const dupaFond = netDupaFixed - fond7;
+  const div16 = restFirma ? Math.round(dupaFond * 0.16 * 100) / 100 : 0;
+  const dupaDiv = dupaFond - div16;
+  const leadPct = isPrivate ? 0.02 : 0.01;
+  const leadAmt = (ev.leadId || ev.leadCustom) ? Math.round(dupaDiv * leadPct * 100) / 100 : 0;
+  const adminAmt = ev.adminId ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
+  const socialAmt = Math.round(dupaDiv * 0.02 * 100) / 100;
+  const stageAmt = ev.stageId ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
+  const totalRoluri = leadAmt + adminAmt + socialAmt + stageAmt;
+  const avansInFond = ev.dp ? dep : 0;
+  const pool = Math.max(0, dupaDiv - totalRoluri - avansInFond);
+  const base = isPrivate
+    ? Math.round(pool * (SPLIT_PRIVATE[mId] || 0) / 100 * 100) / 100
+    : Math.round((pool / 5) * 100) / 100;
+  const lead = ev.leadId === mId && !ev.leadCustom ? leadAmt : 0;
+  const admin = ev.adminId === mId ? adminAmt : 0;
+  const social = mId === "m1" ? socialAmt : 0;
+  const stage = ev.stageId === mId ? stageAmt : 0;
+  const socialLei = mId === "m1" ? (isLei ? social : Math.round(social * CURS * 100) / 100) : 0;
+  return {
+    base, lead, admin, social, stage,
+    total: base + lead + admin + social + stage,
+    socialLei,
+    curs: CURS,
+    isLei
+  };
+};
 const calcFond7 = (ev) => {
   const CURS = ev.cursLei||CURS_DEFAULT;
   const fee = (ev.fee||0) + Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
@@ -1765,14 +1817,10 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   {colTasks.map(t=>(
                     <div key={t.id} draggable onDragStart={e=>e.dataTransfer.setData("taskId",t.id)} onClick={()=>toggleExpanded(t.id)}
-                      style={{background:th.c,borderRadius:12,padding:18,cursor:"grab",border:`${selectedIds.includes(t.id)?2:1}px solid ${selectedIds.includes(t.id)?th.a:th.bl}`,boxShadow:"0 1px 4px rgba(0,0,0,.05)",transition:"all .15s"}}
+                      style={{background:th.c,borderRadius:12,padding:18,cursor:"grab",border:`1px solid ${th.bl}`,boxShadow:"0 1px 4px rgba(0,0,0,.05)",transition:"all .15s"}}
                       onMouseOver={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,.08)";}}
                       onMouseOut={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,.05)";}}>
                       <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                        {!compact&&<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"2px 4px 0",borderRadius:8,border:`1px dashed rgba(99,102,241,.45)`,background:th.bg==="#09090b"?"rgba(99,102,241,.08)":"rgba(99,102,241,.06)"}} title="Selecție în masă">
-                          <input type="checkbox" checked={selectedIds.includes(t.id)} onChange={()=>setSelectedIds(s=>s.includes(t.id)?s.filter(x=>x!==t.id):[...s,t.id])} style={{cursor:"pointer",width:16,height:16,accentColor:"#6366f1"}}/>
-                          <span style={{fontSize:7,color:th.tm,fontWeight:700,textTransform:"uppercase"}}>grup</span>
-                        </div>}
                         <div onClick={e=>{e.stopPropagation();toggle(t.id);}} title="Finalizat" style={{width:22,height:22,borderRadius:"50%",border:`2px solid ${TSC[taskStatus(t)]}`,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:taskStatus(t)==="done"?TSC[taskStatus(t)]:"transparent",marginTop:2}}>{taskStatus(t)==="done"&&<span style={{color:"#fff",display:"flex"}}><IcCheck s={12}/></span>}</div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:16,fontWeight:600,textDecoration:taskStatus(t)==="done"?"line-through":undefined,color:taskStatus(t)==="done"?th.tm:th.t,lineHeight:1.4}}>{t.text}{t.assignedTo&&<span style={{fontSize:12,color:th.a,marginLeft:8}}>{assignLabel(t.assignedTo)}</span>}</div>
@@ -1802,7 +1850,7 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
                       </div>
                       {expandedIds.has(t.id)&&<div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${th.b}`}}>
                         <div style={{fontSize:13,color:th.tm,fontWeight:600,marginBottom:8}}>Subtasks</div>
-                        {(t.subtasks||[]).map(s=><TaskCard key={s.id} t={{...s,subtasks:s.subtasks||[],tags:s.tags||[],chats:s.chats||[],uploads:s.uploads||[]}} isDone={s.done} depth={1} showSelect={false}/>)}
+                        {(t.subtasks||[]).map(s=><TaskCard key={s.id} t={{...s,subtasks:s.subtasks||[],tags:s.tags||[],chats:s.chats||[],uploads:s.uploads||[]}} isDone={s.done} depth={1}/>)}
                         <input placeholder="+ Adaugă subtask (Enter)" onKeyDown={e=>{if(e.key==="Enter"){addSub(t.id,e.target.value);e.target.value="";}}} style={{...sty.i,padding:"14px 16px",fontSize:15,marginTop:10,borderRadius:10}}/>
                       </div>}
                     </div>
@@ -1833,13 +1881,13 @@ function TasksView({ tasks, setTasks, th, sty, mob, compact=false, currentMember
             </div>
           </div>
         ) : (
-          active.map(t=><TaskCard key={t.id} t={t} isDone={false} showSelect={!compact}/>)
+          active.map(t=><TaskCard key={t.id} t={t} isDone={false}/>)
         )}
       </div>
 
       {done.length>0 && <>
         <div style={{fontSize:13,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1.2,marginTop:32,marginBottom:14}}>Finalizate ({done.length})</div>
-        {(compact?done.slice(0,2):done).map(t=><TaskCard key={t.id} t={t} isDone={true} showSelect={!compact}/>)}
+        {(compact?done.slice(0,2):done).map(t=><TaskCard key={t.id} t={t} isDone={true}/>)}
       </>}
     </div>
   );
@@ -8330,35 +8378,8 @@ function App() {
               // 1) Finanțe mele (doar evenimente legate de mine)
               const linkedConfirmed = evs.filter(ev=>ev.st==="confirmat" && isLinkedEv(ev));
               const memberDetail = (ev, mId) => {
-                const adminId=ev.adminId||"m4";
-                const stageId=ev.stageId||"m4";
-                const C=ev.cursLei||CURS_DEFAULT;
-                const isP=ev.cat==="private";
-                const fee=(ev.fee||0)+Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
-                const dep=ev.dep||0;
-                const rest=fee-dep;
-                const avF=ev.avFirma??(ev.payType==="firma");
-                const rF=ev.restFirma??(ev.payType==="firma");
-                const taxV=Math.round(((avF?dep:0)+(rF?rest:0))*0.01*100)/100;
-                const fc={...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{})};
-                const fcE=((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0))/C;
-                const fc16=rF?Math.round(fcE*0.16*100)/100:0;
-                const net=Math.max(0,fee-taxV-fcE-fc16);
-                const f7=Math.round(net*0.07*100)/100;
-                const d16=rF?Math.round((net-f7)*0.16*100)/100:0;
-                const dupa=net-f7-d16;
-                const lAmt=(ev.leadId||ev.leadCustom)?Math.round(dupa*(isP?0.02:0.01)*100)/100:0;
-                const aAmt=Math.round(dupa*0.02*100)/100;
-                const sAmt=Math.round(dupa*0.02*100)/100;
-                const stAmt=Math.round(dupa*0.02*100)/100;
-                const avD=ev.dp?(ev.dep||0):0;
-                const pool=Math.max(0,dupa-lAmt-aAmt-sAmt-stAmt-avD);
-                const base=isP?Math.round(pool*(SPLIT_PRIVATE[mId]||0)/100*100)/100:Math.round(pool/5*100)/100;
-                const lead=(ev.leadId===mId&&!ev.leadCustom)?lAmt:0;
-                const admin=adminId===mId?aAmt:0;
-                const social=mId==="m1"?sAmt:0;
-                const stage=stageId===mId?stAmt:0;
-                return { total: base+lead+admin+social+stage };
+                const r = computeMemberPayoutBreakdown(ev, mId, templates?.servicePrices);
+                return { total: r.total };
               };
 
               const paid = linkedConfirmed.filter(ev=>ev.restPaid);
@@ -8499,34 +8520,9 @@ function App() {
           {tab==="finances"&&(()=>{
             // ── shared helpers ──
             const fv2=v=>v.toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+"€";
+            const fSocialLei=v=>(Number(v||0)).toLocaleString("ro-RO",{minimumFractionDigits:0,maximumFractionDigits:2})+" lei";
             const fD2=d=>d?new Date(d).toLocaleDateString("ro-RO",{day:"numeric",month:"short",year:"numeric"}):"";
-            const memberDetail=(ev,mId)=>{
-              const adminId=ev.adminId||"m4"; const stageId=ev.stageId||"m4";
-              const C=ev.cursLei||CURS_DEFAULT; const isP=ev.cat==="private";
-              const fee=(ev.fee||0)+Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
-              const dep=ev.dep||0; const rest=fee-dep;
-              const avF=ev.avFirma??(ev.payType==="firma"); const rF=ev.restFirma??(ev.payType==="firma");
-              const taxV=Math.round(((avF?dep:0)+(rF?rest:0))*0.01*100)/100;
-              const fc={...DEFAULT_FIXED_COSTS,...(ev.fixedCosts||{})};
-              const fcE=((fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0))/C;
-              const fc16=rF?Math.round(fcE*0.16*100)/100:0;
-              const net=Math.max(0,fee-taxV-fcE-fc16);
-              const f7=Math.round(net*0.07*100)/100;
-              const d16=rF?Math.round((net-f7)*0.16*100)/100:0;
-              const dupa=net-f7-d16;
-              const lAmt=(ev.leadId||ev.leadCustom)?Math.round(dupa*(isP?0.02:0.01)*100)/100:0;
-              const aAmt=Math.round(dupa*0.02*100)/100;
-              const sAmt=Math.round(dupa*0.02*100)/100;
-              const stAmt=Math.round(dupa*0.02*100)/100;
-              const avD=ev.dp?(ev.dep||0):0;
-              const pool=Math.max(0,dupa-lAmt-aAmt-sAmt-stAmt-avD);
-              const base=isP?Math.round(pool*(SPLIT_PRIVATE[mId]||0)/100*100)/100:Math.round(pool/5*100)/100;
-              const lead=(ev.leadId===mId&&!ev.leadCustom)?lAmt:0;
-              const admin=adminId===mId?aAmt:0;
-              const social=mId==="m1"?sAmt:0;
-              const stage=stageId===mId?stAmt:0;
-              return {base,lead,admin,social,stage,total:base+lead+admin+social+stage};
-            };
+            const memberDetail=(ev,mId)=>computeMemberPayoutBreakdown(ev,mId,templates?.servicePrices);
 
             // ── MEMBER PROFILE PAGE ──
             if(finMember){
@@ -8540,21 +8536,26 @@ function App() {
               const totBase=paid.reduce((s,e)=>s+memberDetail(e,finMember).base,0);
               const totLead=paid.reduce((s,e)=>s+memberDetail(e,finMember).lead,0);
               const totAdmin=paid.reduce((s,e)=>s+memberDetail(e,finMember).admin,0);
-              const totSocial=paid.reduce((s,e)=>s+memberDetail(e,finMember).social,0);
+              const totSocialLei=paid.reduce((s,e)=>s+memberDetail(e,finMember).socialLei,0);
               const totStage=paid.reduce((s,e)=>s+memberDetail(e,finMember).stage,0);
               const totBaseAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).base,0);
               const totLeadAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).lead,0);
               const totAdminAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).admin,0);
-              const totSocialAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).social,0);
+              const totSocialLeiAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).socialLei,0);
               const totStageAll=allEvs.reduce((s,e)=>s+memberDetail(e,finMember).stage,0);
               const ROLES=[{k:"base",l:"🎵 Cantat",c:"#a5b4fc",bg:"rgba(99,102,241,.15)"},{k:"lead",l:"⭐ Lead",c:"#fbbf24",bg:"rgba(245,158,11,.15)"},{k:"admin",l:"🗂 Admin",c:"#fbbf24",bg:"rgba(245,158,11,.15)"},{k:"social",l:"📱 Social Media Mgr",c:"#c4b5fd",bg:"rgba(139,92,246,.15)"},{k:"stage",l:"🎭 Stage Mgr",c:"#fbbf24",bg:"rgba(245,158,11,.15)"}];
               const RoleSection=({roleKey,roleLabel,roleColor,roleBg,tot})=>{
-                const evsForRole=allEvs.filter(ev=>{const d=memberDetail(ev,finMember);return d[roleKey]>0;});
+                const isSocial=roleKey==="social";
+                const fmt=isSocial?fSocialLei:fv2;
+                const evsForRole=allEvs.filter(ev=>{
+                  const d=memberDetail(ev,finMember);
+                  return (isSocial?d.socialLei:d[roleKey])>0;
+                });
                 if(evsForRole.length===0) return null;
                 return <div style={{...sty.cd,marginBottom:16,border:`1px solid ${roleBg.replace(".15",".3")}`}}>
                   <div style={{fontSize:11,color:roleColor,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span>{roleLabel}</span>
-                    <span style={{fontSize:14,fontWeight:800}}>{fv2(tot)}</span>
+                    <span style={{fontSize:14,fontWeight:800}}>{fmt(tot)}</span>
                   </div>
                   <div className={mob?"table-scroll-mob":""} style={{overflow:mob?"auto":"hidden"}}>
                     <table style={{width:"100%",minWidth:mob?480:undefined,fontSize:12,borderCollapse:"collapse"}}>
@@ -8562,13 +8563,13 @@ function App() {
                         {["Data","Tipul","Descriere","Suma","Status"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{h}</th>)}
                       </tr></thead>
                       <tbody>{evsForRole.map(ev=>{
-                        const d=memberDetail(ev,finMember); const amt=d[roleKey];
+                        const d=memberDetail(ev,finMember); const amt=isSocial?d.socialLei:d[roleKey];
                         if(amt<=0) return null;
                         return <tr key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{borderBottom:`1px solid ${th.bl}`,cursor:"pointer"}} onMouseOver={e=>e.currentTarget.style.background=th.h} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                           <td style={{padding:"8px 10px"}}>{fEvDate(ev)}</td>
                           <td style={{padding:"8px 10px"}}>{ev.type||"—"}</td>
                           <td style={{padding:"8px 10px",fontSize:11,color:th.tm,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={ev.desc||""}>{ev.desc||"—"}</td>
-                          <td style={{padding:"8px 10px",fontWeight:700,color:roleColor}}>{fv2(amt)}</td>
+                          <td style={{padding:"8px 10px",fontWeight:700,color:roleColor}}>{fmt(amt)}</td>
                           <td style={{padding:"8px 10px",fontSize:10,color:ev.restPaid?"#22c55e":"#f59e0b"}}>{ev.restPaid?"✅ primit":"⏳ în așteptare"}</td>
                         </tr>;
                       })}</tbody>
@@ -8617,9 +8618,9 @@ function App() {
                       <div style={{fontSize:9,color:"#fbbf24",textTransform:"uppercase",letterSpacing:1}}>🗂 Admin</div>
                       <div style={{fontSize:16,fontWeight:700,color:"#fbbf24"}}>{fv2(totAdmin)}</div>
                     </div>}
-                    {totSocial>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(139,92,246,.1)",border:"1px solid rgba(139,92,246,.2)"}}>
+                    {totSocialLei>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(139,92,246,.1)",border:"1px solid rgba(139,92,246,.2)"}}>
                       <div style={{fontSize:9,color:"#c4b5fd",textTransform:"uppercase",letterSpacing:1}}>📱 Social Media Mgr</div>
-                      <div style={{fontSize:16,fontWeight:700,color:"#c4b5fd"}}>{fv2(totSocial)}</div>
+                      <div style={{fontSize:16,fontWeight:700,color:"#c4b5fd"}}>{fSocialLei(totSocialLei)}</div>
                     </div>}
                     {totStage>0&&<div style={{padding:"8px 14px",borderRadius:10,background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.2)"}}>
                       <div style={{fontSize:9,color:"#fbbf24",textTransform:"uppercase",letterSpacing:1}}>🎭 Stage Mgr</div>
@@ -8627,7 +8628,7 @@ function App() {
                     </div>}
                   </div>
                 </div>}
-                {ROLES.map(r=><RoleSection key={r.k} roleKey={r.k} roleLabel={r.l} roleColor={r.c} roleBg={r.bg} tot={{base:totBaseAll,lead:totLeadAll,admin:totAdminAll,social:totSocialAll,stage:totStageAll}[r.k]}/>)}
+                {ROLES.map(r=><RoleSection key={r.k} roleKey={r.k} roleLabel={r.l} roleColor={r.c} roleBg={r.bg} tot={{base:totBaseAll,lead:totLeadAll,admin:totAdminAll,social:totSocialLeiAll,stage:totStageAll}[r.k]}/>)}
                 {allEvs.length===0&&<div style={{padding:40,textAlign:"center",color:th.tm,fontSize:13}}>Niciun eveniment confirmat încă</div>}
               </div>;
             }
