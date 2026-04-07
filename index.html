@@ -810,26 +810,77 @@ const computeFinanceDistribution = (ev, servicePrices) => {
     roundedShares, roundedSharesLei, leadAmt, adminAmt, socialAmt, stageAmt
   };
 };
-/** Pentru Finanțe profil / dashboard: aceleași sume ca în fișă (rotunjire inclusă), împărțite pe roluri proporțional cotelor brute. */
+/** Finanțe profil: aceleași algoritm ca în modalul Fișa — întâi «Parte cantat» vs total bonus rol la rt rotunjit, apoi bonus împărțit pe Lead/Admin/Stage; la Carina (m1) Social e în pachetul «cantat» ca în fișă, apoi separat interpretare vs Social în euro/lei. */
 const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
   const d = computeFinanceDistribution(ev, servicePrices);
   const { CURS, isLei, baseShares, roleBonus, leadAmt, adminAmt, socialAmt, stageAmt, roundedShares } = d;
-  const rawW = (baseShares[mId] || 0) + (roleBonus[mId] || 0);
   const rt = roundedShares[mId] || 0;
+  const base = baseShares[mId] || 0;
+  const rol = roleBonus[mId] || 0;
+  const rawW = base + rol;
   if (rawW <= 0) {
     return { base: 0, lead: 0, admin: 0, social: 0, stage: 0, total: 0, socialLei: 0, curs: CURS, isLei };
   }
-  const sp = (rawPart) => Math.round(rt * (rawPart / rawW) * 100) / 100;
-  let base = sp(baseShares[mId] || 0);
-  let lead = (ev.leadId === mId && !ev.leadCustom) ? sp(leadAmt) : 0;
-  let admin = ev.adminId === mId ? sp(adminAmt) : 0;
-  let social = mId === "m1" ? sp(socialAmt) : 0;
-  let stage = ev.stageId === mId ? sp(stageAmt) : 0;
-  const sumP = Math.round((base + lead + admin + social + stage) * 100) / 100;
-  const drift = Math.round((rt - sumP) * 100) / 100;
-  if (Math.abs(drift) >= 0.005) base = Math.round((base + drift) * 100) / 100;
-  const socialLei = mId === "m1" ? (isLei ? social : Math.round(social * CURS * 100) / 100) : 0;
-  return { base, lead, admin, social, stage, total: rt, socialLei, curs: CURS, isLei };
+  const socialInCantat = mId === "m1";
+  const baseDisp = socialInCantat ? base + socialAmt : base;
+  const rolDisp = socialInCantat ? Math.max(0, rol - socialAmt) : rol;
+
+  let cantat = Math.round(rt * (baseDisp / rawW) * 100) / 100;
+  let rolTotal = Math.round((rt - cantat) * 100) / 100;
+  let driftC = Math.round((rt - cantat - rolTotal) * 100) / 100;
+  if (Math.abs(driftC) >= 0.005) cantat = Math.round((cantat + driftC) * 100) / 100;
+  rolTotal = Math.round((rt - cantat) * 100) / 100;
+
+  let outBase = 0;
+  let outLead = 0;
+  let outAdmin = 0;
+  let outSocial = 0;
+  let outStage = 0;
+
+  if (socialInCantat && baseDisp > 0) {
+    outBase = Math.round(cantat * (base / baseDisp) * 100) / 100;
+    outSocial = Math.round((cantat - outBase) * 100) / 100;
+    const dB = Math.round((cantat - outBase - outSocial) * 100) / 100;
+    if (Math.abs(dB) >= 0.005) outBase = Math.round((outBase + dB) * 100) / 100;
+    outSocial = Math.round((cantat - outBase) * 100) / 100;
+  } else {
+    outBase = cantat;
+  }
+
+  if (rolDisp > 0.005 && rolTotal > 0.005) {
+    const rw = [];
+    if (ev.leadId === mId && !ev.leadCustom && leadAmt > 0) rw.push({ k: "lead", w: leadAmt });
+    if (ev.adminId === mId && adminAmt > 0) rw.push({ k: "admin", w: adminAmt });
+    if (ev.stageId === mId && stageAmt > 0) rw.push({ k: "stage", w: stageAmt });
+
+    const sumRw = rw.reduce((s, x) => s + x.w, 0);
+    if (sumRw > 0) {
+      let acc = 0;
+      rw.forEach((x, i) => {
+        let val;
+        if (i === rw.length - 1) val = Math.round((rolTotal - acc) * 100) / 100;
+        else {
+          val = Math.round(rolTotal * (x.w / sumRw) * 100) / 100;
+          acc += val;
+        }
+        if (x.k === "lead") outLead = val;
+        else if (x.k === "admin") outAdmin = val;
+        else if (x.k === "stage") outStage = val;
+        else if (x.k === "social") outSocial = val;
+      });
+    } else {
+      outBase = Math.round((outBase + rolTotal) * 100) / 100;
+    }
+  } else if (rolTotal > 0.005) {
+    outBase = Math.round((outBase + rolTotal) * 100) / 100;
+  }
+
+  const sumP = Math.round((outBase + outLead + outAdmin + outSocial + outStage) * 100) / 100;
+  const driftF = Math.round((rt - sumP) * 100) / 100;
+  if (Math.abs(driftF) >= 0.005) outBase = Math.round((outBase + driftF) * 100) / 100;
+
+  const socialLei = mId === "m1" ? (isLei ? outSocial : Math.round(outSocial * CURS * 100) / 100) : 0;
+  return { base: outBase, lead: outLead, admin: outAdmin, social: outSocial, stage: outStage, total: rt, socialLei, curs: CURS, isLei };
 };
 const calcFond7 = (ev) => {
   const CURS = ev.cursLei||CURS_DEFAULT;
