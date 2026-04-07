@@ -1036,6 +1036,21 @@ const collectTasksForDate = (tasks, ds, out = []) => {
   }
   return out;
 };
+const collectTasksWithGcal = (tasks, out = []) => {
+  for (const t of tasks || []) {
+    if (t?.gcalId) out.push(t);
+    collectTasksWithGcal(t.subtasks || [], out);
+  }
+  return out;
+};
+const mapTasksTree = (tasks, fn) => (tasks || []).map(t => {
+  const next = fn(t);
+  return { ...next, subtasks: mapTasksTree(next.subtasks || [], fn) };
+});
+const removeTasksByIds = (tasks, idsSet) =>
+  (tasks || [])
+    .filter(t => !idsSet.has(t.id))
+    .map(t => ({ ...t, subtasks: removeTasksByIds(t.subtasks || [], idsSet) }));
 const cloneTaskForRepeat = (t) => {
   const rep = t.repeat;
   if (!rep || rep === "none") return null;
@@ -5710,6 +5725,7 @@ function App() {
   const gcalPendingSyncsRef = useRef([]); // syncuri în așteptare după refresh token
   const gcalManualConnectToastRef = useRef(false); // toast doar la click „Conectează Calendar”, nu la refresh silențios
   const gcalMirrorDeleteBusyRef = useRef(false); // evită rulări paralele pentru reconcilierea delete-urilor din Google
+  const gcalTaskSyncBusyRef = useRef(false);
   const gcalLinkedEventsKey = useMemo(
     () => evs.filter(e => e?.gcalId).map(e => `${e.id}:${e.gcalId}`).join("|"),
     [evs]
@@ -5718,6 +5734,21 @@ function App() {
     () => (calBlocks || []).filter(b => b?.gcalId).map(b => `${b.id}:${b.gcalId}`).join("|"),
     [calBlocks]
   );
+  const gcalLinkedTasksKey = useMemo(
+    () => collectTasksWithGcal(tasks).map(t => `${t.id}:${t.gcalId}`).join("|"),
+    [tasks]
+  );
+  const gcalTaskSyncKey = useMemo(() => {
+    const all = [];
+    const walk = (arr) => {
+      for (const t of arr || []) {
+        all.push(`${t.id}|${t.due || ""}|${t.gcalId || ""}|${t.text || ""}`);
+        walk(t.subtasks || []);
+      }
+    };
+    walk(tasks || []);
+    return all.join("~");
+  }, [tasks]);
 
   // Salvează token GCal în Supabase (cloud) — oricine reconectează, toți beneficiază
   const saveGCalToCloud = async (token, exp) => {
@@ -6193,7 +6224,8 @@ function App() {
       if (gcalMirrorDeleteBusyRef.current) return;
       const linkedEvents = evs.filter(e => e?.gcalId);
       const linkedBlocks = (calBlocks || []).filter(b => b?.gcalId);
-      if (!linkedEvents.length && !linkedBlocks.length) return;
+      const linkedTasks = collectTasksWithGcal(tasks);
+      if (!linkedEvents.length && !linkedBlocks.length && !linkedTasks.length) return;
 
       gcalMirrorDeleteBusyRef.current = true;
       try {
@@ -6201,8 +6233,10 @@ function App() {
         if (!token) return;
         const removedEventIds = [];
         const removedBlockIds = [];
+        const removedTaskIds = [];
         const batchEvents = linkedEvents.slice(0, 120); // limităm costul pentru conturi mari
         const batchBlocks = linkedBlocks.slice(0, 120);
+        const batchTasks = linkedTasks.slice(0, 120);
 
         for (const ev of batchEvents) {
           if (cancelled) return;
@@ -6216,7 +6250,7 @@ function App() {
               if (!token) return;
               continue;
             }
-            if (res.status === 404) removedEventIds.push(ev.id);
+            if (res.status === 404 || res.status === 410) removedEventIds.push(ev.id);
           } catch (e) {}
         }
 
@@ -6232,17 +6266,35 @@ function App() {
               if (!token) return;
               continue;
             }
-            if (res.status === 404) removedBlockIds.push(b.id);
+            if (res.status === 404 || res.status === 410) removedBlockIds.push(b.id);
           } catch (e) {}
         }
 
-        if ((!removedEventIds.length && !removedBlockIds.length) || cancelled) return;
+        for (const t of batchTasks) {
+          if (cancelled) return;
+          try {
+            const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${t.gcalId}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.status === 401) {
+              gcalEdgeCacheRef.current = { token: "", exp: 0 };
+              token = await getGcalAccessTokenUnified();
+              if (!token) return;
+              continue;
+            }
+            if (res.status === 404 || res.status === 410) removedTaskIds.push(t.id);
+          } catch (e) {}
+        }
+
+        if ((!removedEventIds.length && !removedBlockIds.length && !removedTaskIds.length) || cancelled) return;
         const nextEvs = removedEventIds.length ? evs.filter(e => !removedEventIds.includes(e.id)) : evs;
         const nextBlocks = removedBlockIds.length ? (calBlocks || []).filter(b => !removedBlockIds.includes(b.id)) : (calBlocks || []);
+        const nextTasks = removedTaskIds.length ? removeTasksByIds(tasks, new Set(removedTaskIds)) : tasks;
         if (removedEventIds.length) setEvs(nextEvs);
         if (removedBlockIds.length) setCalBlocks(nextBlocks);
-        saveNow({ evs: nextEvs, calBlocks: nextBlocks });
-        const removedTotal = removedEventIds.length + removedBlockIds.length;
+        if (removedTaskIds.length) setTasks(nextTasks);
+        saveNow({ evs: nextEvs, calBlocks: nextBlocks, tasks: nextTasks });
+        const removedTotal = removedEventIds.length + removedBlockIds.length + removedTaskIds.length;
         showToast(`📅 ${removedTotal} item(uri) șterse din Google au fost șterse și din aplicație.`);
       } finally {
         gcalMirrorDeleteBusyRef.current = false;
@@ -6255,7 +6307,50 @@ function App() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [GCAL_USE_SERVER_OAUTH, gcalActive, authReady, sbSession?.user?.id, gcalLinkedEventsKey, gcalLinkedBlocksKey]);
+  }, [GCAL_USE_SERVER_OAUTH, gcalActive, authReady, sbSession?.user?.id, gcalLinkedEventsKey, gcalLinkedBlocksKey, gcalLinkedTasksKey]);
+
+  // Task-uri cu due date apar în calendar și se sincronizează în Google.
+  useEffect(() => {
+    if (!gcalActive || !authReady || !sbSession) return;
+    let cancelled = false;
+    const run = async () => {
+      if (gcalTaskSyncBusyRef.current) return;
+      gcalTaskSyncBusyRef.current = true;
+      try {
+        const dueTasks = [];
+        const removedDueWithGcal = [];
+        const walk = (arr) => {
+          for (const t of arr || []) {
+            if (t?.due) dueTasks.push(t);
+            if (!t?.due && t?.gcalId) removedDueWithGcal.push(t);
+            walk(t.subtasks || []);
+          }
+        };
+        walk(tasks || []);
+
+        // Dacă task-ul nu mai are due date, ștergem intrarea din Google și curățăm gcalId.
+        for (const t of removedDueWithGcal.slice(0, 80)) {
+          if (cancelled) return;
+          await deleteFromGCal(t.gcalId);
+        }
+        if (removedDueWithGcal.length && !cancelled) {
+          const removedSet = new Set(removedDueWithGcal.map(x => x.id));
+          setTasks(prev => mapTasksTree(prev, node => removedSet.has(node.id) ? { ...node, gcalId: "" } : node));
+        }
+
+        // Asigurăm gcalId pentru task-urile cu due date.
+        for (const t of dueTasks.slice(0, 120)) {
+          if (cancelled) return;
+          const gid = await syncTaskToGCal(t);
+          if (!gid || gid === t.gcalId) continue;
+          setTasks(prev => mapTasksTree(prev, node => node.id === t.id ? { ...node, gcalId: gid } : node));
+        }
+      } finally {
+        gcalTaskSyncBusyRef.current = false;
+      }
+    };
+    run();
+  }, [gcalActive, authReady, sbSession?.user?.id, gcalTaskSyncKey]);
 
   // Sincronizează un bloc "Ocupat" în Google Calendar (creare/actualizare)
   const syncBlockToGCal = async (b) => {
@@ -6280,6 +6375,45 @@ function App() {
       const r = await res.json();
       return r.id || null;
     } catch(e) { return null; }
+  };
+
+  const syncTaskToGCal = async (t) => {
+    if (!t?.due) return null;
+    let token = await getGcalAccessTokenUnified();
+    if (!token) return null;
+    const ndObj = new Date(t.due + "T00:00:00");
+    ndObj.setDate(ndObj.getDate() + 1);
+    const nextDay = ndObj.toISOString().split("T")[0];
+    const body = {
+      summary: `Task: ${String(t.text || "Task").slice(0, 120)}`,
+      description: (t.notes || "").slice(0, 1200),
+      start: { date: t.due },
+      end: { date: nextDay }
+    };
+    try {
+      const url = t.gcalId
+        ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${t.gcalId}`
+        : "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+      let res = await fetch(url, {
+        method: t.gcalId ? "PUT" : "POST",
+        headers: { "Authorization":`Bearer ${token}`, "Content-Type":"application/json" },
+        body: JSON.stringify(body)
+      });
+      if (res.status === 401 && GCAL_USE_SERVER_OAUTH) {
+        gcalEdgeCacheRef.current = { token: "", exp: 0 };
+        token = await getGcalAccessTokenUnified();
+        if (!token) return null;
+        res = await fetch(url, {
+          method: t.gcalId ? "PUT" : "POST",
+          headers: { "Authorization":`Bearer ${token}`, "Content-Type":"application/json" },
+          body: JSON.stringify(body)
+        });
+      }
+      const r = await res.json().catch(()=>({}));
+      return res.ok ? (r.id || t.gcalId || null) : null;
+    } catch (e) {
+      return null;
+    }
   };
 
   const mob = useIsMobile();
