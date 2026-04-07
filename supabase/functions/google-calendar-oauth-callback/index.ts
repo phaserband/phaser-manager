@@ -73,7 +73,9 @@ Deno.serve(async (req) => {
     const { data: existing } = await admin
       .from("google_calendar_credentials")
       .select("refresh_token")
-      .eq("user_id", userId)
+      .not("refresh_token", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     refresh = existing?.refresh_token ?? undefined;
   }

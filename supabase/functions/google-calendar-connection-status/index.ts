@@ -1,4 +1,4 @@
-// GET + JWT → { connected: boolean }
+// GET + JWT → { connected: boolean } (global connection, not per-user)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -42,11 +42,13 @@ Deno.serve(async (req) => {
   const admin = createClient(supabaseUrl, (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim());
   const { data } = await admin
     .from("google_calendar_credentials")
-    .select("user_id")
-    .eq("user_id", user.id)
+    .select("user_id, refresh_token, updated_at")
+    .not("refresh_token", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
-  return new Response(JSON.stringify({ connected: !!data }), {
+  return new Response(JSON.stringify({ connected: !!data, mode: "global" }), {
     headers: { ...ch, "Content-Type": "application/json" },
   });
 });

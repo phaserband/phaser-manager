@@ -6040,20 +6040,30 @@ function App() {
   };
 
   const disconnectGCal = () => {
+    if (!window.confirm("Sigur vrei să deconectezi Google Calendar? Vei opri sync până reconectezi.")) return;
     if (GCAL_USE_SERVER_OAUTH) {
       gcalEdgeCacheRef.current = { token: "", exp: 0 };
       (async () => {
         const client = getSbClient();
         if (client) {
           const { data: { session } } = await client.auth.getSession();
+          let disconnectOk = true;
           if (session) {
             const base = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
-            await fetch(`${base}/google-calendar-disconnect`, {
+            const dr = await fetch(`${base}/google-calendar-disconnect`, {
               method: "POST",
-              headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key },
+              headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key, "X-Disconnect-Confirm": "yes" },
             });
+            disconnectOk = dr.ok;
+            if (!dr.ok) {
+              const dj = await dr.json().catch(() => ({}));
+              showToast(dj.error || "Nu s-a putut deconecta calendarul global.", "error");
+            }
           }
-          try { await client.from("app_data").delete().eq("id","phaser_gcal"); } catch (e) {}
+          if (disconnectOk) {
+            try { await client.from("app_data").delete().eq("id","phaser_gcal"); } catch (e) {}
+          }
+          if (!disconnectOk) return;
         }
         setGcalServerConnected(false);
         showToast("Calendar deconectat");

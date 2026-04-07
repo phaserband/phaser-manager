@@ -1,4 +1,4 @@
-// POST + JWT → access_token proaspăt (refresh pe server)
+// POST + JWT → access_token proaspăt (refresh pe server, global credential)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -41,8 +41,10 @@ Deno.serve(async (req) => {
   const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const { data: row, error: rErr } = await admin
     .from("google_calendar_credentials")
-    .select("refresh_token")
-    .eq("user_id", user.id)
+    .select("refresh_token, user_id, updated_at")
+    .not("refresh_token", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (rErr || !row?.refresh_token) {
