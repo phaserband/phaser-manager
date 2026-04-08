@@ -321,6 +321,40 @@ function OffersBoard({ evs, th, sty, mob, onSelect }) {
 }
 
 // ─── CONTRACT ───
+const CONTRACT_PRESTATOR_SIGNATURE_FILE = "Semnatura+Stampila%20(no%20background).png";
+function contractPrestatorSignatureSrc() {
+  try {
+    if (typeof window !== "undefined" && window.location?.href) {
+      return new URL(CONTRACT_PRESTATOR_SIGNATURE_FILE, window.location.href).href;
+    }
+  } catch (e) { /* ignore */ }
+  return CONTRACT_PRESTATOR_SIGNATURE_FILE;
+}
+function ContractPrestatorSignatureBlock({ labelFontSize = 11 }) {
+  return (
+    <>
+      <img
+        src={contractPrestatorSignatureSrc()}
+        alt=""
+        style={{
+          maxHeight: 76,
+          maxWidth: 240,
+          width: "auto",
+          height: "auto",
+          objectFit: "contain",
+          display: "block",
+          marginBottom: 6,
+          WebkitPrintColorAdjust: "exact",
+          printColorAdjust: "exact",
+        }}
+        onError={(e) => { e.target.style.display = "none"; }}
+      />
+      <div style={{ borderBottom: "1.5px solid #111", width: "85%", marginBottom: 4 }} />
+      <div style={{ fontSize: labelFontSize, color: "#888" }}>Semnătură și ștampilă</div>
+    </>
+  );
+}
+
 function ContractView({ ev, th, contractFields, onContractChange }) {
   const isP = ev.cat==="private";
   const svcTot = isP ? Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0) : 0;
@@ -471,9 +505,8 @@ function ContractView({ ev, th, contractFields, onContractChange }) {
         <div>
           <div style={{fontWeight:700,marginBottom:10}}>PRESTATOR</div>
           <div style={{fontSize:12,color:"#555"}}>PHASER MUSIC SRL</div>
-          <div style={{fontSize:12,color:"#555",marginBottom:36}}>Racz Andrei Radu</div>
-          <div style={{borderBottom:"1.5px solid #111",width:"80%",marginBottom:4}}/>
-          <div style={{fontSize:11,color:"#888"}}>Semnătură și ștampilă</div>
+          <div style={{fontSize:12,color:"#555",marginBottom:8}}>Racz Andrei Radu</div>
+          <ContractPrestatorSignatureBlock />
         </div>
         <div>
           <div style={{fontWeight:700,marginBottom:10}}>BENEFICIAR</div>

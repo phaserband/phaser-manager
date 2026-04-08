@@ -226,6 +226,40 @@ const generatePdfFromHtml = async (html, timeoutMs) => {
 
 // ─── HOOKS ───
 const LOGO_URL = "assets/logo.png";
+/** Semnătură + ștampilă prestator (PNG fără fundal), același folder ca index.html. */
+const CONTRACT_PRESTATOR_SIGNATURE_FILE = "Semnatura+Stampila%20(no%20background).png";
+function contractPrestatorSignatureSrc() {
+  try {
+    if (typeof window !== "undefined" && window.location?.href) {
+      return new URL(CONTRACT_PRESTATOR_SIGNATURE_FILE, window.location.href).href;
+    }
+  } catch (e) { /* ignore */ }
+  return CONTRACT_PRESTATOR_SIGNATURE_FILE;
+}
+function ContractPrestatorSignatureBlock({ labelFontSize = 11 }) {
+  return (
+    <>
+      <img
+        src={contractPrestatorSignatureSrc()}
+        alt=""
+        style={{
+          maxHeight: 76,
+          maxWidth: 240,
+          width: "auto",
+          height: "auto",
+          objectFit: "contain",
+          display: "block",
+          marginBottom: 6,
+          WebkitPrintColorAdjust: "exact",
+          printColorAdjust: "exact",
+        }}
+        onError={(e) => { e.target.style.display = "none"; }}
+      />
+      <div style={{ borderBottom: "1.5px solid #111", width: "85%", marginBottom: 4 }} />
+      <div style={{ fontSize: labelFontSize, color: "#888" }}>Semnătură și ștampilă</div>
+    </>
+  );
+}
 
 function useIsMobile() {
   const [mob, setMob] = useState(typeof window !== "undefined" ? window.innerWidth < 768 : false);
@@ -3213,9 +3247,8 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
         <div>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>PRESTATOR</div>
           <div style={{ fontSize: 12, color: "#555" }}>PHASER MUSIC SRL</div>
-          <div style={{ fontSize: 12, color: "#555", marginBottom: 36 }}>Racz Andrei Radu</div>
-          <div style={{ borderBottom: "1.5px solid #111", width: "80%", marginBottom: 4 }} />
-          <div style={{ fontSize: 11, color: "#888" }}>Semnătură și ștampilă</div>
+          <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>Racz Andrei Radu</div>
+          <ContractPrestatorSignatureBlock />
         </div>
         <div>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>BENEFICIAR</div>
@@ -3225,6 +3258,65 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
           <div style={{ fontSize: 11, color: "#888" }}>Semnătură</div>
         </div>
       </div>
+
+      {!benFirmaLayout && (
+        <div className="print-break" style={{ marginTop: 36, paddingTop: 20, borderTop: "2px solid #333", breakInside: "avoid", breakBefore: "page" }}>
+          <div style={{ fontWeight: 700, fontSize: 11, textAlign: "center", marginBottom: 18, textTransform: "uppercase", letterSpacing: 0.4, lineHeight: 1.45 }}>
+            NOTIFICARE ȘI EXPRIMARE A CONSIMȚĂMÂNTULUI PRIVIND PRELUCRAREA DATELOR CU CARACTER PERSONAL
+          </div>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Notificări</p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Începând cu data de 25.05.2018 au intrat în vigoare prevederile Regulamentului nr. 679/2016 privind protecția persoanelor fizice în ceea ce privește prelucrarea datelor cu caracter personal și libera circulație a acestor date, motiv pentru care SC PHASER MUSIC SRL are obligația de a cere consimțământul explicit al clienților/partenerilor pentru colectarea/prelucrarea/stocarea/dezvăluirea acestor date.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            SC PHASER MUSIC SRL furnizează în prezent servicii către clienți (persoane juridice/persoane fizice), la solicitarea acestora. În temeiul relației cu clientul, societatea noastră colectează o serie de date cu caracter personal.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            SC PHASER MUSIC SRL cunoaște importanța datelor dumneavoastră și se angajează să protejeze confidențialitatea și securitatea acestora. După caz, aceste date pot fi dezvăluite autorităților publice centrale sau locale, la solicitarea acestora cu temei legal. De aceea este important pentru noi să vă furnizăm informații legate de prelucrarea datelor dumneavoastră cu caracter personal, în calitate de persoane vizate, să vă informăm cu privire la drepturile dumneavoastră și să vă solicităm consimțământul ca datele dumneavoastră să fie procesate de către SC PHASER MUSIC SRL.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Datele cu caracter personal procesate de către societatea noastră sunt datele personale (nume, prenume, CNP, seria și numărul CI, adresă, telefon, e-mail) introduse în contractul de prestări servicii, precum și datele din acest acord, urmând a fi prelucrate în următoarele scopuri:
+          </p>
+          <ul style={{ marginBottom: 12, paddingLeft: 22, lineHeight: 1.7 }}>
+            <li>Întocmire facturi/comenzi/contracte/chitanțe/acte adiționale.</li>
+            <li>Furnizarea de informații prin intermediul e-mail-ului, SMS-ului, apelului telefonic, platformelor de social media cu privire la contractul de prestări servicii.</li>
+          </ul>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Drepturile dumneavoastră</p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            În conformitate cu prevederile legale aplicabile, vă bucurați de dreptul de informare, dreptul de acces la date, dreptul de intervenție asupra datelor, dreptul de opoziție, dreptul de a nu fi supus unei decizii individuale și dreptul de a vă adresa justiției și/sau autorității de supraveghere privind protecția datelor cu caracter personal. De asemenea, beneficiați și de dreptul la ștergerea datelor, precum și de dreptul la portabilitatea datelor, dacă va fi considerat aplicabil acestei situații. Notificarea de revocare a acordului poate fi realizată spre exemplu prin e-mail către contact@phaser.ro sau la sediul societății SC PHASER MUSIC SRL.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Vă rugăm să aveți în vedere faptul că revocarea acordului nu afectează legalitatea utilizării datelor înainte de retragerea acordului (notificarea nu are impact retroactiv). Dacă acordul nu este acordat sau a fost revocat, datele personale nu vor fi utilizate în scopurile de mai sus. În cazul în care aveți întrebări legate de acest acord sau de protecția datelor de către societatea SC PHASER MUSIC SRL în general, vă rugăm să nu ezitați să ne contactați la adresa de e-mail: contact@phaser.ro
+          </p>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Durata păstrării datelor</p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Datele dumneavoastră personale vor fi stocate până la momentul încetării relației cu clientul, cu excepția cazului în care avem obligația legală de a stoca în continuare datele dumneavoastră în scopul de a le prezenta autorităților publice, de exemplu autorităților fiscale. Stocarea și transferul datelor dvs. personale către autoritățile publice în scopul îndeplinirii unei obligații legale se bazează în mod legal pe art. 6 alin. (1) lit. c) GDPR.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Datorită posibilelor modificări ale legislației, o modificare a acestor notificări privind protecția datelor poate deveni necesară. În acest caz, vă vom informa despre astfel de modificări. În măsura în care modificările afectează o prelucrare care se bazează pe consimțământul dvs., vă vom solicita un nou consimțământ, dacă este necesar.
+          </p>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Exprimarea consimțământului</p>
+          <p style={{ marginBottom: 14, textAlign: "justify" }}>
+            Declar că am citit și am înțeles informațiile de mai sus cu privire la colectarea, dezvăluirea și prelucrarea datelor mele personale de către SC PHASER MUSIC SRL și sunt de acord în mod explicit cu prevederile acestei notificări.
+          </p>
+          <p style={{ marginBottom: 20, textAlign: "center", fontStyle: "italic", lineHeight: 1.6 }}>
+            Acest acord a fost semnat în 2 (două) exemplare, câte unul pentru fiecare parte, la aceeași dată înscrisă la încheierea contractului de prestări servicii de mai sus.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginTop: 8, fontSize: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Operator date personale</div>
+              <div style={{ color: "#555", marginBottom: 8 }}>SC PHASER MUSIC SRL</div>
+              <ContractPrestatorSignatureBlock labelFontSize={10} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Client</div>
+              <div style={{ color: "#555", marginBottom: 28, fontSize: 12 }}>{cf.clientNume || ev.cn || "_______________"}</div>
+              <div style={{ borderBottom: "1.5px solid #111", width: "85%", marginBottom: 4 }} />
+              <div style={{ fontSize: 10, color: "#888" }}>Semnătură</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop: 24, paddingTop: 12, borderTop: "1px solid #eee", textAlign: "center", fontSize: 10, color: "#aaa", letterSpacing: 1 }}>
         {m.footerLine}
