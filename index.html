@@ -687,6 +687,7 @@ const LS_SESSION_MEMBER = "phaser_session_member";
 const SS_KEY_LOGIN_LAST = "phaser_login_last_pick";
 const LS_KEY_APP_PIN = "phaser_app_access_pin";
 const LS_KEY_PIN_REMEMBER = "phaser_gate_device_trust";
+const LS_KEY_LOGIN_REMEMBER_BROWSER = "phaser_login_remember_browser";
 const SS_KEY_PIN_SESSION = "phaser_pin_session_ok";
 const DEFAULT_APP_PIN = "0803";
 const getAppAccessPin = () => {
@@ -741,9 +742,15 @@ function formatSbPasswordLoginError(error) {
   }
   return raw;
 }
-const SPLIT_PRIVATE = {m1:24,m2:19,m3:19,m4:19,m5:19}; // Carina 24%, restul 19% fiecare
 const DEFAULT_FIXED_COSTS = {technician:600,equipment:1000,soundman:400,transport:100}; // lei
 const CURS_DEFAULT = 5; // 1€ = 5 lei
+const DEFAULT_SERVICE_PRICES = {
+  sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, dj:600, djCost:0,
+  tehnicPerService:120, tehnicExtraPerService:40,
+  splitM1:24, splitM2:19, splitM3:19, splitM4:19, splitM5:19,
+  bonusLeadPrivatePct:2, bonusLeadPublicPct:1, bonusAdminPct:2, bonusSocialPct:2, bonusStagePct:2,
+  fixedCostTechnician:600, fixedCostEquipment:1000, fixedCostSoundman:400, fixedCostTransport:100,
+};
 /** Aliniază id membru din eveniment la cheia din MEMBERS (ex. alt tip sau typo). */
 const canonMemId = (id) => {
   if (id == null || id === "") return null;
@@ -755,6 +762,7 @@ const canonMemId = (id) => {
  * Modalul și profilul pe membru apelează astfel aceeași sursă (zero cod paralel / drift).
  */
 const buildFinanceFisaModel = (ev, servicePrices) => {
+  const spCfg = { ...DEFAULT_SERVICE_PRICES, ...(servicePrices || {}) };
   const CURS = ev.cursLei || CURS_DEFAULT;
   const isLei = ev.valuta === "lei";
   const MULT = isLei ? CURS : 1;
@@ -770,7 +778,13 @@ const buildFinanceFisaModel = (ev, servicePrices) => {
   const svcCostEur = typeof getSvcCost === "function" ? getSvcCost(ev, servicePrices) : 0;
   const svcCost = Math.round(svcCostEur * MULT * 100) / 100;
   const netDupaTax = Math.max(0, total - impVenit - svcCost);
-  const fc = { ...DEFAULT_FIXED_COSTS, ...(ev.fixedCosts || {}) };
+  const fcDefaults = {
+    technician: Number(spCfg.fixedCostTechnician ?? DEFAULT_FIXED_COSTS.technician) || DEFAULT_FIXED_COSTS.technician,
+    equipment: Number(spCfg.fixedCostEquipment ?? DEFAULT_FIXED_COSTS.equipment) || DEFAULT_FIXED_COSTS.equipment,
+    soundman: Number(spCfg.fixedCostSoundman ?? DEFAULT_FIXED_COSTS.soundman) || DEFAULT_FIXED_COSTS.soundman,
+    transport: Number(spCfg.fixedCostTransport ?? DEFAULT_FIXED_COSTS.transport) || DEFAULT_FIXED_COSTS.transport,
+  };
+  const fc = { ...fcDefaults, ...(ev.fixedCosts || {}) };
   const fcLeiTotal = (fc.technician || 0) + (fc.equipment || 0) + (fc.soundman || 0) + (fc.transport || 0);
   const fcEur = fcLeiTotal / CURS;
   const fcBase = isLei ? fcLeiTotal : fcEur;
@@ -783,23 +797,28 @@ const buildFinanceFisaModel = (ev, servicePrices) => {
   const div16 = restFirma ? Math.round(dupaFond * 0.16 * 100) / 100 : 0;
   const dupaDiv = dupaFond - div16;
   const onFirma = anyFirma;
-  const leadPct = isPrivate ? 0.02 : 0.01;
+  const leadPct = (isPrivate ? (Number(ev?.bonusPct?.leadPrivate ?? spCfg.bonusLeadPrivatePct) || 0) : (Number(ev?.bonusPct?.leadPublic ?? spCfg.bonusLeadPublicPct) || 0)) / 100;
+  const adminPct = (Number(ev?.bonusPct?.admin ?? spCfg.bonusAdminPct) || 0) / 100;
+  const socialPct = (Number(ev?.bonusPct?.social ?? spCfg.bonusSocialPct) || 0) / 100;
+  const stagePct = (Number(ev?.bonusPct?.stage ?? spCfg.bonusStagePct) || 0) / 100;
   const leadMc = canonMemId(ev.leadId);
   const adminMc = canonMemId(ev.adminId);
   const stageMc = canonMemId(ev.stageId);
   const leadName = ev.leadCustom || MEMBERS.find(m => m.id === leadMc)?.short || "";
   const leadAmt = (ev.leadCustom || leadMc) ? Math.round(dupaDiv * leadPct * 100) / 100 : 0;
-  const adminAmt = adminMc ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
-  const socialAmt = Math.round(dupaDiv * 0.02 * 100) / 100;
-  const stageAmt = stageMc ? Math.round(dupaDiv * 0.02 * 100) / 100 : 0;
+  const adminAmt = adminMc ? Math.round(dupaDiv * adminPct * 100) / 100 : 0;
+  const socialAmt = Math.round(dupaDiv * socialPct * 100) / 100;
+  const stageAmt = stageMc ? Math.round(dupaDiv * stagePct * 100) / 100 : 0;
   const totalRoluri = leadAmt + adminAmt + socialAmt + stageAmt;
   const avansInFond = ev.dp ? dep : 0;
   const pool = Math.max(0, dupaDiv - totalRoluri - avansInFond);
   const baseShares = {};
   const roleBonus = {};
   MEMBERS.forEach(m => {
+    const spKey = `split${String(m.id || "").replace(/^m/i, "M")}`;
+    const splitPct = Number(ev?.splitPct?.[m.id] ?? spCfg[spKey] ?? 0) || 0;
     baseShares[m.id] = isPrivate
-      ? Math.round(pool * (SPLIT_PRIVATE[m.id] || 0) / 100 * 100) / 100
+      ? Math.round(pool * splitPct / 100 * 100) / 100
       : Math.round((pool / 5) * 100) / 100;
     roleBonus[m.id] = 0;
   });
@@ -881,7 +900,7 @@ const buildFinanceFisaModel = (ev, servicePrices) => {
     svcTot, total, dep, rest, impVenit, svcCostEur, svcCost, netDupaTax,
     fc, fcLeiTotal, fcEur, fcBase, fc16, fcEurEffective, netDupaFixed,
     fondDupCheltPct, fond7, dupaFond, div16, dupaDiv,
-    leadPct, leadMc, adminMc, stageMc, leadName,
+    leadPct, adminPct, socialPct, stagePct, leadMc, adminMc, stageMc, leadName,
     leadAmt, adminAmt, socialAmt, stageAmt, totalRoluri, avansInFond, pool,
     baseShares, roleBonus, shares, shareTotal, poolLeiExact, exactLeiNormalized,
     roundedShares, roundedSharesLei, roundingInLei, roundUnit, roundingAdjFond, roundingAdjLei, hasRounding,
@@ -1405,7 +1424,7 @@ const loadTemplates = () => {
       const d = JSON.parse(s);
       if (d && typeof d === "object") {
         d.pressKitPublic = normPressKitPublic(d.pressKitPublic);
-        d.servicePrices = d.servicePrices || { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 };
+        d.servicePrices = { ...DEFAULT_SERVICE_PRICES, ...(d.servicePrices || {}) };
         if (d.contractModelPrivatePf == null && d.contractModelPrivate != null) {
           d.contractModelPrivatePf = d.contractModelPrivate;
         }
@@ -1428,7 +1447,7 @@ const loadTemplates = () => {
     riderStagePlot: { image: null, notes: "" },
     pressKitPublic: JSON.parse(JSON.stringify(DEFAULT_PRESS_KIT_PUBLIC)),
     poveste: "Suntem o gașcă de visători muzicali și artiști pasionați, gata să aducem vibe-ul ăla bun la evenimentul vostru. Trebuie doar să ne vezi live și vei înțelege că un show-ul este un tour de force încărcat cu intensitate dar și cu momente de sensibilitate simplă. Printre cuvinte, imagini și muzică spunem povestea tuturor, a celor ce iubesc sau a celor îndrăgostiți de viață.",
-    servicePrices: { sunet:350, sunetCost:150, lumini:500, luminiCost:520, ecran:600, ecranCost:560, scena:300, scenaCost:260, dj:600, djCost:0, tehnicPerService:120, tehnicExtraPerService:40 },
+    servicePrices: { ...DEFAULT_SERVICE_PRICES },
     contractModelPrivatePf: getDefaultContractModelPrivatePf(),
     contractModelPrivateFirma: getDefaultContractModelPrivateFirma(),
     contractModelPublic: getDefaultContractModelPublic()
@@ -5066,6 +5085,26 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
     valuta: mData?.valuta||"EUR",
     dep: (()=>{const tot=(mData?.fee||PX.r[1])+(isP?Object.entries(mData?.svcp||{}).reduce((s,[k,v])=>s+(mData?.svc?.[k]?v:0),0):0);return mData?.dep??Math.round(tot*0.1/10)*10;})(), dp: mData?.dp||false, zileRest: mData?.zileRest??5,
     sp: mData?.sp||{}, svc: mData?.svc||{}, svcp: mData?.svcp||{sunet:templates?.servicePrices?.sunet??350,lumini:templates?.servicePrices?.lumini??500,ecran:templates?.servicePrices?.ecran??600,scena:templates?.servicePrices?.scena??300,dj:templates?.servicePrices?.dj??600},
+    splitPct: mData?.splitPct || {
+      m1: Number(templates?.servicePrices?.splitM1 ?? DEFAULT_SERVICE_PRICES.splitM1) || DEFAULT_SERVICE_PRICES.splitM1,
+      m2: Number(templates?.servicePrices?.splitM2 ?? DEFAULT_SERVICE_PRICES.splitM2) || DEFAULT_SERVICE_PRICES.splitM2,
+      m3: Number(templates?.servicePrices?.splitM3 ?? DEFAULT_SERVICE_PRICES.splitM3) || DEFAULT_SERVICE_PRICES.splitM3,
+      m4: Number(templates?.servicePrices?.splitM4 ?? DEFAULT_SERVICE_PRICES.splitM4) || DEFAULT_SERVICE_PRICES.splitM4,
+      m5: Number(templates?.servicePrices?.splitM5 ?? DEFAULT_SERVICE_PRICES.splitM5) || DEFAULT_SERVICE_PRICES.splitM5,
+    },
+    bonusPct: mData?.bonusPct || {
+      leadPrivate: Number(templates?.servicePrices?.bonusLeadPrivatePct ?? DEFAULT_SERVICE_PRICES.bonusLeadPrivatePct) || DEFAULT_SERVICE_PRICES.bonusLeadPrivatePct,
+      leadPublic: Number(templates?.servicePrices?.bonusLeadPublicPct ?? DEFAULT_SERVICE_PRICES.bonusLeadPublicPct) || DEFAULT_SERVICE_PRICES.bonusLeadPublicPct,
+      admin: Number(templates?.servicePrices?.bonusAdminPct ?? DEFAULT_SERVICE_PRICES.bonusAdminPct) || DEFAULT_SERVICE_PRICES.bonusAdminPct,
+      social: Number(templates?.servicePrices?.bonusSocialPct ?? DEFAULT_SERVICE_PRICES.bonusSocialPct) || DEFAULT_SERVICE_PRICES.bonusSocialPct,
+      stage: Number(templates?.servicePrices?.bonusStagePct ?? DEFAULT_SERVICE_PRICES.bonusStagePct) || DEFAULT_SERVICE_PRICES.bonusStagePct,
+    },
+    fixedCosts: mData?.fixedCosts || {
+      technician: Number(templates?.servicePrices?.fixedCostTechnician ?? DEFAULT_SERVICE_PRICES.fixedCostTechnician) || DEFAULT_SERVICE_PRICES.fixedCostTechnician,
+      equipment: Number(templates?.servicePrices?.fixedCostEquipment ?? DEFAULT_SERVICE_PRICES.fixedCostEquipment) || DEFAULT_SERVICE_PRICES.fixedCostEquipment,
+      soundman: Number(templates?.servicePrices?.fixedCostSoundman ?? DEFAULT_SERVICE_PRICES.fixedCostSoundman) || DEFAULT_SERVICE_PRICES.fixedCostSoundman,
+      transport: Number(templates?.servicePrices?.fixedCostTransport ?? DEFAULT_SERVICE_PRICES.fixedCostTransport) || DEFAULT_SERVICE_PRICES.fixedCostTransport,
+    },
     ex: (()=>{const existing=mData?.ex||[];const oficiu=[{id:"ex_tehnicii",n:"Tehnicii",a:200,v:"Oficiu",cxCat:EX_FIN_CAT.tehnic},{id:"ex_backline",n:"Backline",a:250,v:"Oficiu",cxCat:EX_FIN_CAT.furnizor},{id:"ex_transport",n:"Transport",a:10,v:"Oficiu",cxCat:EX_FIN_CAT.alt}];const others=existing.filter(x=>!/tehnic/i.test(x.n||"")&&!/backline/i.test(x.n||"")&&!/transport/i.test(x.n||""));return[...oficiu,...others];})(), ven: mData?.ven||[], notes: mData?.notes||"", fisaExtra: mData?.fisaExtra||"", fisaExtraItems: mData?.fisaExtraItems||[], svcInfo: mData?.svcInfo||{},
     impozitVenit: mData?.impozitVenit??1, plataAvansFirma: mData?.plataAvansFirma ?? (mData?.plataDirect===false), plataRestFirma: mData?.plataRestFirma ?? (mData?.plataDirect===false), sumaAvansLei: mData?.sumaAvansLei??0, sumaRestLei: mData?.sumaRestLei??0, modalitatePlataAvans: mData?.modalitatePlataAvans||"", modalitatePlataRest: mData?.modalitatePlataRest||"", dividende: mData?.dividende??16, cuFond: mData?.cuFond??true, fondPct: mData?.fondPct??10, fondPct2: mData?.fondPct2??10,
     videos: mData?.videos||tplVideos, covers: mData?.covers||(tplCovers.map(c=>({...c,checked:true}))),
@@ -5438,6 +5477,43 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
                 <span style={{fontSize:12,color:th.ts}}>Disponibil: {f$(fm.fee-fm.ex.filter((x)=>getExFinanceCat(x)!==EX_FIN_CAT.taxe_fisa).reduce((s,x)=>s+x.a,0))}</span>
                 <button onClick={()=>{const av=fm.fee-fm.ex.filter((x)=>getExFinanceCat(x)!==EX_FIN_CAT.taxe_fisa).reduce((s,x)=>s+x.a,0);const per=Math.floor(av/MEMBERS.length);const nsp={};MEMBERS.forEach(m=>{nsp[m.id]=per});u("sp",nsp);}} style={{...sty.bg,fontSize:11,padding:"4px 10px"}}>Split egal</button>
+              </div>
+              <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`,marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,marginBottom:8}}>Split % implicit pentru fișa financiară (privat)</div>
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(5,1fr)",gap:8}}>
+                  {MEMBERS.map(m=>{
+                    const v = Number(fm.splitPct?.[m.id] ?? 0) || 0;
+                    return <label key={m.id} style={{display:"flex",alignItems:"center",gap:6,fontSize:11}}>
+                      <span style={{minWidth:44,color:th.tm}}>{m.short}</span>
+                      <input type="number" min={0} max={100} step={0.5} value={v} onChange={e=>u("splitPct",{...(fm.splitPct||{}),[m.id]:Math.max(0,Math.min(100,Number(e.target.value)||0))})} style={{...iStyle,padding:"6px 8px",textAlign:"right"}}/>
+                      <span style={{color:th.tm}}>%</span>
+                    </label>;
+                  })}
+                </div>
+              </div>
+              <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`,marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,marginBottom:8}}>Bonusuri rol (%)</div>
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:8}}>
+                  {[{k:"leadPrivate",l:"Lead privat %"},{k:"leadPublic",l:"Lead public %"},{k:"admin",l:"Administrator %"},{k:"social",l:"Social media %"},{k:"stage",l:"Stage manager %"}].map(({k,l})=>(
+                    <label key={k} style={{display:"flex",alignItems:"center",gap:6,fontSize:11}}>
+                      <span style={{flex:1,color:th.tm}}>{l}</span>
+                      <input type="number" min={0} max={100} step={0.5} value={Number(fm.bonusPct?.[k] ?? 0) || 0} onChange={e=>u("bonusPct",{...(fm.bonusPct||{}),[k]:Math.max(0,Math.min(100,Number(e.target.value)||0))})} style={{...iStyle,width:78,padding:"6px 8px",textAlign:"right"}}/>
+                      <span style={{color:th.tm}}>%</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`,marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,marginBottom:8}}>Cheltuieli fixe logistică (lei)</div>
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:8}}>
+                  {[{k:"technician",l:"Tehnician"},{k:"equipment",l:"Scule"},{k:"soundman",l:"Sunetist"},{k:"transport",l:"Transport"}].map(({k,l})=>(
+                    <label key={k} style={{display:"flex",alignItems:"center",gap:6,fontSize:11}}>
+                      <span style={{flex:1,color:th.tm}}>{l}</span>
+                      <input type="number" min={0} step={10} value={Number(fm.fixedCosts?.[k] ?? 0) || 0} onChange={e=>u("fixedCosts",{...(fm.fixedCosts||{}),[k]:Math.max(0,Number(e.target.value)||0)})} style={{...iStyle,width:90,padding:"6px 8px",textAlign:"right"}}/>
+                      <span style={{color:th.tm}}>lei</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               {MEMBERS.map(m=><div key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",borderRadius:6,marginBottom:4,background:th.h}}>
                 <div style={{width:28,height:28,borderRadius:"50%",background:th.a,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:11,color:th.bg,flexShrink:0}}>{m.n[0]}</div>
@@ -6251,6 +6327,9 @@ function App() {
   const [loginPick, setLoginPick] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPw, setLoginPw] = useState("");
+  const [loginRememberBrowser, setLoginRememberBrowser] = useState(() => {
+    try { return localStorage.getItem(LS_KEY_LOGIN_REMEMBER_BROWSER) === "1"; } catch (e) { return true; }
+  });
   const [pwNew, setPwNew] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
   const [pwSaveBusy, setPwSaveBusy] = useState(false);
@@ -6440,6 +6519,9 @@ function App() {
     if (sbSession) return;
     if (loginStep === "signin" && !loginPick) setLoginStep("pick");
   }, [sbSession, loginStep, loginPick]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEY_LOGIN_REMEMBER_BROWSER, loginRememberBrowser ? "1" : "0"); } catch (e) {}
+  }, [loginRememberBrowser]);
 
   /** Fără sesiune dar cu ultimul profil salvat → direct la parolă (ex. token expirat). */
   useEffect(() => {
@@ -6462,6 +6544,7 @@ function App() {
   const doAuthLogin = async (e) => {
     e?.preventDefault?.();
     setAuthErr("");
+    const enteredPw = loginPw;
     const sb = getSbClient();
     if (!sb) { setAuthErr("Supabase nu e configurat."); return; }
     if (!loginPick) { setAuthErr("Alege cine te loghezi din listă."); return; }
@@ -6475,6 +6558,14 @@ function App() {
     setAuthBusy(false);
     if (error) { setAuthErr(formatSbPasswordLoginError(error)); return; }
     try { sessionStorage.setItem(SS_KEY_LOGIN_LAST, loginPick); } catch (e) {}
+    if (loginRememberBrowser) {
+      try {
+        if (window.PasswordCredential && navigator.credentials?.store && enteredPw) {
+          const cred = new window.PasswordCredential({ id: loginEmail.trim(), password: enteredPw, name: loginPick === "admin" ? "Admin Phaser" : (MEMBERS.find(m=>m.id===loginPick)?.n || loginEmail.trim()) });
+          await navigator.credentials.store(cred);
+        }
+      } catch (e) {}
+    }
     setLoginPw("");
   };
   const tryGatePin = (e) => {
@@ -8078,16 +8169,20 @@ function App() {
             </div>
             <div>
               <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Email</div>
-              <div style={{padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#121212",color:"#d4d4d4",fontSize:14,wordBreak:"break-all",lineHeight:1.4}}>{loginEmail}</div>
+              <input readOnly name="username" autoComplete="username" value={loginEmail} style={{width:"100%",boxSizing:"border-box",padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#121212",color:"#d4d4d4",fontSize:14,lineHeight:1.4}}/>
             </div>
             <form onSubmit={doAuthLogin} style={{display:"flex",flexDirection:"column",gap:12}}>
               <div>
                 <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Parolă</div>
                 <div style={{position:"relative",width:"100%"}}>
-                  <input type={showLoginPw?"text":"password"} autoComplete="current-password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parolă" required aria-label="Parolă" style={{width:"100%",boxSizing:"border-box",padding:"14px 72px 14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+                  <input type={showLoginPw?"text":"password"} name="password" autoComplete={loginRememberBrowser?"current-password":"off"} value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parolă" required aria-label="Parolă" style={{width:"100%",boxSizing:"border-box",padding:"14px 72px 14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
                   <button type="button" onClick={()=>setShowLoginPw(s=>!s)} aria-label={showLoginPw?"Ascunde parola":"Arată parola"} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:"#a3a3a3",fontSize:12,cursor:"pointer",padding:"6px 8px",fontFamily:"inherit",fontWeight:600}}>{showLoginPw?"Ascunde":"Arată"}</button>
                 </div>
               </div>
+              <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontSize:13,color:"#a3a3a3",userSelect:"none"}}>
+                <input type="checkbox" checked={loginRememberBrowser} onChange={e=>setLoginRememberBrowser(e.target.checked)} style={{width:18,height:18,accentColor:"#f59e0b"}}/>
+                Salvează parola în browser (pasul 2)
+              </label>
               {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
               <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Intră în aplicație"}</button>
             </form>
@@ -8475,7 +8570,7 @@ function App() {
             <div className={mob?"mob-tab-scroll":""} style={{display:"flex",gap:6,marginBottom:16,flexWrap:mob?"nowrap":"wrap",overflowX:mob?"auto":"visible",paddingBottom:mob?4:0}}>
               {["contract","rider","servicePrices","playlist","media","pressKitPublic"].map(s=>(
                 <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:docsSectTab===s?"none":`1px solid ${th.b}`,fontSize:12,fontWeight:docsSectTab===s?700:400,cursor:"pointer",background:docsSectTab===s?th.ab:"transparent",color:docsSectTab===s?th.t:th.tm,flexShrink:0,whiteSpace:"nowrap"}}>
-                  {{contract:"📜 Contract",rider:"Rider",servicePrices:"💰 Prețuri",playlist:"🎵 Playlist",media:"🎬 Media",pressKitPublic:"Press Kit"}[s]}
+                  {{contract:"📜 Contract",rider:"Rider",servicePrices:"💰 Tarifare & split",playlist:"🎵 Playlist",media:"🎬 Media",pressKitPublic:"Press Kit"}[s]}
                 </button>
               ))}
             </div>
@@ -8638,14 +8733,14 @@ function App() {
                 </div>
               </div>}
               {docsSectTab==="servicePrices"&&<div>
-                <label style={sty.l}>Prețuri servicii extra — furnizori</label>
-                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Prețurile salvate aici se folosesc la oferte noi. Costurile cu furnizorii se scad în finanțe când evenimentul e confirmat.</p>
+                <label style={sty.l}>Tarifare, split și bonusuri — valori implicite</label>
+                <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Valorile de aici se aplică implicit la evenimente noi și pot fi ajustate separat pe fiecare eveniment în tab-ul „membri”.</p>
                 <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
-                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic nr.2 automat / pers. (€)",def:120},{k:"tehnicExtraPerService",l:"Supliment tehnic podium·lumini·LED (€/serv./pers.)",def:40}].map(({k,l,def})=>(
+                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic nr.2 automat / pers. (€)",def:120},{k:"tehnicExtraPerService",l:"Supliment tehnic podium·lumini·LED (€/serv./pers.)",def:40},{k:"splitM1",l:"Split Carina (%)",def:24},{k:"splitM2",l:"Split membru 2 (%)",def:19},{k:"splitM3",l:"Split membru 3 (%)",def:19},{k:"splitM4",l:"Split membru 4 (%)",def:19},{k:"splitM5",l:"Split membru 5 (%)",def:19},{k:"bonusLeadPrivatePct",l:"Bonus lead privat (%)",def:2},{k:"bonusLeadPublicPct",l:"Bonus lead public (%)",def:1},{k:"bonusAdminPct",l:"Bonus administrator (%)",def:2},{k:"bonusSocialPct",l:"Bonus social media (%)",def:2},{k:"bonusStagePct",l:"Bonus stage manager (%)",def:2},{k:"fixedCostTechnician",l:"Cheltuială logistică tehnician (lei)",def:600},{k:"fixedCostEquipment",l:"Cheltuială logistică scule (lei)",def:1000},{k:"fixedCostSoundman",l:"Cheltuială logistică sunetist (lei)",def:400},{k:"fixedCostTransport",l:"Cheltuială logistică transport (lei)",def:100}].map(({k,l,def})=>(
                     <div key={k}><label style={{...sty.l,fontSize:10}}>{l}</label><input type="number" value={(templates.servicePrices||{})[k]??def} onChange={e=>{const v=e.target.value;saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));}} style={sty.i} placeholder={String(def)}/></div>
                   ))}
                 </div>
-                <button onClick={()=>{saveTemplates(tpl=>({...tpl,servicePrices:templates.servicePrices}));showToast("Prețuri salvate — se aplică la oferte noi");}} style={{...sty.bg,marginTop:16}}>Salvează prețuri</button>
+                <button onClick={()=>{saveTemplates(tpl=>({...tpl,servicePrices:{...DEFAULT_SERVICE_PRICES,...templates.servicePrices}}));showToast("Setări financiare salvate — se aplică la oferte noi");}} style={{...sty.bg,marginTop:16}}>Salvează setări</button>
               </div>}
               {docsSectTab==="playlist"&&(()=>{
                 const pl = (templates.playlist&&templates.playlist.length>0)?templates.playlist:DEFAULT_COVERS;
@@ -10489,27 +10584,32 @@ function App() {
         delete ev._from;
         // Auto-calculates shares on every update — no "Aplică" needed
         const calcShares=(e)=>{
+          const spCfg={...DEFAULT_SERVICE_PRICES,...(templates?.servicePrices||{})};
           const C=e.cursLei||CURS_DEFAULT;const isP=e.cat==="private";
           const svcT=Object.entries(e.svcp||{}).reduce((s,[k,v])=>s+(e.svc?.[k]?v:0),0);
           const tot=(e.fee||0)+svcT;const d=e.dep||0;const r=tot-d;
           const avF=e.avFirma??(e.payType==="firma");const rF=e.restFirma??(e.payType==="firma");
           const impV=Math.round(((avF?d:0)+(rF?r:0))*0.01*100)/100;
-          const fc={...DEFAULT_FIXED_COSTS,...(e.fixedCosts||{})};
+          const fcDefaults={technician:Number(spCfg.fixedCostTechnician??DEFAULT_FIXED_COSTS.technician)||DEFAULT_FIXED_COSTS.technician,equipment:Number(spCfg.fixedCostEquipment??DEFAULT_FIXED_COSTS.equipment)||DEFAULT_FIXED_COSTS.equipment,soundman:Number(spCfg.fixedCostSoundman??DEFAULT_FIXED_COSTS.soundman)||DEFAULT_FIXED_COSTS.soundman,transport:Number(spCfg.fixedCostTransport??DEFAULT_FIXED_COSTS.transport)||DEFAULT_FIXED_COSTS.transport};
+          const fc={...fcDefaults,...(e.fixedCosts||{})};
           const fcL=(fc.technician||0)+(fc.equipment||0)+(fc.soundman||0)+(fc.transport||0);
           const fcE=fcL/C;const fc16=rF?Math.round(fcE*0.16*100)/100:0;
           const net=Math.max(0,tot-impV-fcE-fc16);
           const f5=Math.round(net*0.05*100)/100;const dF=net-f5;
           const d16=rF?Math.round(dF*0.16*100)/100:0;const dD=dF-d16;
-          const lPct=isP?0.02:0.01;
+          const lPct=(isP?(Number(e?.bonusPct?.leadPrivate??spCfg.bonusLeadPrivatePct)||0):(Number(e?.bonusPct?.leadPublic??spCfg.bonusLeadPublicPct)||0))/100;
+          const aPct=(Number(e?.bonusPct?.admin??spCfg.bonusAdminPct)||0)/100;
+          const sPct=(Number(e?.bonusPct?.social??spCfg.bonusSocialPct)||0)/100;
+          const stPct=(Number(e?.bonusPct?.stage??spCfg.bonusStagePct)||0)/100;
           const lAmt=(e.leadId||e.leadCustom)?Math.round(dD*lPct*100)/100:0;
-          const aAmt=e.adminId?Math.round(dD*0.02*100)/100:0;
-          const sAmt=Math.round(dD*0.02*100)/100;
-          const stAmt=e.stageId?Math.round(dD*0.02*100)/100:0;
+          const aAmt=e.adminId?Math.round(dD*aPct*100)/100:0;
+          const sAmt=Math.round(dD*sPct*100)/100;
+          const stAmt=e.stageId?Math.round(dD*stPct*100)/100:0;
           const avFondDeduct=e.dp?(e.dep||0):0;
           const promoDeduct=Math.round(dD*0.01*100)/100;
           const pool=Math.max(0,dD-lAmt-aAmt-sAmt-stAmt-avFondDeduct-promoDeduct);
           const sh={};
-          MEMBERS.forEach(m=>{sh[m.id]=isP?Math.round(pool*(SPLIT_PRIVATE[m.id]||0)/100*100)/100:Math.round(pool/5*100)/100;});
+          MEMBERS.forEach(m=>{const spKey=`split${String(m.id||"").replace(/^m/i,"M")}`;const splitPct=Number(e?.splitPct?.[m.id]??spCfg[spKey]??0)||0;sh[m.id]=isP?Math.round(pool*splitPct/100*100)/100:Math.round(pool/5*100)/100;});
           const lC=canonMemId(e.leadId),aC=canonMemId(e.adminId),sC=canonMemId(e.stageId);
           if(lC&&!e.leadCustom)sh[lC]=(sh[lC]||0)+lAmt;
           if(aC)sh[aC]=(sh[aC]||0)+aAmt;
@@ -10529,7 +10629,7 @@ function App() {
           svcTot, total, dep, rest, impVenit, svcCost, netDupaTax,
           fc, fcLeiTotal, fcEur, fcBase, fc16, fcEurEffective, netDupaFixed,
           fondDupCheltPct, fond7, dupaFond, div16, dupaDiv,
-          leadPct, leadMc, adminMc, stageMc, leadName,
+          leadPct, adminPct, socialPct, stagePct, leadMc, adminMc, stageMc, leadName,
           leadAmt, adminAmt, socialAmt, stageAmt, totalRoluri, avansInFond, pool,
           baseShares, roleBonus, shares, shareTotal, poolLeiExact, exactLeiNormalized,
           roundedShares, roundedSharesLei, roundingInLei, roundUnit, roundingAdjFond, roundingAdjLei, hasRounding,
@@ -10689,10 +10789,10 @@ function App() {
                   <Row l="Net după cheltuieli" v={fv(netDupaFixed)} bold/>
                   <Row l={ev.dp?`Fond extra (${fondDupCheltPct}%)`:`Fond (${fondDupCheltPct}%)`} v={"-"+fv(fond7)} c="#6366f1"/>
                   {restFirma&&<Row l="Dividende 16% (pe rest)" v={"-"+fv(div16)} c="#ef4444"/>}
-                  {(ev.leadId||ev.leadCustom)&&<Row l={`Lead ${isPrivate?"2%":"1%"} — ${leadName}`} v={"-"+fv(leadAmt)} c="#f59e0b"/>}
-                  {ev.adminId&&<Row l={`Administrator 2% — ${MEMBERS.find(m=>m.id===ev.adminId)?.short||""}`} v={"-"+fv(adminAmt)} c="#f59e0b"/>}
-                  {socialAmt>0&&<Row l="Social Media Manager 2%" v={"-"+fv(socialAmt)} c="#f59e0b"/>}
-                  {ev.stageId&&<Row l={`Stage Manager 2% — ${MEMBERS.find(m=>m.id===ev.stageId)?.short||""}`} v={"-"+fv(stageAmt)} c="#f59e0b"/>}
+                  {(ev.leadId||ev.leadCustom)&&<Row l={`Lead ${(leadPct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}% — ${leadName}`} v={"-"+fv(leadAmt)} c="#f59e0b"/>}
+                  {ev.adminId&&<Row l={`Administrator ${(adminPct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}% — ${MEMBERS.find(m=>m.id===ev.adminId)?.short||""}`} v={"-"+fv(adminAmt)} c="#f59e0b"/>}
+                  {socialAmt>0&&<Row l={`Social Media Manager ${(socialPct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}%`} v={"-"+fv(socialAmt)} c="#f59e0b"/>}
+                  {ev.stageId&&<Row l={`Stage Manager ${(stagePct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}% — ${MEMBERS.find(m=>m.id===ev.stageId)?.short||""}`} v={"-"+fv(stageAmt)} c="#f59e0b"/>}
                 </div>
                 <div style={{padding:"10px 12px",borderRadius:8,background:th.ab,display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
                   <span style={{fontSize:13,fontWeight:600}}>De împărțit</span>
@@ -10722,7 +10822,7 @@ function App() {
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Roluri eveniment</div>
                 {/* Lead */}
                 <div style={{marginBottom:12}}>
-                  <div style={{fontSize:11,color:th.tm,marginBottom:6}}>Lead ({isPrivate?"2%":"1%"}) · cine a adus evenimentul</div>
+                  <div style={{fontSize:11,color:th.tm,marginBottom:6}}>Lead ({(leadPct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}%) · cine a adus evenimentul</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:(ev.leadCustom!==undefined&&ev.leadCustom!==null&&ev.leadCustom!=='')?6:0}}>
                     <button onClick={()=>upd({leadId:null,leadCustom:null})} style={{padding:"4px 11px",borderRadius:20,border:`1px solid ${(!ev.leadId&&!ev.leadCustom)?th.a:th.b}`,background:(!ev.leadId&&!ev.leadCustom)?th.ab:"transparent",color:(!ev.leadId&&!ev.leadCustom)?th.a:th.tm,fontSize:11,cursor:"pointer",fontWeight:(!ev.leadId&&!ev.leadCustom)?700:400}}>Nimeni</button>
                     {MEMBERS.map(m=><button key={m.id} onClick={()=>upd({leadId:m.id,leadCustom:null})} style={{padding:"4px 11px",borderRadius:20,border:`1px solid ${(ev.leadId===m.id&&!ev.leadCustom)?th.a:th.b}`,background:(ev.leadId===m.id&&!ev.leadCustom)?th.ab:"transparent",color:(ev.leadId===m.id&&!ev.leadCustom)?th.a:th.tm,fontSize:11,cursor:"pointer",fontWeight:(ev.leadId===m.id&&!ev.leadCustom)?700:400}}>{m.short}</button>)}
@@ -10732,7 +10832,7 @@ function App() {
                 </div>
                 {/* Administrator */}
                 <div style={{marginBottom:12}}>
-                  <div style={{fontSize:11,color:th.tm,marginBottom:6}}>Administrator (2%)</div>
+                  <div style={{fontSize:11,color:th.tm,marginBottom:6}}>Administrator ({(adminPct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}%)</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                     <button onClick={()=>upd({adminId:null})} style={{padding:"4px 11px",borderRadius:20,border:`1px solid ${!ev.adminId?th.a:th.b}`,background:!ev.adminId?th.ab:"transparent",color:!ev.adminId?th.a:th.tm,fontSize:11,cursor:"pointer",fontWeight:!ev.adminId?700:400}}>Nimeni</button>
                     {MEMBERS.map(m=><button key={m.id} onClick={()=>upd({adminId:m.id})} style={{padding:"4px 11px",borderRadius:20,border:`1px solid ${ev.adminId===m.id?th.a:th.b}`,background:ev.adminId===m.id?th.ab:"transparent",color:ev.adminId===m.id?th.a:th.tm,fontSize:11,cursor:"pointer",fontWeight:ev.adminId===m.id?700:400}}>{m.short}</button>)}
@@ -10740,7 +10840,7 @@ function App() {
                 </div>
                 {/* Stage Manager */}
                 <div style={{marginBottom:4}}>
-                  <div style={{fontSize:11,color:th.tm,marginBottom:6}}>Stage Manager (2%)</div>
+                  <div style={{fontSize:11,color:th.tm,marginBottom:6}}>Stage Manager ({(stagePct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}%)</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                     <button onClick={()=>upd({stageId:null})} style={{padding:"4px 11px",borderRadius:20,border:`1px solid ${!ev.stageId?th.a:th.b}`,background:!ev.stageId?th.ab:"transparent",color:!ev.stageId?th.a:th.tm,fontSize:11,cursor:"pointer",fontWeight:!ev.stageId?700:400}}>Nimeni</button>
                     {MEMBERS.map(m=><button key={m.id} onClick={()=>upd({stageId:m.id})} style={{padding:"4px 11px",borderRadius:20,border:`1px solid ${ev.stageId===m.id?th.a:th.b}`,background:ev.stageId===m.id?th.ab:"transparent",color:ev.stageId===m.id?th.a:th.tm,fontSize:11,cursor:"pointer",fontWeight:ev.stageId===m.id?700:400}}>{m.short}</button>)}
@@ -10814,10 +10914,10 @@ function App() {
                           </>}
                         </div>
                         <span style={{fontSize:9,opacity:.85}}>Σ cote brute: {fv(baseDisp)} + {fv(rolDisp)} — același raport la total rotunjit ({roundingInLei?`${rtLei.toLocaleString("ro-RO")} lei`:fv(rtEur)})</span>
-                        {m.id==="m1"&&socialAmt>0&&<span style={{fontSize:9,opacity:.9,color:"#a78bfa"}}>Social Media mgr 2%: {fv(socialAmt)} — inclus în «Parte cantat» de mai sus (cota brută cantat + social)</span>}
+                        {m.id==="m1"&&socialAmt>0&&<span style={{fontSize:9,opacity:.9,color:"#a78bfa"}}>Social Media mgr {(socialPct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}%: {fv(socialAmt)} — inclus în «Parte cantat» de mai sus (cota brută cantat + social)</span>}
                       </div>;
                     })()}
-                    {m.id==="m1"&&socialAmt>0&&!hasRol&&<div style={{marginTop:4,marginLeft:34,fontSize:10,color:"#a78bfa",lineHeight:1.35}}>Include rol fix Social Media mgr 2%: {fv(socialAmt)} (vezi și rândul din Distribuție)</div>}
+                    {m.id==="m1"&&socialAmt>0&&!hasRol&&<div style={{marginTop:4,marginLeft:34,fontSize:10,color:"#a78bfa",lineHeight:1.35}}>Include rol fix Social Media mgr {(socialPct*100).toLocaleString("ro-RO",{maximumFractionDigits:2})}%: {fv(socialAmt)} (vezi și rândul din Distribuție)</div>}
                   </div>
                 );})}
                 {hasRounding&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:(roundingInLei?roundingAdjLei:roundingAdjFond)>0?"rgba(34,197,94,.08)":"rgba(245,158,11,.08)",border:`1px solid ${(roundingInLei?roundingAdjLei:roundingAdjFond)>0?"rgba(34,197,94,.3)":"rgba(245,158,11,.3)"}`,fontSize:11,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
