@@ -936,16 +936,27 @@ const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
     }
   }
 
+  /** Pentru Carina (m1): 2% Social Media e în pool ca bonus, dar în UI era înglobat doar în «Parte cantat». Extragem o felie proporțională din totalul rotunjit ca să apară și în finanțe personale / card Social. */
+  let socialSliceEur = 0;
+  let socialLeiOut = 0;
+  let baseOut = baseUi;
+  if (mId === "m1" && socialAmt > 0.005 && rawW > 0) {
+    socialSliceEur = Math.round(rt * (socialAmt / rawW) * 100) / 100;
+    if (socialSliceEur > baseOut + 1e-6) socialSliceEur = Math.max(0, baseOut);
+    baseOut = Math.round((baseOut - socialSliceEur) * 100) / 100;
+    socialLeiOut = Math.round(socialSliceEur * CURS * 100) / 100;
+  }
+
   return {
-    base: baseUi,
+    base: baseOut,
     lead: 0,
     admin: 0,
-    social: 0,
+    social: socialSliceEur,
     stage: 0,
     bonusRol: bonusUi,
     rolLabel: hasRol ? rolLabel : null,
     total: rt,
-    socialLei: 0,
+    socialLei: socialLeiOut,
     curs: CURS,
     isLei,
   };
@@ -10419,6 +10430,7 @@ function App() {
                   {restFirma&&<Row l="Dividende 16% (pe rest)" v={"-"+fv(div16)} c="#ef4444"/>}
                   {(ev.leadId||ev.leadCustom)&&<Row l={`Lead ${isPrivate?"2%":"1%"} — ${leadName}`} v={"-"+fv(leadAmt)} c="#f59e0b"/>}
                   {ev.adminId&&<Row l={`Administrator 2% — ${MEMBERS.find(m=>m.id===ev.adminId)?.short||""}`} v={"-"+fv(adminAmt)} c="#f59e0b"/>}
+                  {socialAmt>0&&<Row l="Social Media Manager 2%" v={"-"+fv(socialAmt)} c="#f59e0b"/>}
                   {ev.stageId&&<Row l={`Stage Manager 2% — ${MEMBERS.find(m=>m.id===ev.stageId)?.short||""}`} v={"-"+fv(stageAmt)} c="#f59e0b"/>}
                 </div>
                 <div style={{padding:"10px 12px",borderRadius:8,background:th.ab,display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
@@ -10541,8 +10553,10 @@ function App() {
                           </>}
                         </div>
                         <span style={{fontSize:9,opacity:.85}}>Σ cote brute: {fv(baseDisp)} + {fv(rolDisp)} — același raport la total rotunjit ({roundingInLei?`${rtLei.toLocaleString("ro-RO")} lei`:fv(rtEur)})</span>
+                        {m.id==="m1"&&socialAmt>0&&<span style={{fontSize:9,opacity:.9,color:"#a78bfa"}}>Social Media mgr 2%: {fv(socialAmt)} — inclus în «Parte cantat» de mai sus (cota brută cantat + social)</span>}
                       </div>;
                     })()}
+                    {m.id==="m1"&&socialAmt>0&&!hasRol&&<div style={{marginTop:4,marginLeft:34,fontSize:10,color:"#a78bfa",lineHeight:1.35}}>Include rol fix Social Media mgr 2%: {fv(socialAmt)} (vezi și rândul din Distribuție)</div>}
                   </div>
                 );})}
                 {hasRounding&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:8,background:(roundingInLei?roundingAdjLei:roundingAdjFond)>0?"rgba(34,197,94,.08)":"rgba(245,158,11,.08)",border:`1px solid ${(roundingInLei?roundingAdjLei:roundingAdjFond)>0?"rgba(34,197,94,.3)":"rgba(245,158,11,.3)"}`,fontSize:11,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
