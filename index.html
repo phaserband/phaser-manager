@@ -5287,17 +5287,17 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
           const normWho = normalizeTechSlot(ev, slotKey).who;
           return <div key={slotKey} style={{padding:12,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
             <div style={{fontSize:11,fontWeight:700,marginBottom:6,color:th.t}}>{isT2?"Tehnic nr.2 — cine încasează":"Tehnic nr.1 — logistică bază (implicit Levi oficiu)"}</div>
-            <select value={normWho} onChange={e=>{const w=e.target.value;if(!updEv)return;updEv((latest)=>{const def=slotKey==="t2"?DEFAULT_TECH_ASSIGN_T2():DEFAULT_TECH_ASSIGN_T1();const prevSlot={...def,...(latest.techAssign?.[slotKey]||{})};if(w==="unset")return mergeEvTechAssign(latest,slotKey,{who:"unset",memberId:"",name:""});if(w==="levi")return mergeEvTechAssign(latest,slotKey,{who:"levi",memberId:"",name:prevSlot.name||""});if(w==="member")return mergeEvTechAssign(latest,slotKey,{who:"member",memberId:prevSlot.memberId||"",name:prevSlot.name||""});return mergeEvTechAssign(latest,slotKey,{who:"custom",memberId:"",name:prevSlot.name||""});});}} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
+            <select value={normWho} onMouseDown={e=>e.stopPropagation()} onChange={e=>{const w=e.target.value;if(!updEv)return;updEv((latest)=>{const def=slotKey==="t2"?DEFAULT_TECH_ASSIGN_T2():DEFAULT_TECH_ASSIGN_T1();const prevSlot={...def,...(latest.techAssign?.[slotKey]||{})};if(w==="unset")return mergeEvTechAssign(latest,slotKey,{who:"unset",memberId:"",name:""});if(w==="levi")return mergeEvTechAssign(latest,slotKey,{who:"levi",memberId:"",name:""});if(w==="member")return mergeEvTechAssign(latest,slotKey,{who:"member",memberId:prevSlot.memberId||"",name:prevSlot.name||""});return mergeEvTechAssign(latest,slotKey,{who:"custom",memberId:"",name:prevSlot.name||""});});}} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
               {isT2&&<option value="unset">— alege Tehnic nr.2 —</option>}
               <option value="levi">Levi (oficiu)</option>
               <option value="member">Membru trupă</option>
               <option value="custom">Alt nume (persoană externă / înlocuitor)</option>
             </select>
-            {normWho==="member"&&<select value={slot.memberId||""} onChange={e=>updEv&&updEv((latest)=>mergeEvTechAssign(latest,slotKey,{memberId:e.target.value}))} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
+            {normWho==="member"&&<select value={slot.memberId||""} onMouseDown={e=>e.stopPropagation()} onChange={e=>updEv&&updEv((latest)=>mergeEvTechAssign(latest,slotKey,{memberId:e.target.value}))} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
               <option value="">— alege membru —</option>
               {MEMBERS.map(mm=><option key={mm.id} value={mm.id}>{mm.n}</option>)}
             </select>}
-            {normWho!=="unset"&&<input value={slot.name||""} onChange={e=>updEv&&updEv((latest)=>mergeEvTechAssign(latest,slotKey,{name:e.target.value}))} style={{...iStyle,fontSize:12}} placeholder={normWho==="custom"?"Nume (obligatoriu pentru extern)":"Nume afișat (opțional)"}/>}
+            {(normWho==="member"||normWho==="custom")&&<input value={slot.name||""} onMouseDown={e=>e.stopPropagation()} onChange={e=>updEv&&updEv((latest)=>mergeEvTechAssign(latest,slotKey,{name:e.target.value}))} style={{...iStyle,fontSize:12}} placeholder={normWho==="custom"?"Nume (obligatoriu pentru extern)":"Nume afișat (opțional)"}/>}
           </div>;
         })}
       </div> : <div style={{display:"flex",flexDirection:"column",gap:8,fontSize:13,color:th.ts}}>
@@ -5864,17 +5864,17 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
                     const normWho = normalizeTechSlot(fm, slotKey).who;
                     return <div key={slotKey} style={{marginBottom:10,padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
                       <div style={{fontSize:11,fontWeight:700,marginBottom:6,color:th.t}}>{isT2?"Tehnic nr.2 — cine încasează":"Tehnic nr.1 — logistică bază"}</div>
-                      <select value={normWho} onChange={e=>{const w=e.target.value;const prev={...slot};if(w==="unset")setTechSlot(slotKey,{who:"unset",memberId:"",name:""});else if(w==="levi")setTechSlot(slotKey,{who:"levi",memberId:"",name:prev.name});else if(w==="member")setTechSlot(slotKey,{who:"member",memberId:prev.memberId||"",name:prev.name});else setTechSlot(slotKey,{who:"custom",memberId:"",name:prev.name});}} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
+                      <select value={normWho} onMouseDown={e=>e.stopPropagation()} onChange={e=>{const w=e.target.value;const prev={...slot};if(w==="unset")setTechSlot(slotKey,{who:"unset",memberId:"",name:""});else if(w==="levi")setTechSlot(slotKey,{who:"levi",memberId:"",name:""});else if(w==="member")setTechSlot(slotKey,{who:"member",memberId:prev.memberId||"",name:prev.name});else setTechSlot(slotKey,{who:"custom",memberId:"",name:prev.name});}} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
                         {isT2&&<option value="unset">— alege Tehnic nr.2 —</option>}
                         <option value="levi">Levi (oficiu)</option>
                         <option value="member">Membru trupă</option>
                         <option value="custom">Alt nume (persoană externă / înlocuitor)</option>
                       </select>
-                      {normWho==="member"&&<select value={slot.memberId||""} onChange={e=>setTechSlot(slotKey,{memberId:e.target.value})} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
+                      {normWho==="member"&&<select value={slot.memberId||""} onMouseDown={e=>e.stopPropagation()} onChange={e=>setTechSlot(slotKey,{memberId:e.target.value})} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
                         <option value="">— alege membru —</option>
                         {MEMBERS.map(mm=><option key={mm.id} value={mm.id}>{mm.n}</option>)}
                       </select>}
-                      {normWho!=="unset"&&<input value={slot.name||""} onChange={e=>setTechSlot(slotKey,{name:e.target.value})} style={{...iStyle,fontSize:12}} placeholder={normWho==="custom"?"Nume (obligatoriu pentru extern)":"Nume afișat (opțional — pe ofertă și linii cost)"}/>}
+                      {(normWho==="member"||normWho==="custom")&&<input value={slot.name||""} onMouseDown={e=>e.stopPropagation()} onChange={e=>setTechSlot(slotKey,{name:e.target.value})} style={{...iStyle,fontSize:12}} placeholder={normWho==="custom"?"Nume (obligatoriu pentru extern)":"Nume afișat (opțional — pe ofertă și linii cost)"}/>}
                     </div>;
                   })}
                 </div>
@@ -6726,7 +6726,12 @@ function App() {
   useEffect(()=>{ if(tab!=="finances") setFinMember(null); },[tab]);
   const mData = useMemo(() => {
     if (!modal || payload == null) return null;
-    if (modal === "detail") return typeof payload === "string" ? evs.find(e => e.id === payload) : payload;
+    if (modal === "detail") {
+      if (typeof payload === "string") return evs.find((e) => String(e.id) === String(payload)) || null;
+      const pid = payload && typeof payload === "object" ? payload.id : null;
+      if (pid != null) return evs.find((e) => String(e.id) === String(pid)) ?? payload;
+      return payload;
+    }
     if (modal === "finance") { const p=payload; if(typeof p==="object"&&p?.evId){const e=evs.find(x=>x.id===p.evId);return e?{...e,_from:p.from}:null;} return typeof p==="string"?evs.find(e=>e.id===p):p; }
     if (modal === "oferta") {
       const p = payload;
@@ -10863,8 +10868,9 @@ function App() {
         try {
         const ev=mData; const svc=getSvcTotal(ev); const exp=getExpTotal(ev); const isP=ev.cat==="private"; const dk=th.bg==="#09090b";
         const isConfirmed = ev.st==="confirmat";
+        const detailEvKey = String((typeof payload === "string" ? payload : mData?.id) ?? "");
         const updEv = (patch)=>setEvs(p=>p.map(e=>{
-          if(e.id!==ev.id)return e;
+          if(String(e.id)!==detailEvKey)return e;
           const next=typeof patch==="function"?patch(e):patch;
           return {...e,...next};
         }));
