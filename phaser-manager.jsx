@@ -38,6 +38,14 @@ const PUBLIC_TYPES  = ["Festival","Concert","Club","Altele"];
 const uid = () => Math.random().toString(36).substr(2,9);
 const f$  = n => new Intl.NumberFormat("ro",{maximumFractionDigits:0}).format(n||0)+" €";
 const fD  = d => { if(!d) return "—"; return new Date(d+"T00:00:00").toLocaleDateString("ro",{day:"numeric",month:"short",year:"numeric"}); };
+/** Dată eveniment pentru contract / afișare (variantă simplificată față de index.html). */
+const fEvDate = (ev) => {
+  if (!ev) return "—";
+  if (ev.date && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)) return fD(ev.date);
+  const note = (ev.dateNote || "").trim();
+  if (note) return note;
+  return "—";
+};
 const dU  = d => { if(!d) return 999; return Math.ceil((new Date(d+"T00:00:00")-new Date())/864e5); };
 
 const MEMBERS = [
@@ -355,26 +363,166 @@ function ContractPrestatorSignatureBlock({ labelFontSize = 11 }) {
   );
 }
 
-function ContractView({ ev, th, contractFields, onContractChange }) {
-  const isP = ev.cat==="private";
-  const svcTot = isP ? Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0) : 0;
-  const tot = (ev.fee||0)+svcTot;
-  const avans = ev.dep||0;
+function getDefaultContractCaps612() {
+  return [
+    { nr: 6, titlu: "ALTE MENȚIUNI", text: "Înregistrarea audio sau video a recitalului artistic de către furnizorii foto/video ai Beneficiarului nu va fi folosită în scop public, comercial sau politic. Prestatorul înțelege că Beneficiarul nu poate controla acțiunile participanților la eveniment și este de acord cu situațiile în care invitații ar putea publica în scop personal imagini/înregistrări ale Prestatorului în spațiu media." },
+    { nr: 7, titlu: "NOTIFICĂRI, COMUNICARE", text: "Orice adresă, notificare făcută de una dintre părți celeilalte va fi valabil îndeplinită doar dacă va fi transmisă prin e-mail, whatsapp sau mesaj text la adresele specificate în Capitolul 1. Notificările verbale nu se iau în considerare dacă nu au fost confirmate prin modalitatea indicată la art.7.1." },
+    { nr: 8, titlu: "CLAUZE SPECIALE", text: "Prestatorul își rezervă dreptul de a anula prestația artistică dacă Beneficiarul nu achită avansul în cel mult 30 de zile de la data scadentă. În cazul în care evenimentul se anulează din orice motiv care nu ține de voința Prestatorului, obligațiile de plată ale Beneficiarului rămân neschimbate, exceptând situațiile speciale: imposibilitatea medicală de participare a Beneficiarului respectiv a soției acestuia." },
+    { nr: 9, titlu: "FORȚĂ MAJORĂ", text: "Părțile semnatare ale prezentului contract sunt exonerate de răspundere în caz de forță majoră. Sunt considerate cazuri de forță majoră acele evenimente imprevizibile, insurmontabile care nu pot fi controlate de niciuna din părți (urgențe medicale, accidente, incendii, inundații, revolte, intervenții guvernamentale, conflicte militare și embargouri, calamități naturale)." },
+    { nr: 10, titlu: "RĂSPUNDERE CONTRACTUALĂ", text: "Rezilierea contractului poate fi cerută de oricare parte, atunci când cealaltă nu și-a îndeplinit parțial sau total obligațiile la care s-a angajat. Încetarea contractului nu are efect asupra obligațiilor deja scadente între părți la data încetării." },
+    { nr: 11, titlu: "CONFIDENȚIALITATE", text: "Părțile convin că toate prevederile prezentului contract, precum și toate negocierile anterioare purtate în vederea încheierii acestuia, sunt confidențiale și se angajează să nu le divulge, cu excepțiile legale. Încălcarea clauzei de confidențialitate dă dreptul celeilalte la solicitarea unei penalități în valoare de 10.000 RON." },
+    { nr: 12, titlu: "CLAUZE FINALE", text: "Eventualele divergențe între părți se vor soluționa pe cale amiabilă, în caz contrar, părțile se vor adresa instanțelor judecătorești competente. Prezentul contract a fost semnat în 2 (două) exemplare, câte unul pentru fiecare parte." }
+  ];
+}
+function defaultCap51Text() {
+  return ["se obligă să respecte obiectul contractului de la Cap.1.", "se obligă să respecte necesarul tehnic din anexa 1 a contractului.", "se obligă să păstreze confidențialitatea acestui contract.", "Prestatorul are dreptul exclusiv de a alege repertoriul artistic ce va fi interpretat în cadrul evenimentului.", "Prestatorul are dreptul să întrerupă în orice moment recitalul artistic, dacă îi este perturbată interpretarea artistică de către oricare participant la eveniment. Prestatorul va notifica Beneficiarul în cel mai scurt timp posibil pentru remedierea situației."].join("\n");
+}
+function defaultCap52Text() {
+  return ["se obligă să păstreze confidențialitatea acestui contract.", "se obligă să respecte termenele de plată menționate la art. 4.2.", "se obligă să respecte necesarul tehnic și de ospitalitate din anexa 1 a contractului.", "se obligă să organizeze evenimentul în condiții de legalitate, siguranță, protecție și securitate, la data, locația și ora menționată în art.1.2.", "se obligă să se consulte cu Prestatorul în vederea disponibilității locației pentru efectuarea probelor de sunet necesare bunei desfășurări a serviciilor susținute de Prestator (indicat ~6 ore înainte de eveniment).", "se obligă să se consulte cu Prestatorul cu cel puțin 14 zile înainte de eveniment în vederea stabilirii programului pe ore, urmând a fi stabilită ora exactă de începere a fiecărui set de interpretare artistică și să trimită pe adresa de mail a Prestatorului programul pe ore cu cel puțin 7 zile înainte.", "să asigure spațiul necesar, acoperit, asigurat în cazul vremii nefavorabile, cu suprafața de minim 6×4 metri.", "Beneficiarul va acționa cu diligență în asigurarea bunei desfășurări a evenimentului și soluționarea eventualelor diferențe dintre participanți la eveniment.", "În situația în care echipamentul Prestatorului va suferi daune în cadrul evenimentului din vina exclusivă a Beneficiarului sau a participanților, Beneficiarul va intermedia recuperarea/înlocuirea echipamentului deteriorat."].join("\n");
+}
+function defaultCap1PrestatorBlock() {
+  return [
+    "**Societatea comercială:** PHASER MUSIC SRL",
+    "**Sediul:** Timișoara, Str. Răsăritului 17, Bl. 24, Sc. A, Et. 4, Ap. 9",
+    "**Oficiul Național al Registrului Comerțului:** Nr: J35/750/14.03.2017",
+    "**Cod unic de înregistrare:** 37199434",
+    "**Contul bancar numărul:** RO79INGB00009999906674059",
+    "**Banca:** ING Bank N.V.",
+    "**Adresă mail:** contact@phaser.ro  |  **Telefon:** 0744 771 488",
+    "reprezentată legal de **RACZ ANDREI RADU**, în calitate de asociat, denumită în continuare în prezentul contract **Prestator**."
+  ].join("\n");
+}
+function formatContractCap1Inline(s) {
+  const parts = String(s || "").split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) => {
+    const m = p.match(/^\*\*(.+)\*\*$/);
+    if (m) return <strong key={i}>{m[1]}</strong>;
+    return <span key={i}>{p}</span>;
+  });
+}
+function getDefaultContractModelPrivate() {
+  return {
+    v: 1,
+    cap1SectionTitle: "CAP. 1. PĂRȚILE CONTRACTANTE",
+    cap1Art11Title: "Art.1.1 Prestatorul",
+    cap1PrestatorBlock: defaultCap1PrestatorBlock(),
+    cap1Art12Title: "Art.1.2 Beneficiarul",
+    cap1BeneficiarPartyLabel: "Persoană fizică:",
+    cap1BeneficiarIdIntro: "cu următoarele date de identificare:",
+    cap1BenLblDomiciliu: "**Locul de domiciliu:**",
+    cap1BenLblCI: "**Cartea de identitate:**",
+    cap1BenLblEmail: "**Adresă mail:**",
+    cap1BenLblTel: "**Telefon:**",
+    cap1BeneficiarClosing: "în calitate de BENEFICIAR, denumit în continuare în prezentul contract **Beneficiar**.",
+    art21: "Art.2.1 Obiectul prezentului contract constă în îndeplinirea activității de interpretare artistică de către Prestator prin actul artistic „PHASER\" în cadrul unui eveniment privat organizat de Beneficiar.",
+    art23Intro: "Art.2.3 Durata recitalului artistic este de aproximativ ",
+    art23Mid: " minute, împărțit în ",
+    art23Mid2: " seturi de aproximativ ",
+    art23Outro: " minute. Intervalul orar în care va avea loc prestația nu va fi mai mare de 5 ore și nu se va desfășura mai târziu de ora 02:00.",
+    art31: "Art.3.1 Prezentul contract este valabil începând cu data semnării lui și încetează la data la care toate obligațiile ce decurg în prezentul contract vor fi onorate.",
+    art41Prefix: "Art.4.1 Valoarea prezentului contract este de ",
+    art41Suffix: "",
+    art42: "Art.4.2 Suma prevăzută la art.4.1 va fi plătită în contul Prestatorului în RON, la cursul BNR valabil la data facturării, prin virament bancar astfel:",
+    art43Intro: "Art.4.3 Plata de către Beneficiar a facturii emise de Prestator este condiționată de emiterea facturii într-una din cele 2 variante:",
+    art43a: "a) în format electronic la adresa mail menționată în art. 1.2.",
+    art43b: "b) în format fizic, factura în original cu semnătura și ștampila.",
+    art44: "Art.4.4 Eventualele întârzieri de plată din partea Beneficiarului vor atrage după sine o penalizare de 1% pentru fiecare zi de întârziere, fără a fi necesară o notificare din partea Prestatorului și fără a fi necesară îndeplinirea vreunei proceduri prealabile, penalitățile devenind scadente de drept din prima zi de întârziere.",
+    cap51: defaultCap51Text(),
+    cap52: defaultCap52Text(),
+    caps612: getDefaultContractCaps612().map((c) => ({ ...c })),
+    closingLine: "Prezentul contract a fost semnat în 2 (două) exemplare, câte unul pentru fiecare parte, la data de",
+    footerLine: "PHASER MUSIC SRL · CUI 37199434 · Timișoara, Str. Răsăritului 17 · contact@phaser.ro · www.phaser.ro"
+  };
+}
+function getDefaultContractModelPublic() {
+  const p = getDefaultContractModelPrivate();
+  return {
+    ...p,
+    art21: "Art.2.1 Obiectul prezentului contract constă în îndeplinirea activității de interpretare artistică de către Prestator prin actul artistic „PHASER\" în cadrul unui eveniment public organizat de Beneficiar."
+  };
+}
+function mergeContractModelFromTemplates(templates, isPrivate) {
+  const def = isPrivate ? getDefaultContractModelPrivate() : getDefaultContractModelPublic();
+  const src = isPrivate ? templates?.contractModelPrivate : templates?.contractModelPublic;
+  if (!src || typeof src !== "object") {
+    return JSON.parse(JSON.stringify(def));
+  }
+  const capsDef = def.caps612;
+  const capsSrc = Array.isArray(src.caps612) ? src.caps612 : [];
+  const caps612 = capsDef.map((c, i) => ({ ...c, ...(capsSrc[i] && typeof capsSrc[i] === "object" ? capsSrc[i] : {}) }));
+  return { ...def, ...src, caps612 };
+}
+/** Public = mereu firmă. Privat = firmă doar dacă `ev.contractBen === "firma"`. */
+function contractBeneficiaryIsFirma(ev) {
+  return ev.cat !== "private" || ev.contractBen === "firma";
+}
+function makeDefaultContractFields(ev) {
+  const isP = ev.cat === "private";
+  const svcTot = isP ? Object.entries(ev.svcp || {}).reduce((s, [k, v]) => s + (ev.svc?.[k] ? v : 0), 0) : 0;
+  const tot = (ev.fee || 0) + svcTot;
+  const avans = ev.dep || 0;
+  const repDur = ev.repDur != null ? Number(ev.repDur) : 45;
+  const base = {
+    nr: "", dataSemnare: "", clientNume: ev.cn || "", clientEmail: ev.ce || "", clientTel: ev.cp || "",
+    jud: "", mun: "", str: "", nr2: "", ap: "", ciSeria: "", ciNr: "", cnp: "",
+    dataEv: fEvDate(ev) || "", locatie: ev.venue || "", adresaEv: ev.city || "",
+    durataTotal: String((ev.rep || 1) * repDur), nrSeturiInput: String(ev.rep || 1), durataSeturiInput: String(repDur),
+    valoare: String(tot),
+    avansContract: String(avans),
+    restContract: String(tot - avans),
+    zileRest: String(ev.zileRest ?? 5),
+    dataFinal: ""
+  };
+  if (contractBeneficiaryIsFirma(ev)) {
+    base.benFirma = ev.cn || "";
+    base.benSediu = "";
+    base.benOnrcNr = "";
+    base.benCui = "";
+    base.benIban = "";
+    base.benBanca = "";
+    base.benRepreNum = "";
+    base.benRepreCal = "";
+  }
+  return base;
+}
+function normalizeFirmaContractFields(fields, ev) {
+  if (!contractBeneficiaryIsFirma(ev)) return { ...fields };
+  const o = { ...fields };
+  for (const k of ["benFirma", "benSediu", "benOnrcNr", "benCui", "benIban", "benBanca", "benRepreNum", "benRepreCal"]) {
+    if (o[k] == null) o[k] = "";
+  }
+  if (!(String(o.benFirma || "").trim()) && (String(o.clientNume || "").trim())) o.benFirma = o.clientNume;
+  return o;
+}
+
+function ContractView({ ev, th, contractFields, onContractChange, contractModel, readOnly }) {
+  const isP = ev.cat === "private";
+  const benFirmaLayout = contractBeneficiaryIsFirma(ev);
+  const svcTot = isP ? Object.entries(ev.svcp || {}).reduce((s, [k, v]) => s + (ev.svc?.[k] ? v : 0), 0) : 0;
+  const tot = (ev.fee || 0) + svcTot;
+  const avans = ev.dep || 0;
   const rest = tot - avans;
-  const cf = contractFields||{};
-  const setF = (k,v) => onContractChange && onContractChange({...cf,[k]:v});
-  const today = new Date().toLocaleDateString("ro",{day:"numeric",month:"long",year:"numeric"});
-  const nrSeturi = cf.nrSeturi || (ev.rep||1);
-  const durataSeturi = cf.durataSeturi || 45;
-  
-  // Inline editable input styled like contract blanks
-  const iS = {border:"none",borderBottom:"1.5px solid #999",borderRadius:0,padding:"1px 4px",fontSize:13,fontFamily:"Georgia,serif",background:"rgba(255,249,196,.6)",outline:"none",color:"#111",minWidth:40,textAlign:"center"};
-  const Fi = ({k,placeholder,w=100,type="text",align="center"})=>(
-    <input type={type} value={cf[k]||""} onChange={e=>setF(k,e.target.value)} placeholder={placeholder||"___"} style={{...iS,width:w,textAlign:align}}/>
-  );
+  const cf = contractFields || {};
+  const m = contractModel || (isP ? getDefaultContractModelPrivate() : getDefaultContractModelPublic());
+  const setF = (k, v) => !readOnly && onContractChange && onContractChange({ ...cf, [k]: v });
+  const today = new Date().toLocaleDateString("ro", { day: "numeric", month: "long", year: "numeric" });
+  const nrSeturi = Number(cf.nrSeturiInput) || cf.nrSeturi || (ev.rep || 1);
+  const durataSeturi = Number(cf.durataSeturiInput) || cf.durataSeturi || ev.repDur || 45;
+
+  const iS = { border: "none", borderBottom: "1.5px solid #999", borderRadius: 0, padding: "1px 4px", fontSize: 13, fontFamily: "Georgia,serif", background: readOnly ? "rgba(245,245,245,.95)" : "rgba(255,249,196,.6)", outline: "none", color: "#111", minWidth: 40, textAlign: "center" };
+  const Fi = ({ k, placeholder, w = 100, type = "text", align = "center" }) => {
+    const val = cf[k] || "";
+    const ph = placeholder || "___";
+    if (readOnly) return <span style={{ ...iS, width: w, textAlign: align, display: "inline-block", borderBottom: "1.5px solid #ccc" }}>{val || ph}</span>;
+    return <input type={type} value={val} onChange={(e) => setF(k, e.target.value)} placeholder={ph} style={{ ...iS, width: w, textAlign: align }} />;
+  };
+
+  const cap51Lines = String(m.cap51 || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  const cap52Lines = String(m.cap52 || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  const cap1PrestatorLines = String(m.cap1PrestatorBlock ?? defaultCap1PrestatorBlock()).split("\n").map((s) => s.trim()).filter(Boolean);
 
   return (
-    <div style={{background:"#fff",color:"#111",padding:"32px 40px",fontFamily:"Georgia,serif",fontSize:13,lineHeight:1.85,maxWidth:720,margin:"0 auto"}}>
+    <div style={{ background: "#fff", color: "#111", padding: "32px 40px", fontFamily: "Georgia,serif", fontSize: 13, lineHeight: 1.85, maxWidth: 720, margin: "0 auto", boxSizing: "border-box" }}>
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,paddingBottom:12,borderBottom:"1px solid #ccc"}}>
         <div style={{background:"#111",borderRadius:8,padding:"10px 24px"}}><Logo height={36}/></div>
@@ -393,134 +541,188 @@ function ContractView({ ev, th, contractFields, onContractChange }) {
         </div>
       </div>
 
-      {/* CAP 1 */}
-      <div style={{marginBottom:20}}>
-        <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:10}}>CAP. 1. PĂRȚILE CONTRACTANTE</div>
-        <p style={{marginBottom:8,fontStyle:"italic"}}>Art.1.1 Prestatorul</p>
-        <p><strong>Societatea comercială:</strong> PHASER MUSIC SRL</p>
-        <p><strong>Sediul:</strong> Timișoara, Str. Răsăritului 17, Bl. 24, Sc. A, Et. 4, Ap. 9</p>
-        <p><strong>Oficiul Național al Registrului Comerțului:</strong> Nr: J35/750/14.03.2017</p>
-        <p><strong>Cod unic de înregistrare:</strong> 37199434</p>
-        <p><strong>Contul bancar numărul:</strong> RO79INGB00009999906674059</p>
-        <p><strong>Banca:</strong> ING Bank N.V.</p>
-        <p><strong>Adresă mail:</strong> contact@phaser.ro &nbsp;|&nbsp; <strong>Telefon:</strong> 0744 771 488</p>
-        <p style={{marginTop:6}}>reprezentată legal de <strong>RACZ ANDREI RADU</strong>, în calitate de asociat, denumită în continuare în prezentul contract <strong>Prestator</strong>.</p>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 10 }}>{m.cap1SectionTitle || "CAP. 1. PĂRȚILE CONTRACTANTE"}</div>
+        <p style={{ marginBottom: 8, fontStyle: "italic" }}>{m.cap1Art11Title || "Art.1.1 Prestatorul"}</p>
+        {cap1PrestatorLines.map((line, i) => (
+          <p key={i} style={i === cap1PrestatorLines.length - 1 ? { marginTop: 6 } : {}}>{formatContractCap1Inline(line)}</p>
+        ))}
 
-        <p style={{margin:"14px 0 8px",fontStyle:"italic"}}>Art.1.2 Beneficiarul</p>
-        <p><strong>Persoană fizică:</strong> <Fi k="clientNume" w={200} placeholder={ev.cn||"Numele beneficiarului"} align="left"/></p>
-        <p style={{marginTop:4}}>cu următoarele date de identificare:</p>
-        <p><strong>Locul de domiciliu:</strong> Jud. <Fi k="jud" w={100} placeholder="Județ"/> , Mun./Or. <Fi k="mun" w={120} placeholder="Municipiu"/> , Str. <Fi k="str" w={150} placeholder="Strada" align="left"/> , nr. <Fi k="nr2" w={50} placeholder="nr"/> , ap. <Fi k="ap" w={50} placeholder="ap"/></p>
-        <p><strong>Cartea de identitate:</strong> seria <Fi k="ciSeria" w={50} placeholder="XX"/> , nr. <Fi k="ciNr" w={80} placeholder="000000"/> , CNP: <Fi k="cnp" w={140} placeholder="0000000000000"/></p>
-        <p><strong>Adresă mail:</strong> <Fi k="clientEmail" w={200} placeholder={ev.ce||"email@..."} align="left"/></p>
-        <p><strong>Telefon:</strong> <Fi k="clientTel" w={150} placeholder={ev.cp||"+40..."} align="left"/></p>
-        <p style={{marginTop:6}}>în calitate de BENEFICIAR, denumit în continuare în prezentul contract <strong>Beneficiar</strong>.</p>
+        <p style={{ margin: "14px 0 8px", fontStyle: "italic" }}>{m.cap1Art12Title || "Art.1.2 Beneficiarul"}</p>
+        {benFirmaLayout ? <>
+          <p style={{ marginTop: 2 }}>{formatContractCap1Inline("**Societatea comercială:**")} <Fi k="benFirma" w={320} placeholder={ev.cn || "Denumire societate"} align="left" /></p>
+          <p>{formatContractCap1Inline("**Sediul:**")} <Fi k="benSediu" w={420} align="left" placeholder="Adresa sediului" /></p>
+          <p>{formatContractCap1Inline("**Oficiul Național al Registrului Comerțului:**")} Nr: <Fi k="benOnrcNr" w={200} align="left" placeholder="nr. înregistrare" /></p>
+          <p>{formatContractCap1Inline("**Cod unic de înregistrare:**")} <Fi k="benCui" w={140} align="left" placeholder="CUI" /></p>
+          <p>{formatContractCap1Inline("**Contul bancar numărul:**")} <Fi k="benIban" w={280} align="left" placeholder="IBAN" /></p>
+          <p>{formatContractCap1Inline("**Banca:**")} <Fi k="benBanca" w={220} align="left" /></p>
+          <p>
+            {formatContractCap1Inline("**Adresă mail:**")} <Fi k="clientEmail" w={200} placeholder={ev.ce || "email@..."} align="left" />
+            {"  |  "}
+            {formatContractCap1Inline("**Telefon:**")} <Fi k="clientTel" w={150} placeholder={ev.cp || "+40..."} align="left" />
+          </p>
+          <p style={{ marginTop: 6 }}>
+            Reprezentată legal de <Fi k="benRepreNum" w={220} align="left" placeholder="nume și prenume" />, în calitate de <Fi k="benRepreCal" w={180} align="left" placeholder="funcție" />, denumită în continuare în prezentul contract {formatContractCap1Inline("**Beneficiar**")}.
+          </p>
+        </> : <>
+          <p><strong>{(m.cap1BeneficiarPartyLabel || "Persoană fizică:").replace(/:\s*$/, "")}:</strong> <Fi k="clientNume" w={200} placeholder={ev.cn || "Numele beneficiarului"} align="left" /></p>
+          <p style={{ marginTop: 4 }}>{m.cap1BeneficiarIdIntro || "cu următoarele date de identificare:"}</p>
+          <p style={{ marginTop: 4 }}>
+            {formatContractCap1Inline(m.cap1BenLblDomiciliu || "**Locul de domiciliu:**")}{" "}
+            Jud. <Fi k="jud" w={100} placeholder="Județ" /> , Mun./Or. <Fi k="mun" w={120} placeholder="Municipiu" /> , Str. <Fi k="str" w={150} placeholder="Strada" align="left" /> , nr. <Fi k="nr2" w={50} placeholder="nr" /> , ap. <Fi k="ap" w={50} placeholder="ap" /></p>
+          <p>
+            {formatContractCap1Inline(m.cap1BenLblCI || "**Cartea de identitate:**")}{" "}
+            seria <Fi k="ciSeria" w={50} placeholder="XX" /> , nr. <Fi k="ciNr" w={80} placeholder="000000" /> , CNP: <Fi k="cnp" w={140} placeholder="0000000000000" /></p>
+          <p>{formatContractCap1Inline(m.cap1BenLblEmail || "**Adresă mail:**")} <Fi k="clientEmail" w={200} placeholder={ev.ce || "email@..."} align="left" /></p>
+          <p>{formatContractCap1Inline(m.cap1BenLblTel || "**Telefon:**")} <Fi k="clientTel" w={150} placeholder={ev.cp || "+40..."} align="left" /></p>
+          <p style={{ marginTop: 6 }}>{formatContractCap1Inline(m.cap1BeneficiarClosing || "în calitate de BENEFICIAR, denumit în continuare în prezentul contract **Beneficiar**.")}</p>
+        </>}
       </div>
 
-      {/* CAP 2 */}
-      <div style={{marginBottom:20}}>
-        <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:10}}>CAP. 2. OBIECTUL CONTRACTULUI</div>
-        <p style={{marginBottom:6,fontStyle:"italic"}}>Art.2.1 Obiectul prezentului contract constă în îndeplinirea activității de interpretare artistică de către Prestator prin actul artistic „PHASER" în cadrul unui eveniment {isP?"privat":"public"} organizat de Beneficiar.</p>
-        <p style={{marginBottom:6,fontStyle:"italic"}}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 10 }}>CAP. 2. OBIECTUL CONTRACTULUI</div>
+        <p style={{ marginBottom: 6, fontStyle: "italic", whiteSpace: "pre-wrap" }}>{m.art21}</p>
+        <p style={{ marginBottom: 6, fontStyle: "italic" }}>
           Art.2.2 Evenimentul care face obiectul prezentului contract se desfășoară în data de{" "}
-          <Fi k="dataEv" w={120} placeholder={ev.date||"____-__-__"}/>, în locația <Fi k="locatie" w={160} placeholder={ev.venue||"locația"} align="left"/> cu adresa: <Fi k="adresaEv" w={180} placeholder={ev.city||"adresa"} align="left"/>.
+          <Fi k="dataEv" w={180} placeholder={fEvDate(ev) || "____-__-__"} />, în locația <Fi k="locatie" w={160} placeholder={ev.venue || "locația"} align="left" /> cu adresa: <Fi k="adresaEv" w={180} placeholder={ev.city || "adresa"} align="left" />.
         </p>
-        <p style={{fontStyle:"italic"}}>
-          Art.2.3 Durata recitalului artistic este de aproximativ{" "}
-          <Fi k="durataTotal" w={60} placeholder={String(nrSeturi*durataSeturi)}/> minute, împărțit în{" "}
-          <Fi k="nrSeturiInput" w={40} placeholder={String(nrSeturi)}/> seturi de aproximativ{" "}
-          <Fi k="durataSeturiInput" w={50} placeholder={String(durataSeturi)}/> minute. Intervalul orar în care va avea loc prestația nu va fi mai mare de 5 ore și nu se va desfășura mai târziu de ora 02:00.
+        <p style={{ fontStyle: "italic" }}>
+          {m.art23Intro}
+          <Fi k="durataTotal" w={60} placeholder={String(nrSeturi * durataSeturi)} />
+          {m.art23Mid}
+          <Fi k="nrSeturiInput" w={40} placeholder={String(nrSeturi)} />
+          {m.art23Mid2}
+          <Fi k="durataSeturiInput" w={50} placeholder={String(durataSeturi)} />
+          {m.art23Outro}
         </p>
       </div>
 
-      {/* CAP 3 */}
-      <div style={{marginBottom:20}}>
-        <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:10}}>CAP. 3. DURATA CONTRACTULUI</div>
-        <p style={{fontStyle:"italic"}}>Art.3.1 Prezentul contract este valabil începând cu data semnării lui și încetează la data la care toate obligațiile ce decurg în prezentul contract vor fi onorate.</p>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 10 }}>CAP. 3. DURATA CONTRACTULUI</div>
+        <p style={{ fontStyle: "italic", whiteSpace: "pre-wrap" }}>{m.art31}</p>
       </div>
 
-      {/* CAP 4 */}
-      <div style={{marginBottom:20}}>
-        <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:10}}>CAP. 4. VALOAREA CONTRACTULUI, MODALITĂȚI DE PLATĂ</div>
-        <p style={{fontStyle:"italic",marginBottom:6}}>Art.4.1 Valoarea prezentului contract este de <strong><Fi k="valoare" w={80} placeholder={String(tot)}/> Euro</strong>.</p>
-        <p style={{fontStyle:"italic",marginBottom:6}}>Art.4.2 Suma prevăzută la art.4.1 va fi plătită în contul Prestatorului în RON, la cursul BNR valabil la data facturării, prin virament bancar astfel:</p>
-        <div style={{paddingLeft:24,marginBottom:6}}>
-          <p>a) <strong><Fi k="avansContract" w={80} placeholder={String(avans)}/> Euro</strong> în termen de 10 zile de la semnarea contractului.</p>
-          <p>b) <strong><Fi k="restContract" w={80} placeholder={String(rest)}/> Euro</strong> în termen de 5 zile de la data încheierii evenimentului.</p>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 10 }}>CAP. 4. VALOAREA CONTRACTULUI, MODALITĂȚI DE PLATĂ</div>
+        <p style={{ fontStyle: "italic", marginBottom: 6 }}>
+          {m.art41Prefix}<strong><Fi k="valoare" w={80} placeholder={String(tot)} /> Euro</strong>{m.art41Suffix}
+        </p>
+        <p style={{ fontStyle: "italic", marginBottom: 6, whiteSpace: "pre-wrap" }}>{m.art42}</p>
+        <div style={{ paddingLeft: 24, marginBottom: 6 }}>
+          <p>a) <strong><Fi k="avansContract" w={80} placeholder={String(avans)} /> Euro</strong> în termen de 10 zile de la semnarea contractului.</p>
+          <p>b) <strong><Fi k="restContract" w={80} placeholder={String(rest)} /> Euro</strong> în termen de <Fi k="zileRest" w={40} placeholder="5" /> zile de la data încheierii evenimentului.</p>
         </div>
-        <p style={{fontStyle:"italic",marginBottom:4}}>Art.4.3 Plata de către Beneficiar a facturii emise de Prestator este condiționată de emiterea facturii într-una din cele 2 variante:</p>
-        <div style={{paddingLeft:24,marginBottom:6}}>
-          <p>a) în format electronic la adresa mail menționată în art. 1.2.</p>
-          <p>b) în format fizic, factura în original cu semnătura și ștampila.</p>
+        <p style={{ fontStyle: "italic", marginBottom: 4, whiteSpace: "pre-wrap" }}>{m.art43Intro}</p>
+        <div style={{ paddingLeft: 24, marginBottom: 6 }}>
+          <p style={{ whiteSpace: "pre-wrap" }}>{m.art43a}</p>
+          <p style={{ whiteSpace: "pre-wrap" }}>{m.art43b}</p>
         </div>
-        <p style={{fontStyle:"italic"}}>Art.4.4 Eventualele întârzieri de plată din partea Beneficiarului vor atrage după sine o penalizare de 1% pentru fiecare zi de întârziere, fără a fi necesară o notificare din partea Prestatorului și fără a fi necesară îndeplinirea vreunei proceduri prealabile, penalitățile devenind scadente de drept din prima zi de întârziere.</p>
+        <p style={{ fontStyle: "italic", whiteSpace: "pre-wrap" }}>{m.art44}</p>
       </div>
 
-      {/* CAP 5 */}
-      <div style={{marginBottom:20}}>
-        <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:10}}>CAP. 5. DREPTURILE ȘI OBLIGAȚIILE PĂRȚILOR</div>
-        <p style={{fontStyle:"italic",marginBottom:4}}>Art.5.1 Drepturile și obligațiile Prestatorului:</p>
-        <div style={{paddingLeft:24,marginBottom:8}}>
-          <p>a) se obligă să respecte obiectul contractului de la Cap.1.</p>
-          <p>b) se obligă să respecte necesarul tehnic din anexa 1 a contractului.</p>
-          <p>c) se obligă să păstreze confidențialitatea acestui contract.</p>
-          <p>d) Prestatorul are dreptul exclusiv de a alege repertoriul artistic ce va fi interpretat în cadrul evenimentului.</p>
-          <p>e) Prestatorul are dreptul să întrerupă în orice moment recitalul artistic, dacă îi este perturbată interpretarea artistică de către oricare participant la eveniment. Prestatorul va notifica Beneficiarul în cel mai scurt timp posibil pentru remedierea situației.</p>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 10 }}>CAP. 5. DREPTURILE ȘI OBLIGAȚIILE PĂRȚILOR</div>
+        <p style={{ fontStyle: "italic", marginBottom: 4 }}>Art.5.1 Drepturile și obligațiile Prestatorului:</p>
+        <div style={{ paddingLeft: 24, marginBottom: 8 }}>
+          {cap51Lines.map((line, i) => <p key={i}>{String.fromCharCode(97 + i)}) {line.replace(/^[a-z]\)\s*/i, "")}</p>)}
         </div>
-        <p style={{fontStyle:"italic",marginBottom:4}}>Art.5.2 Drepturile și obligațiile Beneficiarului:</p>
-        <div style={{paddingLeft:24}}>
-          <p>a) se obligă să păstreze confidențialitatea acestui contract.</p>
-          <p>b) se obligă să respecte termenele de plată menționate la art. 4.2.</p>
-          <p>c) se obligă să respecte necesarul tehnic și de ospitalitate din anexa 1 a contractului.</p>
-          <p>d) se obligă să organizeze evenimentul în condiții de legalitate, siguranță, protecție și securitate, la data, locația și ora menționată în art.1.2.</p>
-          <p>e) se obligă să se consulte cu Prestatorul în vederea disponibilității locației pentru efectuarea probelor de sunet necesare bunei desfășurări a serviciilor susținute de Prestator (indicat ~6 ore înainte de eveniment).</p>
-          <p>f) se obligă să se consulte cu Prestatorul cu cel puțin 14 zile înainte de eveniment în vederea stabilirii programului pe ore, urmând a fi stabilită ora exactă de începere a fiecărui set de interpretare artistică și să trimită pe adresa de mail a Prestatorului programul pe ore cu cel puțin 7 zile înainte.</p>
-          <p>g) să asigure spațiul necesar, acoperit, asigurat în cazul vremii nefavorabile, cu suprafața de minim 6×4 metri.</p>
-          <p>h) Beneficiarul va acționa cu diligență în asigurarea bunei desfășurări a evenimentului și soluționarea eventualelor diferențe dintre participanți la eveniment.</p>
-          <p>i) În situația în care echipamentul Prestatorului va suferi daune în cadrul evenimentului din vina exclusivă a Beneficiarului sau a participanților, Beneficiarul va intermedia recuperarea/înlocuirea echipamentului deteriorat.</p>
+        <p style={{ fontStyle: "italic", marginBottom: 4 }}>Art.5.2 Drepturile și obligațiile Beneficiarului:</p>
+        <div style={{ paddingLeft: 24 }}>
+          {cap52Lines.map((line, i) => <p key={i}>{String.fromCharCode(97 + i)}) {line.replace(/^[a-z]\)\s*/i, "")}</p>)}
         </div>
       </div>
 
-      {/* CAP 6-12 — condensate */}
-      {[
-        { nr:6, titlu:"ALTE MENȚIUNI", text:"Înregistrarea audio sau video a recitalului artistic de către furnizorii foto/video ai Beneficiarului nu va fi folosită în scop public, comercial sau politic. Prestatorul înțelege că Beneficiarul nu poate controla acțiunile participanților la eveniment și este de acord cu situațiile în care invitații ar putea publica în scop personal imagini/înregistrări ale Prestatorului în spațiu media." },
-        { nr:7, titlu:"NOTIFICĂRI, COMUNICARE", text:"Orice adresă, notificare făcută de una dintre părți celeilalte va fi valabil îndeplinită doar dacă va fi transmisă prin e-mail, whatsapp sau mesaj text la adresele specificate în Capitolul 1. Notificările verbale nu se iau în considerare dacă nu au fost confirmate prin modalitatea indicată la art.7.1." },
-        { nr:8, titlu:"CLAUZE SPECIALE", text:"Prestatorul își rezervă dreptul de a anula prestația artistică dacă Beneficiarul nu achită avansul în cel mult 30 de zile de la data scadentă. În cazul în care evenimentul se anulează din orice motiv care nu ține de voința Prestatorului, obligațiile de plată ale Beneficiarului rămân neschimbate, exceptând situațiile speciale: imposibilitatea medicală de participare a Beneficiarului respectiv a soției acestuia." },
-        { nr:9, titlu:"FORȚĂ MAJORĂ", text:"Părțile semnatare ale prezentului contract sunt exonerate de răspundere în caz de forță majoră. Sunt considerate cazuri de forță majoră acele evenimente imprevizibile, insurmontabile care nu pot fi controlate de niciuna din părți (urgențe medicale, accidente, incendii, inundații, revolte, intervenții guvernamentale, conflicte militare și embargouri, calamități naturale)." },
-        { nr:10, titlu:"RĂSPUNDERE CONTRACTUALĂ", text:"Rezilierea contractului poate fi cerută de oricare parte, atunci când cealaltă nu și-a îndeplinit parțial sau total obligațiile la care s-a angajat. Încetarea contractului nu are efect asupra obligațiilor deja scadente între părți la data încetării." },
-        { nr:11, titlu:"CONFIDENȚIALITATE", text:"Părțile convin că toate prevederile prezentului contract, precum și toate negocierile anterioare purtate în vederea încheierii acestuia, sunt confidențiale și se angajează să nu le divulge, cu excepțiile legale. Încălcarea clauzei de confidențialitate dă dreptul celeilalte la solicitarea unei penalități în valoare de 10.000 RON." },
-        { nr:12, titlu:"CLAUZE FINALE", text:"Eventualele divergențe între părți se vor soluționa pe cale amiabilă, în caz contrar, părțile se vor adresa instanțelor judecătorești competente. Prezentul contract a fost semnat în 2 (două) exemplare, câte unul pentru fiecare parte." }
-      ].map(cap=>(
-        <div key={cap.nr} style={{marginBottom:16}}>
-          <div style={{fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:8}}>CAP. {cap.nr}. {cap.titlu}</div>
-          <p style={{fontStyle:"italic",color:"#333"}}>{cap.text}</p>
+      {((m.caps612 && m.caps612.length >= 7) ? m.caps612 : getDefaultContractCaps612()).map((cap) => (
+        <div key={cap.nr} style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 8 }}>CAP. {cap.nr}. {cap.titlu}</div>
+          <p style={{ fontStyle: "italic", color: "#333", whiteSpace: "pre-wrap" }}>{cap.text}</p>
         </div>
       ))}
 
-      {/* Data și semnături */}
-      <div style={{marginTop:20,paddingTop:12,borderTop:"1px solid #ccc",marginBottom:28,textAlign:"center",fontStyle:"italic"}}>
-        Prezentul contract a fost semnat în 2 (două) exemplare, câte unul pentru fiecare parte, la data de <Fi k="dataFinal" w={150} placeholder={today}/>.
+      <div style={{ marginTop: 20, paddingTop: 12, borderTop: "1px solid #ccc", marginBottom: 28, textAlign: "center", fontStyle: "italic" }}>
+        {m.closingLine}{" "}
+        <Fi k="dataFinal" w={150} placeholder={today} />.
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:48,marginTop:20}}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, marginTop: 20 }}>
         <div>
-          <div style={{fontWeight:700,marginBottom:10}}>PRESTATOR</div>
-          <div style={{fontSize:12,color:"#555"}}>PHASER MUSIC SRL</div>
-          <div style={{fontSize:12,color:"#555",marginBottom:8}}>Racz Andrei Radu</div>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>PRESTATOR</div>
+          <div style={{ fontSize: 12, color: "#555" }}>PHASER MUSIC SRL</div>
+          <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>Racz Andrei Radu</div>
           <ContractPrestatorSignatureBlock />
         </div>
         <div>
-          <div style={{fontWeight:700,marginBottom:10}}>BENEFICIAR</div>
-          <div style={{fontSize:12,color:"#555"}}>{cf.clientNume||ev.cn||"_______________"}</div>
-          <div style={{fontSize:12,color:"#555",marginBottom:36}}>{cf.clientTel||ev.cp||""}</div>
-          <div style={{borderBottom:"1.5px solid #111",width:"80%",marginBottom:4}}/>
-          <div style={{fontSize:11,color:"#888"}}>Semnătură</div>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>BENEFICIAR</div>
+          <div style={{ fontSize: 12, color: "#555" }}>{benFirmaLayout ? (cf.benFirma || cf.clientNume || ev.cn || "_______________") : (cf.clientNume || ev.cn || "_______________")}</div>
+          <div style={{ fontSize: 12, color: "#555", marginBottom: 36 }}>{benFirmaLayout ? (String(cf.benRepreNum || "").trim() || String(cf.benRepreCal || "").trim() ? [cf.benRepreNum, cf.benRepreCal].filter((x) => String(x || "").trim()).join(" — ") : (cf.clientTel || ev.cp || "")) : (cf.clientTel || ev.cp || "")}</div>
+          <div style={{ borderBottom: "1.5px solid #111", width: "80%", marginBottom: 4 }} />
+          <div style={{ fontSize: 11, color: "#888" }}>Semnătură</div>
         </div>
       </div>
 
-      {/* Footer */}
-      <div style={{marginTop:24,paddingTop:12,borderTop:"1px solid #eee",textAlign:"center",fontSize:10,color:"#aaa",letterSpacing:1}}>
-        PHASER MUSIC SRL · CUI 37199434 · Timișoara, Str. Răsăritului 17 · contact@phaser.ro · www.phaser.ro
+      {!benFirmaLayout && (
+        <div className="print-break" style={{ marginTop: 36, paddingTop: 20, borderTop: "2px solid #333", breakInside: "avoid", breakBefore: "page" }}>
+          <div style={{ fontWeight: 700, fontSize: 11, textAlign: "center", marginBottom: 18, textTransform: "uppercase", letterSpacing: 0.4, lineHeight: 1.45 }}>
+            NOTIFICARE ȘI EXPRIMARE A CONSIMȚĂMÂNTULUI PRIVIND PRELUCRAREA DATELOR CU CARACTER PERSONAL
+          </div>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Notificări</p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Începând cu data de 25.05.2018 au intrat în vigoare prevederile Regulamentului nr. 679/2016 privind protecția persoanelor fizice în ceea ce privește prelucrarea datelor cu caracter personal și libera circulație a acestor date, motiv pentru care SC PHASER MUSIC SRL are obligația de a cere consimțământul explicit al clienților/partenerilor pentru colectarea/prelucrarea/stocarea/dezvăluirea acestor date.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            SC PHASER MUSIC SRL furnizează în prezent servicii către clienți (persoane juridice/persoane fizice), la solicitarea acestora. În temeiul relației cu clientul, societatea noastră colectează o serie de date cu caracter personal.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            SC PHASER MUSIC SRL cunoaște importanța datelor dumneavoastră și se angajează să protejeze confidențialitatea și securitatea acestora. După caz, aceste date pot fi dezvăluite autorităților publice centrale sau locale, la solicitarea acestora cu temei legal. De aceea este important pentru noi să vă furnizăm informații legate de prelucrarea datelor dumneavoastră cu caracter personal, în calitate de persoane vizate, să vă informăm cu privire la drepturile dumneavoastră și să vă solicităm consimțământul ca datele dumneavoastră să fie procesate de către SC PHASER MUSIC SRL.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Datele cu caracter personal procesate de către societatea noastră sunt datele personale (nume, prenume, CNP, seria și numărul CI, adresă, telefon, e-mail) introduse în contractul de prestări servicii, precum și datele din acest acord, urmând a fi prelucrate în următoarele scopuri:
+          </p>
+          <ul style={{ marginBottom: 12, paddingLeft: 22, lineHeight: 1.7 }}>
+            <li>Întocmire facturi/comenzi/contracte/chitanțe/acte adiționale.</li>
+            <li>Furnizarea de informații prin intermediul e-mail-ului, SMS-ului, apelului telefonic, platformelor de social media cu privire la contractul de prestări servicii.</li>
+          </ul>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Drepturile dumneavoastră</p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            În conformitate cu prevederile legale aplicabile, vă bucurați de dreptul de informare, dreptul de acces la date, dreptul de intervenție asupra datelor, dreptul de opoziție, dreptul de a nu fi supus unei decizii individuale și dreptul de a vă adresa justiției și/sau autorității de supraveghere privind protecția datelor cu caracter personal. De asemenea, beneficiați și de dreptul la ștergerea datelor, precum și de dreptul la portabilitatea datelor, dacă va fi considerat aplicabil acestei situații. Notificarea de revocare a acordului poate fi realizată spre exemplu prin e-mail către contact@phaser.ro sau la sediul societății SC PHASER MUSIC SRL.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Vă rugăm să aveți în vedere faptul că revocarea acordului nu afectează legalitatea utilizării datelor înainte de retragerea acordului (notificarea nu are impact retroactiv). Dacă acordul nu este acordat sau a fost revocat, datele personale nu vor fi utilizate în scopurile de mai sus. În cazul în care aveți întrebări legate de acest acord sau de protecția datelor de către societatea SC PHASER MUSIC SRL în general, vă rugăm să nu ezitați să ne contactați la adresa de e-mail: contact@phaser.ro
+          </p>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Durata păstrării datelor</p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Datele dumneavoastră personale vor fi stocate până la momentul încetării relației cu clientul, cu excepția cazului în care avem obligația legală de a stoca în continuare datele dumneavoastră în scopul de a le prezenta autorităților publice, de exemplu autorităților fiscale. Stocarea și transferul datelor dvs. personale către autoritățile publice în scopul îndeplinirii unei obligații legale se bazează în mod legal pe art. 6 alin. (1) lit. c) GDPR.
+          </p>
+          <p style={{ marginBottom: 10, textAlign: "justify" }}>
+            Datorită posibilelor modificări ale legislației, o modificare a acestor notificări privind protecția datelor poate deveni necesară. În acest caz, vă vom informa despre astfel de modificări. În măsura în care modificările afectează o prelucrare care se bazează pe consimțământul dvs., vă vom solicita un nou consimțământ, dacă este necesar.
+          </p>
+          <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Exprimarea consimțământului</p>
+          <p style={{ marginBottom: 14, textAlign: "justify" }}>
+            Declar că am citit și am înțeles informațiile de mai sus cu privire la colectarea, dezvăluirea și prelucrarea datelor mele personale de către SC PHASER MUSIC SRL și sunt de acord în mod explicit cu prevederile acestei notificări.
+          </p>
+          <p style={{ marginBottom: 20, textAlign: "center", fontStyle: "italic", lineHeight: 1.6 }}>
+            Acest acord a fost semnat în 2 (două) exemplare, câte unul pentru fiecare parte, la aceeași dată înscrisă la încheierea contractului de prestări servicii de mai sus.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginTop: 8, fontSize: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Operator date personale</div>
+              <div style={{ color: "#555", marginBottom: 8 }}>SC PHASER MUSIC SRL</div>
+              <ContractPrestatorSignatureBlock labelFontSize={10} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Client</div>
+              <div style={{ color: "#555", marginBottom: 28, fontSize: 12 }}>{cf.clientNume || ev.cn || "_______________"}</div>
+              <div style={{ borderBottom: "1.5px solid #111", width: "85%", marginBottom: 4 }} />
+              <div style={{ fontSize: 10, color: "#888" }}>Semnătură</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 24, paddingTop: 12, borderTop: "1px solid #eee", textAlign: "center", fontSize: 10, color: "#aaa", letterSpacing: 1 }}>
+        {m.footerLine}
       </div>
+      {readOnly && <div style={{ marginTop: 16, padding: 10, borderRadius: 8, background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.35)", fontSize: 11, color: "#92400e" }}>Contract <strong>înghețat</strong> (trimis la client sau eveniment trecut). Modificările din Docs nu se mai aplică.</div>}
     </div>
   );
 }
@@ -606,17 +808,48 @@ function OfferPreview({ ev, evStatus, onStatusChange, th, mob, onClose, sty }) {
   const [tab, setTab] = useState("oferta");
   const [localSt, setLocalSt] = useState(evStatus);
   const [playlistSearch, setPlaylistSearch] = useState("");
-  const [contractFields, setContractFields] = useState({
-    nr:"", dataSemnare:"", clientNume:ev.cn||"", clientEmail:ev.ce||"", clientTel:ev.cp||"",
-    jud:"", mun:"", str:"", nr2:"", ap:"", ciSeria:"", ciNr:"", cnp:"",
-    dataEv:ev.date||"", locatie:ev.venue||"", adresaEv:ev.city||"",
-    durataTotal:String((ev.rep||1)*45), nrSeturiInput:String(ev.rep||1), durataSeturiInput:"45",
-    valoare:String((ev.fee||0)+Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0)),
-    avansContract:String(ev.dep||0),
-    restContract:String(((ev.fee||0)+Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0))-(ev.dep||0)),
-    dataFinal:""
-  });
   const isPriv = ev.cat==="private";
+  const contractModel = useMemo(() => mergeContractModelFromTemplates(null, isPriv), [isPriv]);
+  const [contractFields, setContractFields] = useState(() =>
+    normalizeFirmaContractFields(makeDefaultContractFields(ev), ev)
+  );
+  useEffect(() => {
+    setContractFields(normalizeFirmaContractFields(makeDefaultContractFields(ev), ev));
+  }, [ev.id]);
+  useEffect(() => {
+    if (!contractBeneficiaryIsFirma(ev)) return;
+    setContractFields((prev) => {
+      const d = makeDefaultContractFields(ev);
+      const next = { ...prev };
+      for (const k of ["benFirma", "benSediu", "benOnrcNr", "benCui", "benIban", "benBanca", "benRepreNum", "benRepreCal"]) {
+        if (next[k] == null) next[k] = d[k] ?? "";
+      }
+      if (!(String(next.benFirma || "").trim())) next.benFirma = d.benFirma || String(next.clientNume || "").trim() || "";
+      return normalizeFirmaContractFields(next, ev);
+    });
+  }, [ev.contractBen, ev.cat, ev.id]);
+  useEffect(() => {
+    const d = makeDefaultContractFields(ev);
+    setContractFields((prev) => ({
+      ...prev,
+      valoare: d.valoare,
+      avansContract: d.avansContract,
+      restContract: d.restContract,
+      dataEv: d.dataEv,
+      locatie: d.locatie,
+      adresaEv: d.adresaEv,
+      durataTotal: d.durataTotal,
+      nrSeturiInput: d.nrSeturiInput,
+      durataSeturiInput: d.durataSeturiInput,
+      zileRest: d.zileRest,
+      clientNume: prev.clientNume || d.clientNume,
+      clientEmail: prev.clientEmail || d.clientEmail,
+      clientTel: prev.clientTel || d.clientTel,
+      ...(contractBeneficiaryIsFirma(ev)
+        ? { benFirma: String(prev.benFirma || "").trim() ? prev.benFirma : (d.benFirma || d.clientNume || "") }
+        : {}),
+    }));
+  }, [ev.fee, ev.dep, ev.rep, ev.repDur, ev.date, ev.venue, ev.city, ev.zileRest, ev.cn, ev.ce, ev.cp, ev.cat, ev.contractBen, JSON.stringify(ev.svcp||{}), JSON.stringify(ev.svc||{})]);
   const svcTot = isPriv ? Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0) : 0;
   const tot = (ev.fee||0)+svcTot;
   const dk = th.bg==="#09090b";
@@ -1004,7 +1237,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, th, mob, onClose, sty }) {
 
         {/* CONTRACT */}
         {tab==="contract"&&<div style={{flex:1,overflow:"auto"}}>
-          <ContractView ev={ev} th={th} contractFields={contractFields} onContractChange={setContractFields}/>
+          <ContractView ev={ev} th={th} contractFields={contractFields} onContractChange={setContractFields} contractModel={contractModel} />
         </div>}
       </div>
     </div>
@@ -1104,6 +1337,7 @@ function LocationSearch({ venue, city, dist, onUpdate, sty, th, mob }) {
 function EventForm({ th, sty, isE, isP, mData, onSave, onPreview, onClose, mob }) {
   const [fm, setFm] = useState({
     cat: mData?.cat||"private",
+    contractBen: mData?.contractBen === "firma" ? "firma" : "pf",
     type: mData?.type||(isP?"Nuntă":"Festival"),
     st: mData?.st||"oferta",
     date: mData?.date||"",
@@ -1207,6 +1441,15 @@ function EventForm({ th, sty, isE, isP, mData, onSave, onPreview, onClose, mob }
 
             {secTab==="client"&&<div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
               <div style={{gridColumn:"1/-1",fontSize:11,fontWeight:600,color:th.tm,marginBottom:4}}>Client (preluat în Fișa evenimentului)</div>
+              {isP&&<div style={{gridColumn:"1/-1"}}>
+                <label style={sty.l}>Beneficiar în contract (cap. 1.2)</label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:4}}>
+                  <button type="button" onClick={()=>u("contractBen","pf")} style={{flex:1,minWidth:140,padding:"10px 12px",borderRadius:8,border:`2px solid ${fm.contractBen!=="firma"?th.t:th.b}`,background:fm.contractBen!=="firma"?th.ab:"transparent",cursor:"pointer",fontSize:12,fontWeight:600,color:th.t}}>Persoană fizică</button>
+                  <button type="button" onClick={()=>u("contractBen","firma")} style={{flex:1,minWidth:140,padding:"10px 12px",borderRadius:8,border:`2px solid ${fm.contractBen==="firma"?th.t:th.b}`,background:fm.contractBen==="firma"?th.ab:"transparent",cursor:"pointer",fontSize:12,fontWeight:600,color:th.t}}>Firmă</button>
+                </div>
+                <div style={{fontSize:10,color:th.tm,lineHeight:1.45}}>La <strong style={{color:th.t}}>Firmă</strong>: același bloc ca la ofertele <strong>publice</strong> (societate, sediu, ONRC, CUI, cont, bancă, reprezentant). La <strong>Persoană fizică</strong>: domiciliu, CI, GDPR.</div>
+              </div>}
+              {!isP&&<div style={{gridColumn:"1/-1",padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`,fontSize:11,color:th.tm,lineHeight:1.45}}>Eveniment <strong style={{color:th.t}}>public</strong>: în contract, beneficiarul este mereu în format <strong>firmă</strong>.</div>}
               <div style={{gridColumn:"1/-1"}}><label style={sty.l}>Nume client</label><input value={fm.cn} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Numele clientului"/></div>
               <div><label style={sty.l}>Telefon</label><input value={fm.cp} onChange={e=>u("cp",e.target.value)} style={iStyle} placeholder="+40..."/></div>
               <div><label style={sty.l}>Email</label><input value={fm.ce} onChange={e=>u("ce",e.target.value)} style={iStyle} placeholder="email@..."/></div>
@@ -1432,11 +1675,15 @@ Vom furniza 3 mix-uri separate din Stage Box-ul poziționat pe scenă:
             <div style={{display:"flex",gap:6}}>
               {!isE&&<button onClick={()=>{
                 const title = fm.cn ? (isP?`${fm.type} ${fm.cn}`:`${fm.type} - ${fm.cn}`) : "Eveniment nou";
-                onPreview({...fm, title, date: fm.date||"2026-06-15"});
+                const payload = {...fm, title, date: fm.date||"2026-06-15"};
+                if (payload.cat !== "private") delete payload.contractBen;
+                onPreview(payload);
               }} style={{...sty.bg,borderColor:th.a,color:th.t}}><IcPlay s={13}/> Preview media</button>}
               <button onClick={()=>{
                 const title = fm.cn ? (isP?`${fm.type} ${fm.cn}`:`${fm.type} - ${fm.cn}`) : "Eveniment nou";
-                onSave({...fm, title, date: fm.date||"2026-06-15"});
+                const payload = {...fm, title, date: fm.date||"2026-06-15"};
+                if (payload.cat !== "private") delete payload.contractBen;
+                onSave(payload);
               }} style={sty.b}>{isE?"Salvează":"Creează ofertă"}</button>
             </div>
           </div>
