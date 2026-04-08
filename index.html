@@ -1845,6 +1845,7 @@ const loadTemplates = () => {
         d.contractModelPrivatePf = mergeContractModelFromTemplatesByKey({ contractModelPrivatePf: d.contractModelPrivatePf }, CONTRACT_MODEL_KEYS.privatePf);
         d.contractModelPrivateFirma = mergeContractModelFromTemplatesByKey({ contractModelPrivateFirma: d.contractModelPrivateFirma }, CONTRACT_MODEL_KEYS.privateFirma);
         d.contractModelPublic = mergeContractModelFromTemplatesByKey({ contractModelPublic: d.contractModelPublic }, CONTRACT_MODEL_KEYS.public);
+        d.factureaza = normFactureaza(d.factureaza);
         return d;
       }
     }
@@ -1859,7 +1860,8 @@ const loadTemplates = () => {
     servicePrices: { ...DEFAULT_SERVICE_PRICES },
     contractModelPrivatePf: getDefaultContractModelPrivatePf(),
     contractModelPrivateFirma: getDefaultContractModelPrivateFirma(),
-    contractModelPublic: getDefaultContractModelPublic()
+    contractModelPublic: getDefaultContractModelPublic(),
+    factureaza: normFactureaza({}),
   };
 };
 // Versiuni rider — phaser_rider_versions: [{ id, ts, label, data }]
@@ -3555,6 +3557,23 @@ function makeDefaultContractFields(ev) {
   }
   return base;
 }
+/** Câmpuri contract + completări manuale / din buletin (înainte sau după snapshot, pentru factură). */
+function mergeContractBaseWithDraft(ev) {
+  const d = ev.contractDraftFields && typeof ev.contractDraftFields === "object" ? ev.contractDraftFields : {};
+  return { ...makeDefaultContractFields(ev), ...d };
+}
+/** Pentru factură / date client: bază + draft; dacă există snapshot, se aplică peste, apoi iar draft (corecții ulterioare, ex. CNP din buletin). */
+function contractFieldsForInvoicing(ev) {
+  const merged = mergeContractBaseWithDraft(ev);
+  const snap = ev.contractSnapshot?.fields;
+  if (!snap || typeof snap !== "object") {
+    return contractBeneficiaryIsFirma(ev) ? normalizeFirmaContractFields({ ...merged }, ev) : merged;
+  }
+  const withSnap = { ...merged, ...snap };
+  const draft = ev.contractDraftFields && typeof ev.contractDraftFields === "object" ? ev.contractDraftFields : {};
+  const out = { ...withSnap, ...draft };
+  return contractBeneficiaryIsFirma(ev) ? normalizeFirmaContractFields(out, ev) : out;
+}
 /** Snapshot-uri vechi / chei lipsă: completează câmpuri firmă + mapează clientNume → benFirma dacă e gol. */
 function normalizeFirmaContractFields(fields, ev) {
   if (!contractBeneficiaryIsFirma(ev)) return { ...fields };
@@ -3574,6 +3593,305 @@ function buildContractSnapshot(ev, templates, contractFields) {
     fields: { ...contractFields },
     savedAt: Date.now()
   };
+}
+
+/** Setări factureaza.ro (REST v1) — ID-uri serii/monedă din backend-ul factureaza, nu prefixul text al seriei. */
+const DEFAULT_FACTUREAZA = {
+  useSandbox: false,
+  documentSeriesId: "",
+  documentSeriesCounter: "",
+  currencyIdRon: "183",
+  currencyIdEur: "183",
+  vatType: 2,
+  vatPercent: 21,
+  countryId: "167",
+  invoiceLineLabel: "Prestație artistică — eveniment",
+};
+function normFactureaza(f) {
+  const d = DEFAULT_FACTUREAZA;
+  if (!f || typeof f !== "object") return { ...d };
+  return {
+    ...d,
+    ...f,
+    useSandbox: !!f.useSandbox,
+    documentSeriesId: f.documentSeriesId != null ? String(f.documentSeriesId) : "",
+    documentSeriesCounter: f.documentSeriesCounter != null ? String(f.documentSeriesCounter) : "",
+    currencyIdRon: String(f.currencyIdRon ?? d.currencyIdRon),
+    currencyIdEur: String(f.currencyIdEur ?? d.currencyIdEur),
+    vatType: Number(f.vatType ?? d.vatType) || d.vatType,
+    vatPercent: Number(f.vatPercent ?? d.vatPercent) || d.vatPercent,
+    countryId: String(f.countryId ?? d.countryId),
+    invoiceLineLabel: String(f.invoiceLineLabel || d.invoiceLineLabel),
+  };
+}
+/** Client factură: snapshot + draft (buletin / corecții). */
+function getFactureazaClientPayload(ev) {
+  const cf = contractFieldsForInvoicing(ev);
+  if (contractBeneficiaryIsFirma(ev)) {
+    const uid = String(cf.benCui || "").replace(/\D/g, "");
+    return {
+      name: String(cf.benFirma || cf.clientNume || ev.cn || "Client").trim(),
+      uid: uid || undefined,
+      city: (String(cf.benSediu || "").split(",")[0] || "").trim() || String(ev.city || "").trim() || undefined,
+      address: String(cf.benSediu || "").trim() || [ev.venue, ev.city].filter(Boolean).join(", ") || undefined,
+      registration_id: String(cf.benOnrcNr || "").trim() || undefined,
+    };
+  }
+  const cnp = String(cf.cnp || "").replace(/\D/g, "");
+  return {
+    name: String(cf.clientNume || ev.cn || "Client").trim(),
+    uid: cnp || undefined,
+    city: String(cf.mun || "").trim() || String(ev.city || "").trim() || undefined,
+    address: [cf.str, cf.nr2, cf.ap].filter(Boolean).join(" ").trim() || undefined,
+    registration_id: undefined,
+  };
+}
+function factureazaPriceHtFromTtc(ttc, vatPct) {
+  const t = Number(ttc);
+  const v = Number(vatPct) || 21;
+  if (!(t > 0)) return "0";
+  const ht = Math.round((t / (1 + v / 100)) * 100) / 100;
+  return String(ht);
+}
+function factureazaDocumentDate(ev) {
+  if (ev.date && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)) return ev.date;
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Micșorează imaginea base64 dacă e prea mare pentru vision API (max latura ~1600px). */
+function downscaleDataUrlIfLarge(dataUrl, maxSide = 1600, quality = 0.88) {
+  return new Promise((resolve) => {
+    if (!dataUrl || !String(dataUrl).startsWith("data:image") || dataUrl.length < 1_200_000) {
+      resolve(dataUrl);
+      return;
+    }
+    try {
+      const im = new Image();
+      im.onload = () => {
+        try {
+          let w = im.width;
+          let h = im.height;
+          const m = Math.max(w, h);
+          if (m <= maxSide) {
+            resolve(dataUrl);
+            return;
+          }
+          const s = maxSide / m;
+          w = Math.round(w * s);
+          h = Math.round(h * s);
+          const c = document.createElement("canvas");
+          c.width = w;
+          c.height = h;
+          const ctx = c.getContext("2d");
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.drawImage(im, 0, 0, w, h);
+          resolve(c.toDataURL("image/jpeg", quality));
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      im.onerror = () => resolve(dataUrl);
+      im.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
+}
+
+/**
+ * Extrage câmpuri din poză CI/buletin (OpenAI vision). Cheia trebuie în setări AI (openai).
+ * Imaginea pleacă către OpenAI — folosește doar dacă ai acordul persoanei.
+ */
+async function extractRomanianIdCardFieldsOpenAI(imageDataUrl, apiKey) {
+  const key = String(apiKey || "").trim();
+  if (!key) throw new Error("Adaugă cheia OpenAI în ⚙️ din chat AI → setări (câmp OpenAI API Key).");
+  const url = await downscaleDataUrlIfLarge(imageDataUrl);
+  const sys =
+    "Ești expert în citirea cărții de identitate românești (buletin/CI). " +
+    "Răspunde DOAR cu JSON valid, fără markdown, cu cheile exact: " +
+    "clientNume (nume complet cum apare pe act, MAJUSCULE), cnp (13 cifre), " +
+    "ciSeria (2 litere), ciNr (număr serie, cifre), jud, mun, str, nr2, ap (opțional), domiciliu (o singură linie cu adresa completă dacă separarea e incertă). " +
+    "Pentru câmpuri nelizibile folosește string gol.";
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      max_tokens: 600,
+      temperature: 0.05,
+      messages: [
+        { role: "system", content: sys },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Extrage datele pentru contract și factură din imaginea actului de identitate." },
+            { type: "image_url", image_url: { url: url } },
+          ],
+        },
+      ],
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || "OpenAI: " + res.status);
+  const raw = data?.choices?.[0]?.message?.content?.trim() || "";
+  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    throw new Error("Răspuns AI invalid — încearcă o poză mai clară.");
+  }
+  if (!(parsed && typeof parsed === "object")) throw new Error("Date extrase goale.");
+  return parsed;
+}
+
+/** Propune câmpuri `contractDraftFields` din obiectul returnat de vision. */
+function idCardAiResultToContractDraft(obj) {
+  const o = obj && typeof obj === "object" ? obj : {};
+  const pick = (k) => (o[k] != null ? String(o[k]).trim() : "");
+  const out = {};
+  const cn = pick("clientNume");
+  const cnp = pick("cnp").replace(/\D/g, "");
+  const ser = pick("ciSeria").replace(/[^A-Za-zĂÂÎȘȚăâîșț]/g, "").toUpperCase().slice(0, 2);
+  const nr = pick("ciNr").replace(/\D/g, "").slice(0, 7);
+  if (cn) out.clientNume = cn;
+  if (cnp.length === 13) out.cnp = cnp;
+  if (ser.length === 2) out.ciSeria = ser;
+  if (nr) out.ciNr = nr;
+  ["jud", "mun", "str", "nr2", "ap"].forEach((k) => {
+    const v = pick(k);
+    if (v) out[k] = v;
+  });
+  const dom = pick("domiciliu");
+  if (dom && !pick("str")) {
+    out.str = dom;
+  }
+  return out;
+}
+
+/**
+ * Modal: încarcă buletin → extrage cu AI → editezi → Aplică pe eveniment (contractDraftFields + cn).
+ * `onApplyPatch(patch, evId)` — al doilea parametru evită closure stale în App.
+ */
+function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToast, onApplyPatch }) {
+  const [busy, setBusy] = useState(false);
+  const [img, setImg] = useState(null);
+  const [fields, setFields] = useState(() => ({
+    clientNume: "",
+    cnp: "",
+    ciSeria: "",
+    ciNr: "",
+    jud: "",
+    mun: "",
+    str: "",
+    nr2: "",
+    ap: "",
+  }));
+
+  useEffect(() => {
+    if (!open || !ev) return;
+    const cf = mergeContractBaseWithDraft(ev);
+    setFields({
+      clientNume: cf.clientNume || ev.cn || "",
+      cnp: cf.cnp || "",
+      ciSeria: cf.ciSeria || "",
+      ciNr: cf.ciNr || "",
+      jud: cf.jud || "",
+      mun: cf.mun || "",
+      str: cf.str || "",
+      nr2: cf.nr2 || "",
+      ap: cf.ap || "",
+    });
+    setImg(null);
+  }, [open, ev?.id]);
+
+  if (!open || !ev) return null;
+
+  const applyDraft = () => {
+    const draft = {};
+    Object.entries(fields).forEach(([k, v]) => {
+      const t = String(v || "").trim();
+      if (t) draft[k] = t;
+    });
+    const cn = fields.clientNume?.trim() || ev.cn || "";
+    onApplyPatch(
+      {
+        contractDraftFields: { ...(ev.contractDraftFields && typeof ev.contractDraftFields === "object" ? ev.contractDraftFields : {}), ...draft },
+        ...(cn ? { cn } : {}),
+      },
+      ev.id
+    );
+    showToast?.("Date salvate pe eveniment (contract / factură). Verifică în Ofertă și emite factura.");
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: th.ov, zIndex: 12050, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }} onClick={onClose}>
+      <div style={{ background: th.c, borderRadius: 14, border: `1px solid ${th.b}`, width: mob ? "100%" : 440, maxHeight: "90vh", overflow: "auto", boxShadow: "0 16px 48px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${th.b}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>🪪 Buletin → contract & factură</div>
+          <button type="button" onClick={onClose} style={{ border: "none", background: "transparent", color: th.tm, cursor: "pointer", fontSize: 18 }}>×</button>
+        </div>
+        <div style={{ padding: 16, fontSize: 11, color: th.tm, lineHeight: 1.5 }}>
+          Încarcă o poză clară cu CI-ul (WhatsApp etc.). Imaginea e trimisă la <strong>OpenAI</strong> pentru citire — ai nevoie de cheie în setările AI. Verifică totul înainte de salvare.
+        </div>
+        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <input
+            type="file"
+            accept="image/*"
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const r = new FileReader();
+              r.onload = () => setImg(r.result);
+              r.readAsDataURL(f);
+              e.target.value = "";
+            }}
+            style={{ fontSize: 12 }}
+          />
+          {img && <img src={img} alt="" style={{ maxWidth: "100%", maxHeight: 160, objectFit: "contain", borderRadius: 8, border: `1px solid ${th.b}` }} />}
+          <button
+            type="button"
+            disabled={busy || !img}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const raw = await extractRomanianIdCardFieldsOpenAI(img, aiSettings?.openai);
+                const d = idCardAiResultToContractDraft(raw);
+                setFields((prev) => ({ ...prev, ...d, clientNume: d.clientNume || prev.clientNume, cnp: d.cnp || prev.cnp, ciSeria: d.ciSeria || prev.ciSeria, ciNr: d.ciNr || prev.ciNr, jud: d.jud || prev.jud, mun: d.mun || prev.mun, str: d.str || prev.str, nr2: d.nr2 || prev.nr2, ap: d.ap || prev.ap }));
+                showToast?.("Text extras — verifică câmpurile înainte de a salva.");
+              } catch (err) {
+                showToast?.(String(err?.message || err), "error");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            style={{ ...sty.b, padding: "10px 14px", opacity: busy || !img ? 0.6 : 1 }}
+          >
+            {busy ? "Se analizează…" : "Extrage cu AI din poză"}
+          </button>
+          {["clientNume", "cnp", "ciSeria", "ciNr", "jud", "mun", "str", "nr2", "ap"].map((k) => (
+            <div key={k}>
+              <label style={{ ...sty.l, fontSize: 10 }}>{k === "clientNume" ? "Nume complet" : k === "ciSeria" ? "Serie CI" : k === "ciNr" ? "Nr. CI" : k}</label>
+              <input value={fields[k] || ""} onChange={(e) => setFields((p) => ({ ...p, [k]: e.target.value }))} style={sty.i} autoComplete="off" />
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button type="button" onClick={applyDraft} style={{ ...sty.b, flex: 1, minWidth: 140 }}>
+              Salvează pe eveniment
+            </button>
+            <button type="button" onClick={onClose} style={{ ...sty.bg, flex: 1, minWidth: 100 }}>
+              Anulează
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ContractView({ ev, th, contractFields, onContractChange, contractModel, readOnly }) {
@@ -3854,7 +4172,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   }, [ev.contractSnapshot?.savedAt, templates, contractTplKey]);
   const [contractFields, setContractFields] = useState(() =>
     normalizeFirmaContractFields(
-      ev.contractSnapshot?.fields ? { ...ev.contractSnapshot.fields } : makeDefaultContractFields(ev),
+      ev.contractSnapshot?.fields ? { ...ev.contractSnapshot.fields } : mergeContractBaseWithDraft(ev),
       ev
     )
   );
@@ -3862,13 +4180,13 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   useEffect(() => { pastContractSnapRef.current = false; }, [ev.id]);
   useEffect(() => {
     if (ev.contractSnapshot?.fields) setContractFields(normalizeFirmaContractFields({ ...ev.contractSnapshot.fields }, ev));
-    else setContractFields(makeDefaultContractFields(ev));
+    else setContractFields(normalizeFirmaContractFields(mergeContractBaseWithDraft(ev), ev));
   }, [ev.id, ev.contractSnapshot?.savedAt]);
   useEffect(() => {
     if (ev.contractSnapshot) return;
     if (!contractBeneficiaryIsFirma(ev)) return;
     setContractFields((prev) => {
-      const d = makeDefaultContractFields(ev);
+      const d = mergeContractBaseWithDraft(ev);
       const next = { ...prev };
       for (const k of ["benFirma", "benSediu", "benOnrcNr", "benCui", "benIban", "benBanca", "benRepreNum", "benRepreCal"]) {
         if (next[k] == null) next[k] = d[k] ?? "";
@@ -3879,7 +4197,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   }, [ev.contractBen, ev.cat, ev.id]);
   useEffect(() => {
     if (ev.contractSnapshot) return;
-    const d = makeDefaultContractFields(ev);
+    const d = mergeContractBaseWithDraft(ev);
     setContractFields((prev) => ({
       ...prev,
       valoare: d.valoare,
@@ -3903,7 +4221,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   useEffect(() => {
     if (ev.contractSnapshot || !isEventPastForContract(ev) || pastContractSnapRef.current) return;
     pastContractSnapRef.current = true;
-    syncOffer({ contractSnapshot: buildContractSnapshot(ev, templates, makeDefaultContractFields(ev)) });
+    syncOffer({ contractSnapshot: buildContractSnapshot(ev, templates, mergeContractBaseWithDraft(ev)) });
   }, [ev.id, ev.date, ev.contractSnapshot, templates, contractTplKey]);
   const publicPrestatieLine = () => {
     const t = (ev.durataRecital || "").trim();
@@ -5528,7 +5846,7 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
 
 // FEATURES — Event form, offer preview, contract, location search
 // ═══════════════════════════════════════════════════════════════════════════════
-function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templates, showToast }) {
+function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templates, showToast, onRequestIdCardScan }) {
   const cerereStart = !!mData?.cerereStart;
   const tplCovers = (templates?.playlist&&templates.playlist.length>0) ? templates.playlist : DEFAULT_COVERS;
   const tplVideos = (templates?.videos&&templates.videos.length>0) ? templates.videos : DEFAULT_VIDEOS;
@@ -5613,6 +5931,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
       camere: 0, meniuri: 6, micDejun: false, pranz: false, extra: [], protocolOverride: "",
     },
     includeTehnicAnnex: mData?.includeTehnicAnnex||false,
+    contractDraftFields: mData?.contractDraftFields && typeof mData.contractDraftFields === "object" ? { ...mData.contractDraftFields } : {},
     tehnic: mData?.tehnic||[
       {id:"t1",l:"Sistem de sunet profesional dimensionat corespunzător spațiului",checked:true},
       {id:"t2",l:"Inginer de sistem (sound engineer) la FOH",checked:true},
@@ -5956,6 +6275,10 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
                   <button type="button" onClick={()=>u("contractBen","firma")} style={{flex:1,minWidth:140,padding:"10px 12px",borderRadius:8,border:`2px solid ${fm.contractBen==="firma"?th.t:th.b}`,background:fm.contractBen==="firma"?th.ab:"transparent",cursor:"pointer",fontSize:12,fontWeight:600,color:th.t}}>Firmă</button>
                 </div>
                 <div style={{fontSize:10,color:th.tm,lineHeight:1.45}}>La <strong style={{color:th.t}}>Firmă</strong>: același bloc ca la ofertele <strong>publice</strong> (societate, sediu, ONRC, CUI, cont, bancă, reprezentant). La <strong>Persoană fizică</strong>: domiciliu, CI, etc.</div>
+                {fm.contractBen!=="firma"&&isE&&typeof onRequestIdCardScan==="function"&&<div style={{marginTop:10}}>
+                  <button type="button" onClick={onRequestIdCardScan} style={{...sty.bg,width:"100%",padding:"10px 12px",fontSize:12}}>🪪 Completează din poză buletin (AI)</button>
+                  <div style={{fontSize:10,color:th.tm,marginTop:4,lineHeight:1.4}}>Extrage nume, CNP, serie/nr. CI, adresă — se salvează în câmpurile contractului și la facturare (după verificare).</div>
+                </div>}
               </div>}
               {!isP&&<div style={{gridColumn:"1/-1",padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`,fontSize:11,color:th.tm,lineHeight:1.45}}>Eveniment <strong style={{color:th.t}}>public</strong>: în contract, beneficiarul este mereu în format <strong>firmă</strong> (societate, sediu, ONRC…).</div>}
               <div style={{gridColumn:"1/-1"}}><label style={sty.l}>Nume client</label><input value={fm.cn} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Numele clientului"/></div>
@@ -6425,7 +6748,7 @@ function buildAIContext(evs, tasks) {
 
 function SettingsAI(props) {
   var th=props.th,apiKeys=props.apiKeys,onSave=props.onSave,onClose=props.onClose;
-  var _k=useState({llamaWorker:apiKeys.llamaWorker||"",offerHtmlProxy:apiKeys.offerHtmlProxy||""}); var keys=_k[0],setKeys=_k[1];
+  var _k=useState({llamaWorker:apiKeys.llamaWorker||"",offerHtmlProxy:apiKeys.offerHtmlProxy||"",openai:apiKeys.openai||""}); var keys=_k[0],setKeys=_k[1];
   return React.createElement("div",{style:{background:th.c,border:"1px solid "+th.b,borderRadius:14,width:380,padding:24,maxWidth:"92vw"},onClick:function(e){e.stopPropagation();}},
     React.createElement("h3",{style:{fontSize:15,fontWeight:700,marginBottom:4}},"⚙️ Setări AI și linkuri clienți"),
     React.createElement("div",{style:{fontSize:11,color:"#f59e0b",fontWeight:600,marginBottom:18}},"🦙 Llama 3.1 8B · Cloudflare AI Workers · Gratuit"),
@@ -6437,6 +6760,11 @@ function SettingsAI(props) {
       React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"Adresa paginilor publice (ofertă, fișă)"),
       React.createElement("div",{style:{fontSize:10,color:th.tm,marginBottom:6,lineHeight:1.45}},"Implicit din cod: domeniu Phaser (ex. offer.phaser.ro). Lasă gol aici ca să folosești implicitul. Alt URL doar dacă știi ce faci. Se salvează în cloud."),
       React.createElement("input",{type:"text",value:keys.offerHtmlProxy,onChange:function(e){setKeys(function(k){return Object.assign({},k,{offerHtmlProxy:e.target.value});});},placeholder:"Lasă gol = link direct Supabase",title:FISA_PUBLIC_BASE_HINT,style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid "+th.b,background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box",fontFamily:"ui-monospace,monospace"}})
+    ),
+    React.createElement("div",{style:{marginBottom:18}},
+      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"OpenAI API key (opțional — citire buletin / vision)"),
+      React.createElement("div",{style:{fontSize:10,color:th.tm,marginBottom:6,lineHeight:1.45}},"Se salvează în profil (cloud). Folosit doar din browser pentru extragere CI — nu pentru chat Llama."),
+      React.createElement("input",{type:"password",value:keys.openai,onChange:function(e){setKeys(function(k){return Object.assign({},k,{openai:e.target.value});});},placeholder:"sk-...",autoComplete:"off",style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid rgba(34,197,94,.35)",background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box",fontFamily:"ui-monospace,monospace"}})
     ),
     React.createElement("div",{style:{display:"flex",gap:8}},
       React.createElement("button",{onClick:function(){onSave(keys);},style:{flex:1,padding:10,borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,cursor:"pointer",fontSize:13}},"Salvează"),
@@ -7099,6 +7427,8 @@ function App() {
     setCalNewOccTent(false);
   }, [calSidebarDate]);
   const [globalSearch, setGlobalSearch] = useState("");
+  const [factureazaInvoiceBusy, setFactureazaInvoiceBusy] = useState(false);
+  const [idCardScanEvId, setIdCardScanEvId] = useState(null);
   const [sectTab, setSectTab] = useState("playlist");
   const docsSectTab = sectTab==="poveste" ? "playlist" : sectTab;
   const [contractDocKind, setContractDocKind] = useState(CONTRACT_MODEL_KEYS.privatePf);
@@ -9365,9 +9695,9 @@ function App() {
               <p style={{color:th.tm,fontSize:12,marginTop:2}}>Contract (privat PF / privat firmă / public), rider, playlist și press kit — template-uri editabile. Ofertele noi folosesc modelul potrivit tipului evenimentului și beneficiarului; contractul îngheță după trimitere sau pentru evenimente trecute.</p>
             </div>
             <div className={mob?"mob-tab-scroll":""} style={{display:"flex",gap:6,marginBottom:16,flexWrap:mob?"nowrap":"wrap",overflowX:mob?"auto":"visible",paddingBottom:mob?4:0}}>
-              {["contract","rider","servicePrices","playlist","media","pressKitPublic"].map(s=>(
+              {["contract","rider","servicePrices","factureaza","playlist","media","pressKitPublic"].map(s=>(
                 <button key={s} onClick={()=>setSectTab(s)} style={{padding:"6px 14px",borderRadius:7,border:docsSectTab===s?"none":`1px solid ${th.b}`,fontSize:12,fontWeight:docsSectTab===s?700:400,cursor:"pointer",background:docsSectTab===s?th.ab:"transparent",color:docsSectTab===s?th.t:th.tm,flexShrink:0,whiteSpace:"nowrap"}}>
-                  {{contract:"📜 Contract",rider:"Rider",servicePrices:"💰 Tarifare & split",playlist:"🎵 Playlist",media:"🎬 Media",pressKitPublic:"Press Kit"}[s]}
+                  {{contract:"📜 Contract",rider:"Rider",servicePrices:"💰 Tarifare & split",factureaza:"🧾 Facturează.ro",playlist:"🎵 Playlist",media:"🎬 Media",pressKitPublic:"Press Kit"}[s]}
                 </button>
               ))}
             </div>
@@ -9623,6 +9953,51 @@ function App() {
                   showToast(`Setări salvate. Actualizate ${touched} evenimente neîncasate integral.`);
                 }} style={{...sty.bg,marginTop:16}}>Salvează setări</button>
               </div>}
+              {docsSectTab==="factureaza"&&(()=>{
+                const fz = normFactureaza(templates.factureaza);
+                const patch = (partial)=>saveTemplates((tpl)=>({...tpl,factureaza:{...normFactureaza(tpl.factureaza),...partial}}));
+                return <div>
+                  <label style={sty.l}>Integrare factureaza.ro (API REST v1)</label>
+                  <p style={{fontSize:11,color:th.tm,marginBottom:12,lineHeight:1.5}}>
+                    Facturile se creează prin <strong>Supabase Edge Function</strong> <code style={{fontSize:10}}>factureaza-api</code> — cheia API nu stă în browser, ci în secretul <code style={{fontSize:10}}>FACTUREAZA_API_KEY</code> (Contul meu → Cheie API pe factureaza.ro). După deploy: <code style={{fontSize:10}}>supabase secrets set FACTUREAZA_API_KEY=…</code> și <code style={{fontSize:10}}>supabase functions deploy factureaza-api</code>.
+                    Documentație API: <a href="https://factureaza.ro/documentatie-api-v1" target="_blank" rel="noreferrer" style={{color:th.a}}>factureaza.ro/documentatie-api-v1</a>.
+                  </p>
+                  <div style={{padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,marginBottom:12}}>
+                    <label style={{...sty.l,fontSize:10}}><input type="checkbox" checked={fz.useSandbox} onChange={e=>patch({useSandbox:e.target.checked})}/> Sandbox (sandbox.factureaza.ro)</label>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+                    <div>
+                      <label style={{...sty.l,fontSize:10}}>ID serie facturi (numeric, din backend factureaza — nu prefixul text)</label>
+                      <input value={fz.documentSeriesId} onChange={e=>patch({documentSeriesId:e.target.value})} placeholder="ex: 1061105361" style={sty.i}/>
+                    </div>
+                    <div>
+                      <label style={{...sty.l,fontSize:10}}>Număr în serie (document_series_counter)</label>
+                      <input value={fz.documentSeriesCounter} onChange={e=>patch({documentSeriesCounter:e.target.value})} placeholder="Următorul număr liber din serie" style={sty.i}/>
+                    </div>
+                    <div>
+                      <label style={{...sty.l,fontSize:10}}>currency_id — RON</label>
+                      <input value={fz.currencyIdRon} onChange={e=>patch({currencyIdRon:e.target.value})} style={sty.i}/>
+                    </div>
+                    <div>
+                      <label style={{...sty.l,fontSize:10}}>currency_id — EUR (sau altă monedă afișată)</label>
+                      <input value={fz.currencyIdEur} onChange={e=>patch({currencyIdEur:e.target.value})} style={sty.i}/>
+                    </div>
+                    <div>
+                      <label style={{...sty.l,fontSize:10}}>vat_type (ex: 2 = TVA normal — vezi doc API)</label>
+                      <input type="number" value={fz.vatType} onChange={e=>patch({vatType:Number(e.target.value)||2})} style={sty.i}/>
+                    </div>
+                    <div>
+                      <label style={{...sty.l,fontSize:10}}>TVA % pe poziție (preț introdus = total cu TVA → se calculează fără TVA)</label>
+                      <input type="number" value={fz.vatPercent} onChange={e=>patch({vatPercent:Number(e.target.value)||21})} style={sty.i}/>
+                    </div>
+                    <div style={{gridColumn:mob?"auto":"1 / -1"}}>
+                      <label style={{...sty.l,fontSize:10}}>Text linie factură (prefix)</label>
+                      <input value={fz.invoiceLineLabel} onChange={e=>patch({invoiceLineLabel:e.target.value})} style={sty.i}/>
+                    </div>
+                  </div>
+                  <p style={{fontSize:10,color:th.tm,lineHeight:1.45}}>După fiecare factură emisă crește manual numărul din serie (sau numerotează din factureaza dacă folosești acolo următorul număr). Clientul: firmă = date din contract (CUI căutat în factureaza); persoană fizică = nume + CNP dacă e completat.</p>
+                </div>;
+              })()}
               {docsSectTab==="playlist"&&(()=>{
                 const pl = (templates.playlist&&templates.playlist.length>0)?templates.playlist:DEFAULT_COVERS;
                 const downloadPlaylistPdf = async () => {
@@ -11162,7 +11537,7 @@ function App() {
       {/* EVENT FORM */}
       {modal==="form"&&(()=>{
         const isE=!!mData?.id; const isP=mData?.cat==="private"||!mData?.cat;
-        return <EventForm th={th} sty={sty} isE={isE} isP={isP} mData={mData} user={user} onSave={saveEv} onClose={closeModal} mob={mob} templates={templates} showToast={showToast}/>;
+        return <EventForm th={th} sty={sty} isE={isE} isP={isP} mData={mData} user={user} onSave={saveEv} onClose={closeModal} mob={mob} templates={templates} showToast={showToast} onRequestIdCardScan={mData?.id?()=>setIdCardScanEvId(mData.id):undefined}/>;
       })()}
 
       {/* EVENT DETAIL — Fișa apare DOAR când e confirmat */}
@@ -11809,6 +12184,72 @@ function App() {
                 </div>
               </div>
 
+              {/* Factură factureaza.ro — cheia API pe server (Edge Function) */}
+              <div style={{padding:"12px 14px",borderRadius:8,border:`1px solid ${th.b}`,background:th.h}}>
+                <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Factură factureaza.ro</div>
+                {isPrivate && !contractBeneficiaryIsFirma(ev) && <button type="button" onClick={()=>setIdCardScanEvId(ev.id)} style={{...sty.bg,width:"100%",marginBottom:10,padding:"9px 12px",fontSize:12}}>🪪 Date client din buletin (AI) → contract & factură</button>}
+                <p style={{fontSize:10,color:th.tm,lineHeight:1.45,marginBottom:10}}>Creează o factură în contul factureaza cu totalul <strong>{fv(total)}</strong> (brut fișă) și o poziție: preț fără TVA derivat din total cu TVA (setări TVA în Docs → Facturează).</p>
+                {ev.factureazaInvoiceId&&<div style={{fontSize:11,marginBottom:10,lineHeight:1.5}}>
+                  Ultima factură: ID <strong style={{color:th.t}}>{ev.factureazaInvoiceId}</strong>
+                  {ev.factureazaInvoiceUrl&&<><br/><a href={ev.factureazaInvoiceUrl} target="_blank" rel="noreferrer" style={{color:th.a,fontWeight:600}}>Deschide link / PDF</a></>}
+                </div>}
+                <button type="button" disabled={factureazaInvoiceBusy} onClick={async()=>{
+                  const cfg = normFactureaza(templates?.factureaza);
+                  const sid = Number(String(cfg.documentSeriesId).trim()) || 0;
+                  let ctr = Number(String(cfg.documentSeriesCounter).trim()) || 0;
+                  if (!sid || !ctr) { showToast("Completează în Docs → Facturează: ID serie și număr (din backend factureaza).", "error"); return; }
+                  const sb = typeof getSbClient==="function"?getSbClient():null;
+                  if (!sb) { showToast("Lipsește conexiunea Supabase.", "error"); return; }
+                  const { data: { session } } = await sb.auth.getSession();
+                  if (!session?.access_token) { showToast("Autentifică-te pentru a emite factura.", "error"); return; }
+                  const currencyId = Number(String(ev.valuta==="lei"?cfg.currencyIdRon:cfg.currencyIdEur).trim()) || 0;
+                  if (!currencyId) { showToast("Setează currency_id (RON/EUR) în Docs → Facturează.", "error"); return; }
+                  const clientPayload = getFactureazaClientPayload(ev);
+                  if (!clientPayload.name) { showToast("Lipsește numele clientului (contract / ofertă).", "error"); return; }
+                  const vat = cfg.vatPercent;
+                  const priceHt = factureazaPriceHtFromTtc(total, vat);
+                  const desc = `${cfg.invoiceLineLabel} · ${ev.type||"Eveniment"} · O${ev.offerNr||"?"} · ${fEvDate(ev)}`;
+                  const reqBody = {
+                    sandbox: !!cfg.useSandbox,
+                    documentSeriesId: sid,
+                    documentSeriesCounter: ctr,
+                    currencyId,
+                    vatType: cfg.vatType,
+                    documentDate: factureazaDocumentDate(ev),
+                    client: { ...clientPayload, country_id: cfg.countryId },
+                    lines: [{ description: desc, unit: "buc", unit_count: 1, price: priceHt, vat }],
+                    upperAnnotation: `Phaser Manager · eveniment ${ev.id}`,
+                  };
+                  setFactureazaInvoiceBusy(true);
+                  try {
+                    const baseFn = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
+                    const r = await fetch(`${baseFn}/factureaza-api`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key },
+                      body: JSON.stringify(reqBody),
+                    });
+                    const j = await r.json().catch(()=>({}));
+                    if (!r.ok) {
+                      const errList = Array.isArray(j.errors)?j.errors.filter(Boolean):[];
+                      const msg = errList.length?errList.join("; "):(j.message||j.error||`HTTP ${r.status}`);
+                      showToast("factureaza.ro: "+msg, "error", 9000);
+                      if (j.detail) console.error("factureaza-api detail", j.detail);
+                      return;
+                    }
+                    const urlOut = j.previewUrl || j.pdfUrl || "";
+                    upd({ factureazaInvoiceId: j.invoiceId, factureazaInvoiceAt: Date.now(), factureazaInvoiceUrl: urlOut });
+                    saveTemplates((tpl)=>({...tpl,factureaza:{...normFactureaza(tpl.factureaza),documentSeriesCounter:String(ctr+1)}}));
+                    showToast(j.invoiceId?`Factură creată în factureaza (id ${j.invoiceId}).`:"Factură creată.", "success");
+                  } catch (e) {
+                    showToast("Eroare: "+(e?.message||e), "error");
+                  } finally {
+                    setFactureazaInvoiceBusy(false);
+                  }
+                }} style={{...sty.b,padding:"10px 14px",fontSize:12,opacity:factureazaInvoiceBusy?0.65:1}}>
+                  {factureazaInvoiceBusy?"Se trimite…":"Creează factură în factureaza.ro"}
+                </button>
+              </div>
+
               {/* Calcul distribuție */}
               <div>
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Distribuție</div>
@@ -12005,6 +12446,20 @@ function App() {
       />})()}
 
       {tourStep!==null&&<TourOverlay steps={TOUR_STEPS} step={tourStep} setStep={setTourStep} setTab={setTab}/>}
+      <IdCardScanModal
+        open={idCardScanEvId!=null}
+        onClose={()=>setIdCardScanEvId(null)}
+        th={th}
+        sty={sty}
+        mob={mob}
+        ev={idCardScanEvId!=null?(evs.find(e=>String(e.id)===String(idCardScanEvId))||null):null}
+        aiSettings={aiSettings}
+        showToast={showToast}
+        onApplyPatch={(patch,evId)=>{
+          if(evId==null)return;
+          setEvs((p)=>p.map((e)=>String(e.id)!==String(evId)?e:{...e,...patch}));
+        }}
+      />
       <AIChatWidget open={aiChatOpen} onOpenChange={setAiChatOpen} th={th} evs={evs} tasks={tasks} mob={mob} aiSettings={aiSettings} setAiSettings={setAiSettings}/>
       <Toast message={toast.message} visible={toast.visible} variant={toast.variant}/>
     </div>
