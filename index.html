@@ -8735,12 +8735,94 @@ function App() {
               {docsSectTab==="servicePrices"&&<div>
                 <label style={sty.l}>Tarifare, split și bonusuri — valori implicite</label>
                 <p style={{fontSize:11,color:th.tm,marginBottom:14}}>Valorile de aici se aplică implicit la evenimente noi și pot fi ajustate separat pe fiecare eveniment în tab-ul „membri”.</p>
-                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
-                  {[{k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},{k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},{k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},{k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},{k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},{k:"tehnicPerService",l:"Tehnic nr.2 automat / pers. (€)",def:120},{k:"tehnicExtraPerService",l:"Supliment tehnic podium·lumini·LED (€/serv./pers.)",def:40},{k:"splitM1",l:"Split Carina (%)",def:24},{k:"splitM2",l:"Split membru 2 (%)",def:19},{k:"splitM3",l:"Split membru 3 (%)",def:19},{k:"splitM4",l:"Split membru 4 (%)",def:19},{k:"splitM5",l:"Split membru 5 (%)",def:19},{k:"bonusLeadPrivatePct",l:"Bonus lead privat (%)",def:2},{k:"bonusLeadPublicPct",l:"Bonus lead public (%)",def:1},{k:"bonusAdminPct",l:"Bonus administrator (%)",def:2},{k:"bonusSocialPct",l:"Bonus social media (%)",def:2},{k:"bonusStagePct",l:"Bonus stage manager (%)",def:2},{k:"fixedCostTechnician",l:"Cheltuială logistică tehnician (lei)",def:600},{k:"fixedCostEquipment",l:"Cheltuială logistică scule (lei)",def:1000},{k:"fixedCostSoundman",l:"Cheltuială logistică sunetist (lei)",def:400},{k:"fixedCostTransport",l:"Cheltuială logistică transport (lei)",def:100}].map(({k,l,def})=>(
-                    <div key={k}><label style={{...sty.l,fontSize:10}}>{l}</label><input type="number" value={(templates.servicePrices||{})[k]??def} onChange={e=>{const v=e.target.value;saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));}} style={sty.i} placeholder={String(def)}/></div>
-                  ))}
+                {(()=>{
+                  const sp = templates.servicePrices || {};
+                  const setSp = (k, def, raw) => {
+                    const v = raw;
+                    saveTemplates(tpl=>({...tpl,servicePrices:{...tpl.servicePrices,[k]:v===""?def:(Number(v)||def)}}));
+                  };
+                  const svcFields = [
+                    {k:"sunet",l:"Sistem sunet (client €)",def:350},{k:"sunetCost",l:"Sistem sunet (cost furnizor €)",def:150},
+                    {k:"lumini",l:"Sistem lumini (client €)",def:500},{k:"luminiCost",l:"Sistem lumini (cost furnizor €)",def:520},
+                    {k:"ecran",l:"Ecran LED (client €)",def:600},{k:"ecranCost",l:"Ecran LED (cost furnizor €)",def:560},
+                    {k:"scena",l:"Scenă/Podium (client €)",def:300},{k:"scenaCost",l:"Scenă/Podium (cost furnizor €)",def:260},
+                    {k:"dj",l:"DJ (client €)",def:600},{k:"djCost",l:"DJ (cost furnizor €)",def:0},
+                    {k:"tehnicPerService",l:"Tehnic nr.2 automat / pers. (€)",def:120},{k:"tehnicExtraPerService",l:"Supliment tehnic podium·lumini·LED (€/serv./pers.)",def:40},
+                  ];
+                  const splitFields = MEMBERS.map(m=>({k:`split${String(m.id||"").replace(/^m/i,"M")}`,l:`Split ${m.short||m.n} (%)`,def:Number(DEFAULT_SERVICE_PRICES[`split${String(m.id||"").replace(/^m/i,"M")}`] ?? 0) || 0}));
+                  const bonusFields = [
+                    {k:"bonusLeadPrivatePct",l:"Bonus lead privat (%)",def:2},
+                    {k:"bonusLeadPublicPct",l:"Bonus lead public (%)",def:1},
+                    {k:"bonusAdminPct",l:"Bonus administrator (%)",def:2},
+                    {k:"bonusSocialPct",l:"Bonus social media (%)",def:2},
+                    {k:"bonusStagePct",l:"Bonus stage manager (%)",def:2},
+                  ];
+                  const fixedFields = [
+                    {k:"fixedCostTechnician",l:"Cheltuială logistică tehnician (lei)",def:600},
+                    {k:"fixedCostEquipment",l:"Cheltuială logistică scule (lei)",def:1000},
+                    {k:"fixedCostSoundman",l:"Cheltuială logistică sunetist (lei)",def:400},
+                    {k:"fixedCostTransport",l:"Cheltuială logistică transport (lei)",def:100},
+                  ];
+                  const Section = ({title, help, fields}) => <div style={{padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,marginBottom:12}}>
+                    <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:4}}>{title}</div>
+                    {help&&<div style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.45}}>{help}</div>}
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10}}>
+                      {fields.map(({k,l,def})=><div key={k}>
+                        <label style={{...sty.l,fontSize:10}}>{l}</label>
+                        <input type="number" value={sp[k]??def} onChange={e=>setSp(k,def,e.target.value)} style={sty.i} placeholder={String(def)}/>
+                      </div>)}
+                    </div>
+                  </div>;
+                  return <div>
+                    <Section title="1) Servicii extra (preț client + cost furnizor)" fields={svcFields}/>
+                    <Section title="2) Split pe membri (evenimente private)" help="Procentele trebuie să însumeze 100%." fields={splitFields}/>
+                    <Section title="3) Bonusuri pe rol" fields={bonusFields}/>
+                    <Section title="4) Cheltuieli fixe logistică" help="Aceste valori pornesc implicit pe evenimente noi (pot fi modificate pe eveniment)." fields={fixedFields}/>
+                  </div>;
+                })()}
                 </div>
-                <button onClick={()=>{saveTemplates(tpl=>({...tpl,servicePrices:{...DEFAULT_SERVICE_PRICES,...templates.servicePrices}}));showToast("Setări financiare salvate — se aplică la oferte noi");}} style={{...sty.bg,marginTop:16}}>Salvează setări</button>
+                <button onClick={()=>{
+                  const mergedSp = {...DEFAULT_SERVICE_PRICES,...templates.servicePrices};
+                  saveTemplates(tpl=>({...tpl,servicePrices:mergedSp}));
+                  let touched = 0;
+                  setEvs(prev=>prev.map(e=>{
+                    const fullyPaid = !!e.dp && !!e.restPaid;
+                    if (fullyPaid) return e;
+                    touched += 1;
+                    return {
+                      ...e,
+                      svcp: {
+                        ...(e.svcp||{}),
+                        sunet: Number(mergedSp.sunet ?? DEFAULT_SERVICE_PRICES.sunet) || DEFAULT_SERVICE_PRICES.sunet,
+                        lumini: Number(mergedSp.lumini ?? DEFAULT_SERVICE_PRICES.lumini) || DEFAULT_SERVICE_PRICES.lumini,
+                        ecran: Number(mergedSp.ecran ?? DEFAULT_SERVICE_PRICES.ecran) || DEFAULT_SERVICE_PRICES.ecran,
+                        scena: Number(mergedSp.scena ?? DEFAULT_SERVICE_PRICES.scena) || DEFAULT_SERVICE_PRICES.scena,
+                        dj: Number(mergedSp.dj ?? DEFAULT_SERVICE_PRICES.dj) || DEFAULT_SERVICE_PRICES.dj,
+                      },
+                      splitPct: {
+                        m1: Number(mergedSp.splitM1 ?? DEFAULT_SERVICE_PRICES.splitM1) || DEFAULT_SERVICE_PRICES.splitM1,
+                        m2: Number(mergedSp.splitM2 ?? DEFAULT_SERVICE_PRICES.splitM2) || DEFAULT_SERVICE_PRICES.splitM2,
+                        m3: Number(mergedSp.splitM3 ?? DEFAULT_SERVICE_PRICES.splitM3) || DEFAULT_SERVICE_PRICES.splitM3,
+                        m4: Number(mergedSp.splitM4 ?? DEFAULT_SERVICE_PRICES.splitM4) || DEFAULT_SERVICE_PRICES.splitM4,
+                        m5: Number(mergedSp.splitM5 ?? DEFAULT_SERVICE_PRICES.splitM5) || DEFAULT_SERVICE_PRICES.splitM5,
+                      },
+                      bonusPct: {
+                        leadPrivate: Number(mergedSp.bonusLeadPrivatePct ?? DEFAULT_SERVICE_PRICES.bonusLeadPrivatePct) || DEFAULT_SERVICE_PRICES.bonusLeadPrivatePct,
+                        leadPublic: Number(mergedSp.bonusLeadPublicPct ?? DEFAULT_SERVICE_PRICES.bonusLeadPublicPct) || DEFAULT_SERVICE_PRICES.bonusLeadPublicPct,
+                        admin: Number(mergedSp.bonusAdminPct ?? DEFAULT_SERVICE_PRICES.bonusAdminPct) || DEFAULT_SERVICE_PRICES.bonusAdminPct,
+                        social: Number(mergedSp.bonusSocialPct ?? DEFAULT_SERVICE_PRICES.bonusSocialPct) || DEFAULT_SERVICE_PRICES.bonusSocialPct,
+                        stage: Number(mergedSp.bonusStagePct ?? DEFAULT_SERVICE_PRICES.bonusStagePct) || DEFAULT_SERVICE_PRICES.bonusStagePct,
+                      },
+                      fixedCosts: {
+                        technician: Number(mergedSp.fixedCostTechnician ?? DEFAULT_SERVICE_PRICES.fixedCostTechnician) || DEFAULT_SERVICE_PRICES.fixedCostTechnician,
+                        equipment: Number(mergedSp.fixedCostEquipment ?? DEFAULT_SERVICE_PRICES.fixedCostEquipment) || DEFAULT_SERVICE_PRICES.fixedCostEquipment,
+                        soundman: Number(mergedSp.fixedCostSoundman ?? DEFAULT_SERVICE_PRICES.fixedCostSoundman) || DEFAULT_SERVICE_PRICES.fixedCostSoundman,
+                        transport: Number(mergedSp.fixedCostTransport ?? DEFAULT_SERVICE_PRICES.fixedCostTransport) || DEFAULT_SERVICE_PRICES.fixedCostTransport,
+                      },
+                    };
+                  }));
+                  showToast(`Setări salvate. Actualizate ${touched} evenimente neîncasate integral.`);
+                }} style={{...sty.bg,marginTop:16}}>Salvează setări</button>
               </div>}
               {docsSectTab==="playlist"&&(()=>{
                 const pl = (templates.playlist&&templates.playlist.length>0)?templates.playlist:DEFAULT_COVERS;
