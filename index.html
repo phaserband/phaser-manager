@@ -8434,29 +8434,47 @@ function App() {
                   return { ...tpl, [cmKey]: { ...base, caps612: caps } };
                 });
                 return <div>
-                  <p style={{fontSize:11,color:th.tm,marginBottom:12,lineHeight:1.5}}>Modele <strong>Privat</strong> / <strong>Public</strong> — folosite la oferte <strong>noi</strong> și cât timp evenimentul nu e înghețat. La <strong>Link public</strong> pe contract sau pentru evenimente <strong>trecute</strong>, textul rămâne cel salvat atunci.</p>
+                  <p style={{fontSize:11,color:th.tm,marginBottom:12,lineHeight:1.5}}>Aici sunt <strong>două modele salvate</strong>: <strong>Privat</strong> (eveniment privat) și <strong>Public</strong> (eveniment public). Nu există al treilea model doar pentru „firmă” — alegerea <strong>Persoană fizică / Firmă</strong> la beneficiar se face în <strong>formularul evenimentului → Client</strong> (doar la privat). Modelele se folosesc la oferte <strong>noi</strong> până la înghețare (link public contract / eveniment trecut).</p>
                   <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
                     <button type="button" onClick={()=>setContractDocKind("private")} style={{padding:"8px 16px",borderRadius:8,border:`2px solid ${contractDocKind==="private"?th.a:th.b}`,background:contractDocKind==="private"?th.ab:"transparent",fontWeight:600,cursor:"pointer",fontSize:12}}>Privat</button>
                     <button type="button" onClick={()=>setContractDocKind("public")} style={{padding:"8px 16px",borderRadius:8,border:`2px solid ${contractDocKind==="public"?th.a:th.b}`,background:contractDocKind==="public"?th.ab:"transparent",fontWeight:600,cursor:"pointer",fontSize:12}}>Public</button>
                     <span style={{fontSize:11,color:th.tm,alignSelf:"center"}}>Versiune model: <strong>v{cm.v ?? 1}</strong> ({isPr ? "privat" : "public"})</span>
                   </div>
+                  {isPr && <div style={{padding:"12px 14px",borderRadius:10,marginBottom:16,background:th.h,border:`1px solid ${th.b}`,fontSize:11,color:th.ts,lineHeight:1.55}}>
+                    <div style={{fontWeight:700,color:th.t,marginBottom:6,fontSize:12}}>Cum apare beneficiarul la eveniment <strong>privat</strong></div>
+                    <ul style={{margin:0,paddingLeft:18}}>
+                      <li><strong>Persoană fizică</strong> (din formular): în contract se folosesc etichetele din secțiunea de mai jos + <strong>GDPR</strong> la final.</li>
+                      <li><strong>Firmă</strong> (din formular): cap. 1.2 = același <strong>bloc juridic</strong> ca la eveniment public (societate, sediu, ONRC, CUI, IBAN, reprezentant) — <em>nu</em> are câmpuri separate aici în Docs; textul introductiv comun e în ambele modele (Privat vs Public diferă la art. 2.1 etc., nu la structura firmă).</li>
+                    </ul>
+                  </div>}
+                  {!isPr && <div style={{padding:"12px 14px",borderRadius:10,marginBottom:16,background:th.h,border:`1px solid ${th.b}`,fontSize:11,color:th.ts,lineHeight:1.55}}>
+                    <div style={{fontWeight:700,color:th.t,marginBottom:4,fontSize:12}}>Eveniment public</div>
+                    Beneficiarul în contract este <strong>mereu firmă</strong> (același tip de câmpuri ca la privat+când ai ales Firmă). Completezi valorile în previzualizarea contractului.
+                  </div>}
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
                     <div style={{paddingBottom:12,borderBottom:`1px solid ${th.bl}`,marginBottom:4}}>
-                      <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:8}}>CAP. 1 — Părți (Prestator / Beneficiar)</div>
-                      <p style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.5}}>Text separat pentru model <strong>{isPr ? "Privat" : "Public"}</strong>. <strong>Prestatorul</strong> e text static (bloc pe rânduri). {isPr ? <>La evenimente <strong>private</strong>, în formular → Client alegi <strong>Persoană fizică</strong> sau <strong>Firmă</strong>; la PF editezi etichetele de mai jos. La Firmă, cap. 1.2 folosește blocul juridic (ca la public).</> : <>Evenimentele <strong>publice</strong> au mereu beneficiar în format <strong>firmă</strong> (societate, sediu, ONRC…); valorile se completează în contract.</>} Folosește <code>**îngroșat**</code> în text.</p>
+                      <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:8}}>CAP. 1 — Prestator (ambele modele)</div>
+                      <p style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.5}}><strong>Prestatorul</strong> — text static, câte un rând; <code>**îngroșat**</code> în text.</p>
                       <div><label style={sty.l}>Titlu capitol</label><input value={cm.cap1SectionTitle||""} onChange={e=>patchCm({ cap1SectionTitle: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                       <div><label style={sty.l}>Art. 1.1 (titlu)</label><input value={cm.cap1Art11Title||""} onChange={e=>patchCm({ cap1Art11Title: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                       <div><label style={sty.l}>Bloc Prestator — rânduri</label><textarea value={cm.cap1PrestatorBlock||""} onChange={e=>patchCm({ cap1PrestatorBlock: e.target.value })} style={{...sty.i,minHeight:160,resize:"vertical",fontSize:12}} placeholder={"Câte un rând...\n**Etichetă:** valoare"}/></div>
-                      <div><label style={sty.l}>Art. 1.2 (titlu)</label><input value={cm.cap1Art12Title||""} onChange={e=>patchCm({ cap1Art12Title: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                      <div><label style={sty.l}>Art. 1.2 (titlu capitol beneficiar)</label><input value={cm.cap1Art12Title||""} onChange={e=>patchCm({ cap1Art12Title: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                       {isPr ? <>
-                        <div><label style={sty.l}>Etichetă înainte de nume beneficiar (ex. Persoană fizică)</label><input value={cm.cap1BeneficiarPartyLabel||""} onChange={e=>patchCm({ cap1BeneficiarPartyLabel: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                        <div style={{marginTop:14,paddingTop:12,borderTop:`2px solid ${th.b}`}}>
+                          <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:6}}>Cap. 1.2 — doar pentru <strong>persoană fizică</strong> (privat)</div>
+                          <p style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.5}}>Aceste câmpuri se folosesc în contract doar când în <strong>Eveniment → Client</strong> ai ales <strong>Persoană fizică</strong>. Dacă alegi <strong>Firmă</strong>, contractul afișează blocul juridic (fără aceste etichete).</p>
+                        </div>
+                        <div><label style={sty.l}>Etichetă înainte de nume (ex. Persoană fizică:)</label><input value={cm.cap1BeneficiarPartyLabel||""} onChange={e=>patchCm({ cap1BeneficiarPartyLabel: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                         <div><label style={sty.l}>Text «cu următoarele date...»</label><input value={cm.cap1BeneficiarIdIntro||""} onChange={e=>patchCm({ cap1BeneficiarIdIntro: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
-                        <div style={{fontSize:10,color:th.tm,marginBottom:6,marginTop:2}}>Etichete pentru rândurile cu date completate în ofertă (după introducerea datelor de identificare):</div>
+                        <div style={{fontSize:10,color:th.tm,marginBottom:6,marginTop:2}}>Etichete pentru rândurile cu date (domiciliu, CI, mail, telefon):</div>
                         <div><label style={sty.l}>Rând domiciliu (început)</label><input value={cm.cap1BenLblDomiciliu||""} onChange={e=>patchCm({ cap1BenLblDomiciliu: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}} placeholder={"**Locul de domiciliu:**"}/></div>
                         <div><label style={sty.l}>Rând carte identitate (început)</label><input value={cm.cap1BenLblCI||""} onChange={e=>patchCm({ cap1BenLblCI: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                         <div><label style={sty.l}>Rând e-mail</label><input value={cm.cap1BenLblEmail||""} onChange={e=>patchCm({ cap1BenLblEmail: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                         <div><label style={sty.l}>Rând telefon</label><input value={cm.cap1BenLblTel||""} onChange={e=>patchCm({ cap1BenLblTel: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                         <div><label style={sty.l}>Încheiere Beneficiar (înainte de Cap. 2)</label><textarea value={cm.cap1BeneficiarClosing||""} onChange={e=>patchCm({ cap1BeneficiarClosing: e.target.value })} style={{...sty.i,minHeight:48,resize:"vertical",fontSize:12}} placeholder={"**Beneficiar** pentru îngroșat"}/></div>
+                        <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:"rgba(245,158,11,.08)",border:"1px solid rgba(245,158,11,.25)",fontSize:10,color:th.tm,lineHeight:1.5}}>
+                          <strong style={{color:th.t}}>Privat + Firmă:</strong> nu are câmpuri suplimentare în Docs — structura e fixă în aplicație (societate, sediu, ONRC…). Alegerea <strong>Firmă</strong> e în formularul evenimentului.
+                        </div>
                       </> : null}
                     </div>
                     {[{ k:"art21", l:"Art. 2.1 (obiect)" },{ k:"art31", l:"Art. 3.1" },{ k:"art42", l:"Art. 4.2 (plată RON)" },{ k:"art43Intro", l:"Art. 4.3 introducere" },{ k:"art43a", l:"Art. 4.3 a)" },{ k:"art43b", l:"Art. 4.3 b)" },{ k:"art44", l:"Art. 4.4 penalități" }].map(({k,l})=>(
