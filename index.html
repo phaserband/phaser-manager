@@ -695,6 +695,17 @@ const MEMBER_AUTH_EMAIL = {
   m5: "sebi.barzeianu@gmail.com",
 };
 const CONTACT_ADMIN_EMAIL = "contact@phaser.ro";
+const COLLABORATOR_PROFILES = [
+  { id: "colab_prezent", key: "prezent", n: "Prezent", emoji: "📦", pass: "prezent@phaser!" },
+  { id: "colab_levi", key: "levi", n: "Levi", emoji: "🛠️", pass: "levi@phaser!" },
+  { id: "colab_flavius", key: "flavius", n: "Flavius", emoji: "💡", pass: "flavius@phaser!" },
+];
+const COLLABORATOR_BY_ID = Object.fromEntries(COLLABORATOR_PROFILES.map(c => [c.id, c]));
+const COLLABORATOR_LOGIN_LABEL = {
+  colab_prezent: "Colaborator · Prezent",
+  colab_levi: "Colaborator · Levi",
+  colab_flavius: "Colaborator · Flavius",
+};
 const LS_SESSION_MEMBER = "phaser_session_member";
 /** Ultimul profil ales la login — dacă sesiunea Supabase a expirat, sari direct la parolă (fără pasul 1). Se șterge la Deconectare / «Alt profil». */
 const SS_KEY_LOGIN_LAST = "phaser_login_last_pick";
@@ -1027,6 +1038,24 @@ const computeMemberPayoutBreakdown = (ev, mId, servicePrices) => {
     isLei,
   };
 };
+const computeCollaboratorPayout = (ev, collaboratorKey, servicePrices) => {
+  const sp = servicePrices || {};
+  const breakdown = typeof getSvcCostBreakdown === "function" ? getSvcCostBreakdown(ev, sp) : [];
+  const byKey = Object.fromEntries((breakdown || []).map(row => [row.k, Number(row.cost) || 0]));
+  const fixed = ev.fixedCosts || DEFAULT_FIXED_COSTS;
+  const curs = Number(ev.cursLei) > 0 ? Number(ev.cursLei) : CURS_DEFAULT;
+  const fixedEur = ((Number(fixed.technician) || 0) + (Number(fixed.equipment) || 0) + (Number(fixed.soundman) || 0) + (Number(fixed.transport) || 0)) / curs;
+  if (collaboratorKey === "prezent") {
+    return Math.round((((byKey.sunet || 0) + fixedEur) * 100)) / 100;
+  }
+  if (collaboratorKey === "levi") {
+    return Math.round((((byKey.tehnic2Auto || 0) + (byKey.tehnicSupplPlatouri || 0)) * 100)) / 100;
+  }
+  if (collaboratorKey === "flavius") {
+    return Math.round((((byKey.lumini || 0) + (byKey.ecran || 0) + (byKey.dj || 0)) * 100)) / 100;
+  }
+  return 0;
+};
 const calcFond7 = (ev) => {
   const CURS = ev.cursLei||CURS_DEFAULT;
   const fee = (ev.fee||0) + Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0);
@@ -1063,7 +1092,8 @@ const PM = {
   admin:    {c:1,e:1,d:1,f:1,co:1,pk:1},
   manager:  {c:1,e:1,d:0,f:1,co:1,pk:1},
   membru:   {c:1,e:1,d:1,f:1,co:1,pk:1},
-  furnizor: {c:0,e:0,d:0,f:0,co:0,pk:0}
+  furnizor: {c:0,e:0,d:0,f:0,co:0,pk:0},
+  colaborator: {c:0,e:0,d:0,f:0,co:0,pk:0}
 };
 
 const PX = { r:{3:4100,2:3100,1:2350}, sunet:350, lumini:500, ecran:600, scena:300, dj:600, pub:2000 };
@@ -6504,6 +6534,7 @@ function App() {
     if (!authReady) return;
     const sb = getSbClient();
     if (!sbSession) {
+      if (user?.isCollaborator) return;
       setAuthResolved(null);
       setUser(null);
       initialSyncDoneRef.current = false;
@@ -6547,6 +6578,10 @@ function App() {
       setLoginPick("admin");
       setLoginEmail(CONTACT_ADMIN_EMAIL);
       setLoginStep("signin");
+    } else if (COLLABORATOR_BY_ID[last]) {
+      setLoginPick(last);
+      setLoginEmail(COLLABORATOR_LOGIN_LABEL[last] || "Colaborator");
+      setLoginStep("signin");
     } else if (MEMBER_AUTH_EMAIL[last]) {
       setLoginPick(last);
       setLoginEmail(MEMBER_AUTH_EMAIL[last]);
@@ -6557,10 +6592,22 @@ function App() {
   const doAuthLogin = async (e) => {
     e?.preventDefault?.();
     setAuthErr("");
+    if (!loginPick) { setAuthErr("Alege cine te loghezi din listă."); return; }
+    if (COLLABORATOR_BY_ID[loginPick]) {
+      const c = COLLABORATOR_BY_ID[loginPick];
+      if ((loginPw || "") !== c.pass) {
+        setAuthErr("Parolă greșită.");
+        return;
+      }
+      setUser({ id: c.id, n: c.n, rl: "colaborator", memberId: null, isCollaborator: true, collaboratorKey: c.key });
+      setAuthResolved({ ok: true, user: { id: c.id, n: c.n, rl: "colaborator", memberId: null } });
+      try { sessionStorage.setItem(SS_KEY_LOGIN_LAST, loginPick); } catch (e) {}
+      setLoginPw("");
+      return;
+    }
     const enteredPw = loginPw;
     const sb = getSbClient();
     if (!sb) { setAuthErr("Supabase nu e configurat."); return; }
-    if (!loginPick) { setAuthErr("Alege cine te loghezi din listă."); return; }
     const want = loginPick === "admin" ? CONTACT_ADMIN_EMAIL : MEMBER_AUTH_EMAIL[loginPick];
     if (!want || loginEmail.trim().toLowerCase() !== want.trim().toLowerCase()) {
       setAuthErr("Realege contul din listă.");
@@ -6625,6 +6672,7 @@ function App() {
     setLoginEmail("");
     setLoginPw("");
     setAuthErr("");
+    setAuthResolved(null);
     const sb = getSbClient();
     if (sb) await sb.auth.signOut();
   };
@@ -7839,7 +7887,14 @@ function App() {
       showToast("Oferta e ștearsă local, dar fișierul din Supabase Storage nu: " + storageErr + ". Rulează în SQL Editor politica fisa_public_delete din supabase-fix-fisa-rls.sql", "error");
     }
   };
-  const moveEvToDate = (evId, newDate) => { setEvs(p=>p.map(e=>e.id===evId?{...e,date:newDate,dateKind:"day",dateMonth:null,dateYear:null,dateNote:"",dateOptions:null}:e)); showToast("Data actualizată (zi exactă)"); };
+  const moveEvToDate = (evId, newDate) => {
+    if (!p.e) {
+      showToast("Nu ai permisiune de modificare.", "error");
+      return;
+    }
+    setEvs(p=>p.map(e=>e.id===evId?{...e,date:newDate,dateKind:"day",dateMonth:null,dateYear:null,dateNote:"",dateOptions:null}:e));
+    showToast("Data actualizată (zi exactă)");
+  };
   const moveEvToDateRef = useRef(moveEvToDate);
   moveEvToDateRef.current = moveEvToDate;
 
@@ -8096,7 +8151,14 @@ function App() {
   },[globalSearch,evs,tasks]);
 
   const unreadNotifCount = bandNotifications.filter(n => n.memberId === user?.memberId && !n.read).length;
-  const navItems = [
+  const isCollaborator = !!user?.isCollaborator;
+  const collaboratorKey = user?.collaboratorKey || "";
+  const navItems = isCollaborator ? [
+    {id:"acasa", Ic:IcDash, l:"Acasă"},
+    {id:"events", Ic:IcMusic, l:"Evenimente", ml:"Evenim."},
+    {id:"offers", Ic:IcSend, l:"Cereri", badge:pendingCount},
+    {id:"calendar", Ic:IcCal, l:"Calendar", ml:"Cal."},
+  ] : [
     {id:"acasa",    Ic:IcDash,  l:"Acasă"},
     {id:"events",   Ic:IcMusic, l:"Evenimente", ml:"Evenim."},
     {id:"offers",   Ic:IcSend,  l:"Cereri",  badge:pendingCount},
@@ -8169,9 +8231,10 @@ function App() {
       </div>
     );
   }
-  if (!sbSession) {
-    const pickedMember = loginPick && loginPick !== "admin" ? MEMBERS.find(x => x.id === loginPick) : null;
-    const signInHeading = loginPick === "admin" ? "Cont admin" : pickedMember ? `${pickedMember.short} · ${pickedMember.n}` : "";
+  if (!sbSession && !user?.isCollaborator) {
+    const pickedMember = loginPick && loginPick !== "admin" && !COLLABORATOR_BY_ID[loginPick] ? MEMBERS.find(x => x.id === loginPick) : null;
+    const pickedCollaborator = COLLABORATOR_BY_ID[loginPick] || null;
+    const signInHeading = loginPick === "admin" ? "Cont admin" : pickedCollaborator ? `Colaborator · ${pickedCollaborator.n}` : pickedMember ? `${pickedMember.short} · ${pickedMember.n}` : "";
     return (
       <div style={authShell}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}.ph-prof-row{transition:background .12s,border-color .12s}.ph-prof-row:hover{background:#1a1a1a!important;border-color:#3f3f3f!important}`}</style>
@@ -8180,26 +8243,26 @@ function App() {
           <div style={{width:"100%",maxWidth:400,display:"flex",flexDirection:"column",gap:14}}>
             <button type="button" onClick={()=>{ try { sessionStorage.removeItem(SS_KEY_LOGIN_LAST); } catch (e) {} setLoginStep("pick"); setLoginPick(""); setLoginEmail(""); setLoginPw(""); setAuthErr(""); }} style={{alignSelf:"flex-start",background:"transparent",border:"none",color:"#737373",fontSize:13,cursor:"pointer",padding:"4px 0",fontFamily:"inherit"}}>← Alt profil</button>
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:40,lineHeight:1,marginBottom:10}}>{loginPick==="admin"?"🔐":(pickedMember?.emoji||"🎵")}</div>
+              <div style={{fontSize:40,lineHeight:1,marginBottom:10}}>{loginPick==="admin"?"🔐":(pickedCollaborator?.emoji || pickedMember?.emoji || "🎵")}</div>
               <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 2 · Autentificare</div>
               <h2 style={{fontSize:20,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>{signInHeading}</h2>
             </div>
             <div>
-              <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Email</div>
+              <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>{pickedCollaborator ? "Profil" : "Email"}</div>
               <input readOnly name="username" autoComplete="username" value={loginEmail} style={{width:"100%",boxSizing:"border-box",padding:"12px 14px",borderRadius:10,border:"1px solid #333",background:"#121212",color:"#d4d4d4",fontSize:14,lineHeight:1.4}}/>
             </div>
             <form onSubmit={doAuthLogin} style={{display:"flex",flexDirection:"column",gap:12}}>
               <div>
                 <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Parolă</div>
                 <div style={{position:"relative",width:"100%"}}>
-                  <input type={showLoginPw?"text":"password"} name="password" autoComplete={loginRememberBrowser?"current-password":"off"} value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parolă" required aria-label="Parolă" style={{width:"100%",boxSizing:"border-box",padding:"14px 72px 14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
+                  <input type={showLoginPw?"text":"password"} name="password" autoComplete={pickedCollaborator?"off":(loginRememberBrowser?"current-password":"off")} value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="Parolă" required aria-label="Parolă" style={{width:"100%",boxSizing:"border-box",padding:"14px 72px 14px 16px",borderRadius:10,border:"1px solid #333",background:"#161616",color:"#fff",fontSize:15}}/>
                   <button type="button" onClick={()=>setShowLoginPw(s=>!s)} aria-label={showLoginPw?"Ascunde parola":"Arată parola"} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:"#a3a3a3",fontSize:12,cursor:"pointer",padding:"6px 8px",fontFamily:"inherit",fontWeight:600}}>{showLoginPw?"Ascunde":"Arată"}</button>
                 </div>
               </div>
-              <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontSize:13,color:"#a3a3a3",userSelect:"none"}}>
+              {!pickedCollaborator && <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontSize:13,color:"#a3a3a3",userSelect:"none"}}>
                 <input type="checkbox" checked={loginRememberBrowser} onChange={e=>setLoginRememberBrowser(e.target.checked)} style={{width:18,height:18,accentColor:"#f59e0b"}}/>
                 Salvează parola în browser (pasul 2)
-              </label>
+              </label>}
               {authErr && <div style={{fontSize:12,color:"#f87171"}}>{authErr}</div>}
               <button type="submit" disabled={authBusy} style={{padding:"14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#000",fontWeight:800,fontSize:15,cursor:authBusy?"wait":"pointer"}}>{authBusy?"…":"Intră în aplicație"}</button>
             </form>
@@ -8210,7 +8273,7 @@ function App() {
               <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 1</div>
               <h2 style={{fontSize:22,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>Alege profilul tău</h2>
             </div>
-            <p style={{fontSize:13,color:"#888",textAlign:"center",lineHeight:1.55,margin:0}}>Alege rândul tău din listă. Apoi: emailul contului și parola Supabase.</p>
+            <p style={{fontSize:13,color:"#888",textAlign:"center",lineHeight:1.55,margin:0}}>Alege profilul. Membrii/Admin folosesc Supabase, iar colaboratorii intră cu parola dedicată.</p>
             <div style={{width:"100%",maxWidth:380,borderRadius:12,border:"1px solid #2a2a2a",overflow:"hidden",background:"#111"}}>
               {MEMBERS.map(m=>(
                 <button key={m.id} type="button" className="ph-prof-row" onClick={()=>{ setLoginPick(m.id); setLoginEmail(MEMBER_AUTH_EMAIL[m.id]); setAuthErr(""); setLoginStep("signin"); }} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px 14px",border:"none",borderBottom:"1px solid #262626",background:"#141414",color:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
@@ -8230,20 +8293,30 @@ function App() {
                 </span>
                 <span style={{color:"#92400e",fontSize:20,fontWeight:300,flexShrink:0}}>›</span>
               </button>
+              {COLLABORATOR_PROFILES.map(c=>(
+                <button key={c.id} type="button" className="ph-prof-row" onClick={()=>{ setLoginPick(c.id); setLoginEmail(COLLABORATOR_LOGIN_LABEL[c.id] || "Colaborator"); setAuthErr(""); setLoginStep("signin"); }} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px 14px",border:"none",borderTop:"1px solid #262626",background:"#141414",color:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                  <span style={{fontSize:22,width:36,textAlign:"center",flexShrink:0,lineHeight:1}} aria-hidden>{c.emoji}</span>
+                  <span style={{flex:1,minWidth:0}}>
+                    <span style={{display:"block",fontWeight:700,fontSize:15}}>{c.n}</span>
+                    <span style={{display:"block",fontSize:12,color:"#737373",marginTop:2}}>Colaborator · acces read-only</span>
+                  </span>
+                  <span style={{color:"#525252",fontSize:20,fontWeight:300,flexShrink:0}}>›</span>
+                </button>
+              ))}
             </div>
           </div>
         )}
       </div>
     );
   }
-  if (!authResolved || authResolved.pending) {
+  if (!user?.isCollaborator && (!authResolved || authResolved.pending)) {
     return (
       <div style={authShell}>
         <div style={{color:"#888",fontSize:14}}>Verific accesul…</div>
       </div>
     );
   }
-  if (!authResolved.ok) {
+  if (!user?.isCollaborator && !authResolved.ok) {
     const g = authResolved.gate;
     return (
       <div style={authShell}>
@@ -8311,14 +8384,14 @@ function App() {
         </div>
 
         {/* Google Calendar connect */}
-        <div style={{padding:"10px 12px 0",borderTop:`1px solid ${th.sbb}`}}>
+        {!isCollaborator && <div style={{padding:"10px 12px 0",borderTop:`1px solid ${th.sbb}`}}>
           <button data-tour="gcal-btn" onClick={gcalActive ? disconnectGCal : connectGCal}
             title={sbMode==="mini"?(gcalActive?"Calendar conectat ✓":"Conectează Calendar Google"):undefined}
             style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:gcalActive?"rgba(34,197,94,.12)":"transparent",color:gcalActive?"#22c55e":th.sbt,fontSize:11,cursor:"pointer",width:"100%",transition:"all .2s"}}>
             <span style={{fontSize:13}}>📅</span>
             {sbMode==="full"&&<span>{gcalActive?"Calendar conectat ✓":"Conectează Calendar"}</span>}
           </button>
-        </div>
+        </div>}
         <div style={{padding:"8px 12px 14px",display:"flex",flexDirection:"column",gap:4}}>
           <button onClick={doAuthLogout} style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"transparent",color:th.sbt,fontSize:11,cursor:"pointer",width:"100%"}}>
             <IcOut s={14}/>{sbMode==="full"&&<span>{user.n} · ieșire</span>}
@@ -8331,27 +8404,41 @@ function App() {
         </div>
       </div>
 
-      {/* MOBILE BOTTOM NAV — vizibil doar pe mobil prin CSS */}
-      <nav className="mob-bottom-nav" style={{"--nav-bg":th.sb, background:th.sb, borderTopColor:"transparent"}}>
-        {mobilePrimaryNav.map(it=>(
-          <button key={it.id} data-tour={"nav-"+it.id} className={"mob-bottom-nav-btn"+(tab===it.id?" nav-active":"")} onClick={()=>setTab(it.id)}
-            style={{color:tab===it.id?th.a:th.sbt}}>
-            {it.badge>0&&<span className="mob-bottom-nav-badge"/>}
-            <it.Ic s={tab===it.id?24:21}/>
-            <span className="nav-lbl" style={{opacity:tab===it.id?1:.5}}>{mob ? (it.ml || it.l) : it.l}</span>
-          </button>
-        ))}
-        <button className={"mob-bottom-nav-btn"+(mobileMoreOpen?" nav-show-label":"")} onClick={()=>setMobileMoreOpen(v=>!v)}
-          style={{color:th.sbt}}>
-          <IcMenu s={21}/>
-          <span className="nav-lbl" style={{opacity:.8}}>Meniu V3</span>
+      {/* MOBILE MENU BUTTON — stânga jos */}
+      {mob && (
+        <button
+          type="button"
+          onClick={()=>setMobileMoreOpen(v=>!v)}
+          aria-label="Deschide meniul"
+          style={{
+            position:"fixed",
+            left:14,
+            bottom:"calc(14px + env(safe-area-inset-bottom))",
+            zIndex:920,
+            width:56,
+            height:56,
+            borderRadius:16,
+            border:`1px solid ${th.b}`,
+            background:th.c,
+            color:th.t,
+            boxShadow:"0 10px 28px rgba(0,0,0,.28)",
+            display:"flex",
+            alignItems:"center",
+            justifyContent:"center",
+            cursor:"pointer",
+            backdropFilter:"blur(10px)",
+            WebkitBackdropFilter:"blur(10px)"
+          }}
+        >
+          <IcMenu s={22}/>
         </button>
-      </nav>
+      )}
       {mob && mobileMoreOpen && (
         <div onClick={()=>setMobileMoreOpen(false)} style={{position:"fixed",inset:0,zIndex:900,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"flex-end"}}>
-          <div onClick={e=>e.stopPropagation()} style={{width:"100%",background:th.c,borderTopLeftRadius:16,borderTopRightRadius:16,border:`1px solid ${th.b}`,borderBottom:"none",padding:"10px 14px calc(14px + env(safe-area-inset-bottom))",maxHeight:"68vh",overflow:"auto"}}>
-            <div style={{fontSize:11,color:th.tm,fontWeight:700,letterSpacing:.6,textTransform:"uppercase",marginBottom:8}}>Mai multe</div>
-            {mobileMoreNav.map(it=>(
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",background:th.c,borderTopLeftRadius:20,borderTopRightRadius:20,border:`1px solid ${th.b}`,borderBottom:"none",padding:"10px 14px calc(14px + env(safe-area-inset-bottom))",maxHeight:"74vh",overflow:"auto",boxShadow:"0 -18px 36px rgba(0,0,0,.35)"}}>
+            <div style={{width:40,height:4,borderRadius:999,background:th.b,margin:"4px auto 10px"}}/>
+            <div style={{fontSize:11,color:th.tm,fontWeight:700,letterSpacing:.6,textTransform:"uppercase",marginBottom:8}}>Meniu</div>
+            {navItems.map(it=>(
               <button key={"more-"+it.id} onClick={()=>{ setTab(it.id); setMobileMoreOpen(false); }} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 10px",borderRadius:10,border:"none",background:tab===it.id?th.h:"transparent",color:tab===it.id?th.a:th.t,cursor:"pointer",fontSize:14}}>
                 <it.Ic s={18}/>
                 <span style={{flex:1,textAlign:"left"}}>{it.l}</span>
@@ -8368,7 +8455,7 @@ function App() {
 
       {/* MAIN — un singur strat scroll pe mobil (.app-main-scroll); părintele rămâne overflow:hidden */}
       <div style={{flex:1,minHeight:0,overflow:"hidden",display:"flex",flexDirection:"column",position:"relative"}}>
-        <div className={mob?"app-main-scroll":""} style={{flex:1,minHeight:0,...(mob?{}:{overflow:"auto"}),padding:mob?"14px 16px 80px":"22px 36px 22px 44px",paddingLeft:mob?16:(sbMode==="mini"?52:44),paddingBottom:mob?"max(96px, calc(78px + env(safe-area-inset-bottom)))":"22px"}}>
+        <div className={mob?"app-main-scroll":""} style={{flex:1,minHeight:0,...(mob?{}:{overflow:"auto"}),padding:mob?"14px 16px 80px":"22px 36px 22px 44px",paddingLeft:mob?16:(sbMode==="mini"?52:44),paddingBottom:mob?"calc(24px + env(safe-area-inset-bottom))":"22px"}}>
 
           {/* GLOBAL SEARCH — mereu vizibil */}
           <div style={{position:"relative",marginBottom:16,maxWidth:mob?"100%":400}}>
@@ -8417,7 +8504,7 @@ function App() {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
               <div>
                 <h1 style={{fontSize:mob?18:22,fontWeight:700,letterSpacing:"-0.5px"}}>Acasă</h1>
-                <p style={{color:th.tm,fontSize:12,marginTop:2}}>Bun venit, {user.n}!</p>
+                <p style={{color:th.tm,fontSize:12,marginTop:2}}>Bun venit, {user.n}!{isCollaborator ? " (acces colaborator read-only)" : ""}</p>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",width:mob?"100%":undefined}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,flex:mob?1:undefined}}>
@@ -8471,7 +8558,7 @@ function App() {
                     onMouseOver={e=>e.currentTarget.style.background=th.h}
                     onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                     <div><div style={{fontSize:12,fontWeight:600}}>{ev.offerNr?"O"+ev.offerNr:"???"} · {ev.type}</div><div style={{fontSize:10,color:th.tm}}>{fEvDate(ev)}</div></div>
-                    <div onClick={e=>e.stopPropagation()}><BadgeStatusSelect s={ev.st} th={th} evId={ev.id} onStatusChange={(id,st)=>{updSt(id,st);}}/></div>
+                    <div onClick={e=>e.stopPropagation()}>{isCollaborator ? <Badge s={ev.st} th={th}/> : <BadgeStatusSelect s={ev.st} th={th} evId={ev.id} onStatusChange={(id,st)=>{updSt(id,st);}}/>}</div>
                   </div>
                 )}
                 {pendingCount===0&&<div style={{padding:20,textAlign:"center",color:th.tm,fontSize:11}}>Nicio cerere activă</div>}
@@ -8479,7 +8566,23 @@ function App() {
             </div>
 
             <div style={{...sty.cd,padding:20}}>
-              <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={true} currentMemberId={user.memberId} onNotifyAssign={onNotifyAssign}/>
+              {isCollaborator ? (
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Sumele mele pe eveniment</div>
+                  {evs.filter(e=>["confirmat","plata_avans","asteptare"].includes(e.st)).sort((a,b)=>evSortKey(a)-evSortKey(b)).map(ev=>{
+                    const amt = computeCollaboratorPayout(ev, collaboratorKey, templates?.servicePrices);
+                    return <div key={ev.id} onClick={()=>openModal("detail",ev.id)} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",padding:"9px 10px",borderRadius:8,cursor:"pointer",borderBottom:`1px solid ${th.bl}`}}>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:600}}>{eventFriendlyLabel(ev)}</div>
+                        <div style={{fontSize:10,color:th.tm}}>{ST[ev.st]?.l || ev.st}</div>
+                      </div>
+                      <div style={{fontSize:13,fontWeight:800,color:"#22c55e"}}>{f$(amt)}</div>
+                    </div>;
+                  })}
+                </div>
+              ) : (
+                <TasksView tasks={tasks} setTasks={setTasks} th={th} sty={sty} mob={mob} compact={true} currentMemberId={user.memberId} onNotifyAssign={onNotifyAssign}/>
+              )}
             </div>
           </div>}
 
@@ -8576,7 +8679,7 @@ function App() {
           </div>}
 
           {/* CERERI */}
-          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pickCerere",null):undefined} onStatusChange={updSt} onBulkStatusChange={p.e?bulkUpdSt:undefined} onAvansToggle={(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;const becomesConfirmed=newDp&&ev.st==="plata_avans";const updatedEv={...ev,dp:newDp,...(becomesConfirmed?{st:"confirmat"}:{})};setEvs(p=>p.map(e=>e.id===id?updatedEv:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");if(becomesConfirmed&&gcalActive&&updatedEv.gcalId){syncToGCal(updatedEv).then(newId=>{if(newId)showToast("📅 Calendar actualizat: Confirmat");});}}} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
+          {tab==="offers"&&<OffersBoard evs={evs} th={th} sty={sty} mob={mob} onSelect={ev=>openModal("detail",ev.id)} onAddOffer={p.c?()=>openModal("pickCerere",null):undefined} onStatusChange={p.e?updSt:undefined} onBulkStatusChange={p.e?bulkUpdSt:undefined} onAvansToggle={p.e?(id)=>{const ev=evs.find(e=>e.id===id);if(!ev)return;const newDp=!ev.dp;const becomesConfirmed=newDp&&ev.st==="plata_avans";const updatedEv={...ev,dp:newDp,...(becomesConfirmed?{st:"confirmat"}:{})};setEvs(p=>p.map(e=>e.id===id?updatedEv:e));showToast(newDp?(ev.st==="plata_avans"?"Avans încasat ✓ — eveniment confirmat":"Avans: încasat ✓"):"Avans: neîncasat");if(becomesConfirmed&&gcalActive&&updatedEv.gcalId){syncToGCal(updatedEv).then(newId=>{if(newId)showToast("📅 Calendar actualizat: Confirmat");});}}:undefined} onDeleteSelected={p.d?async(ids)=>{const storageErr=await deleteStoredHtmlPagesForEventIds(ids);setEvs(prev=>prev.filter(e=>!ids.includes(e.id)));showToast(`Șterse ${ids.length} ofertă/oferte`);if(storageErr)showToast("Storage Supabase: "+storageErr+" — vezi supabase-fix-fisa-rls.sql (DELETE)","error");}:undefined} showSelection={p.d||p.e}/>}
 
           {/* DOCS — Documente, rider, playlist, press kit — template pentru oferte */}
           {tab==="docs"&&<div style={{animation:"su .3s ease"}}>
@@ -9317,7 +9420,7 @@ function App() {
                     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
                     const de=evs.filter(e=>evMatchesCalendarCell(e,ds,y,m,d));
                     const dayOcc=(calBlocks||[]).filter(b=>b.date===ds);
-                    const dayTasks=collectTasksForDate(tasks,ds);
+                    const dayTasks=isCollaborator?[]:collectTasksForDate(tasks,ds);
                     const hasStuff=de.length>0||dayOcc.length>0||dayTasks.length>0;
                     const td=new Date().getDate()===d&&new Date().getMonth()===m&&new Date().getFullYear()===y;
                     const isSearchedDay=calDateSearch===ds;
@@ -9328,11 +9431,11 @@ function App() {
                         <span style={{fontSize:mob?10:12,fontWeight:isSearchedDay||td?800:hasStuff?600:400,color:isSearchedDay?"#3b82f6":td?th.t:hasStuff?th.t:th.tm}}>{d}</span>
                       </div>
                       <div style={{flex:1,minHeight:0,overflow:mob?"hidden":"auto",maxHeight:mob?52:120}}>
-                        {de.map(ev=><div key={ev.id} draggable={!mob&&(getEventDateKind(ev)==="day"||!ev.dateKind)} onDragStart={e=>{e.stopPropagation();setCalDragEvId(ev.id);}} onDragEnd={()=>setCalDragEvId(null)} onClick={e=>{e.stopPropagation();if(calSuppressChipClickRef.current)return;openModal("calEvPreview",ev.id);}} onDoubleClick={e=>e.stopPropagation()} onTouchStart={mob?(e=>{e.stopPropagation();const t=e.touches[0];if(!t)return;calTouchDragMetaRef.current={evId:ev.id,fromDs:ds,x:t.clientX,y:t.clientY};if(calLongPressTimerRef.current)clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=setTimeout(()=>{calLongPressTimerRef.current=null;setCalTouchDragActive(true);setCalDragEvId(ev.id);calLastDropDsRef.current=null;try{if(navigator.vibrate)navigator.vibrate(20);}catch(_){}},460);}):undefined} onTouchMove={mob?(e=>{if(calLongPressTimerRef.current&&calTouchDragMetaRef.current){const t=e.touches[0];if(!t)return;const m=calTouchDragMetaRef.current;if(Math.hypot(t.clientX-m.x,t.clientY-m.y)>14){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}}):undefined} onTouchEnd={mob?(e=>{if(calLongPressTimerRef.current){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}):undefined} onTouchCancel={mob?(e=>{if(calLongPressTimerRef.current){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}):undefined} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:mob?"pointer":(getEventDateKind(ev)==="day"||!ev.dateKind?"grab":"pointer"),background:dk?ST[ev.st]?.bd:ST[ev.st]?.bg,color:ST[ev.st]?.c,lineHeight:1.2,borderLeft:`2px solid ${ST[ev.st]?.c}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:calTouchDragActive&&calDragEvId===ev.id?0.55:1}} title={`${fEvDate(ev)} — ${ev.type} · ${resp(ev)} · ${ST[ev.st]?.l||ev.st}${getEventDateKind(ev)!=="day"?" — pentru mutare pe grid: «Zi exactă»":mob?" — ține apăsat ~0,5s, apoi trage":" (trage ziua)"}`}>{ev.type} ({resp(ev)}) · {ST[ev.st]?.l||ev.st}{getEventDateKind(ev)!=="day"?` · ${fEvDate(ev)}`:""}</div>)}
+                        {de.map(ev=><div key={ev.id} draggable={!isCollaborator && !mob&&(getEventDateKind(ev)==="day"||!ev.dateKind)} onDragStart={e=>{if(isCollaborator)return;e.stopPropagation();setCalDragEvId(ev.id);}} onDragEnd={()=>setCalDragEvId(null)} onClick={e=>{e.stopPropagation();if(calSuppressChipClickRef.current)return;openModal("calEvPreview",ev.id);}} onDoubleClick={e=>e.stopPropagation()} onTouchStart={mob?(e=>{if(isCollaborator)return;e.stopPropagation();const t=e.touches[0];if(!t)return;calTouchDragMetaRef.current={evId:ev.id,fromDs:ds,x:t.clientX,y:t.clientY};if(calLongPressTimerRef.current)clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=setTimeout(()=>{calLongPressTimerRef.current=null;setCalTouchDragActive(true);setCalDragEvId(ev.id);calLastDropDsRef.current=null;try{if(navigator.vibrate)navigator.vibrate(20);}catch(_){}},460);}):undefined} onTouchMove={mob?(e=>{if(isCollaborator)return;if(calLongPressTimerRef.current&&calTouchDragMetaRef.current){const t=e.touches[0];if(!t)return;const m=calTouchDragMetaRef.current;if(Math.hypot(t.clientX-m.x,t.clientY-m.y)>14){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}}):undefined} onTouchEnd={mob?(e=>{if(calLongPressTimerRef.current){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}):undefined} onTouchCancel={mob?(e=>{if(calLongPressTimerRef.current){clearTimeout(calLongPressTimerRef.current);calLongPressTimerRef.current=null;}}):undefined} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:mob?"pointer":(!isCollaborator&&(getEventDateKind(ev)==="day"||!ev.dateKind)?"grab":"pointer"),background:dk?ST[ev.st]?.bd:ST[ev.st]?.bg,color:ST[ev.st]?.c,lineHeight:1.2,borderLeft:`2px solid ${ST[ev.st]?.c}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:calTouchDragActive&&calDragEvId===ev.id?0.55:1}} title={`${fEvDate(ev)} — ${ev.type} · ${resp(ev)} · ${ST[ev.st]?.l||ev.st}${(!isCollaborator&&getEventDateKind(ev)!=="day")?" — pentru mutare pe grid: «Zi exactă»":""}`}>{ev.type} ({resp(ev)}) · {ST[ev.st]?.l||ev.st}{getEventDateKind(ev)!=="day"?` · ${fEvDate(ev)}`:""}</div>)}
                         {dayOcc.map(b=>{
                           const mem=MEMBERS.find(x=>x.id===b.memberId);
                           const hue=occHue(b.memberId);
-                          return <div key={b.id} onClick={e=>{e.stopPropagation();openModal("calOcc",b.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:"pointer",lineHeight:1.2,borderLeft:`2px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",background:dk?"rgba(99,102,241,.12)":"rgba(99,102,241,.08)",color:th.t,opacity:b.tentative?0.92:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={(b.tentative?"Neconfirmat — ":"")+(mem?mem.n:b.memberId)+(b.note?": "+b.note:"")}>{b.tentative?"? ":""}Ocupat: {mem?.short||"?"} {b.note?`· ${b.note.slice(0,12)}${b.note.length>12?"…":""}`:""}</div>;
+                          return <div key={b.id} onClick={e=>{e.stopPropagation();if(!isCollaborator)openModal("calOcc",b.id);}} onDoubleClick={e=>e.stopPropagation()} style={{padding:mob?"2px 3px":"3px 5px",borderRadius:4,marginBottom:2,fontSize:mob?8:9,fontWeight:600,cursor:isCollaborator?"default":"pointer",lineHeight:1.2,borderLeft:`2px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",background:dk?"rgba(99,102,241,.12)":"rgba(99,102,241,.08)",color:th.t,opacity:b.tentative?0.92:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={(b.tentative?"Neconfirmat — ":"")+(mem?mem.n:b.memberId)+(b.note?": "+b.note:"")}>{b.tentative?"? ":""}Ocupat: {mem?.short||"?"} {b.note?`· ${b.note.slice(0,12)}${b.note.length>12?"…":""}`:""}</div>;
                         })}
                         {dayTasks.map(t=>{
                           const TPC={high:"#ef4444",medium:"#f59e0b",low:"#22c55e"};
@@ -9370,21 +9473,21 @@ function App() {
                 ))}
                 <div style={{marginTop:18,paddingTop:16,borderTop:`1px solid ${th.b}`}}>
                   <div style={{fontSize:12,fontWeight:700,marginBottom:4,color:th.t}}>Ocupat / indisponibil</div>
-                  <div style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.4}}>Marchează dacă cineva nu poate (ex. ar pleca). Bifează „Neconfirmat” când nu e sigur încă — apare cu <strong>?</strong> și linie întreruptă.</div>
-                  <button type="button" onClick={()=>{
+                  <div style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.4}}>{isCollaborator ? "Vizualizare doar citire pentru ocupări (fără adăugare/modificare)." : "Marchează dacă cineva nu poate (ex. ar pleca). Bifează „Neconfirmat” când nu e sigur încă — apare cu ? și linie întreruptă."}</div>
+                  {!isCollaborator && <button type="button" onClick={()=>{
                     setCalNewOccMember("");
                     setCalNewOccNote("");
                     setCalNewOccTent(false);
                     openModal("calOccNew",{date:calSidebarDate});
-                  }} style={{...sty.b,width:"100%",fontSize:12,padding:"10px 14px"}}>+ Adaugă ocupare</button>
+                  }} style={{...sty.b,width:"100%",fontSize:12,padding:"10px 14px"}}>+ Adaugă ocupare</button>}
                   {dayOcc.length>0&&<div style={{fontSize:11,fontWeight:600,color:th.tm,marginTop:14,marginBottom:6}}>Înregistrate</div>}
                   {dayOcc.map(b=>{
                     const mem=MEMBERS.find(x=>x.id===b.memberId);
-                    return <div key={b.id} onClick={()=>openModal("calOcc",b.id)} style={{marginTop:8,padding:12,borderRadius:8,border:`1px solid ${th.b}`,background:th.h,borderLeft:`4px solid ${occHue(b.memberId)}`,borderLeftStyle:b.tentative?"dashed":"solid",cursor:"pointer"}}>
+                    return <div key={b.id} onClick={()=>{if(!isCollaborator)openModal("calOcc",b.id);}} style={{marginTop:8,padding:12,borderRadius:8,border:`1px solid ${th.b}`,background:th.h,borderLeft:`4px solid ${occHue(b.memberId)}`,borderLeftStyle:b.tentative?"dashed":"solid",cursor:isCollaborator?"default":"pointer"}}>
                       <div style={{fontSize:13,fontWeight:700}}>{b.tentative?<span style={{color:"#f59e0b"}}>? </span>:null}Ocupat: {mem?.short||mem?.n||"?"}</div>
                       {b.note?<div style={{fontSize:11,color:th.tm,marginTop:4,whiteSpace:"pre-wrap"}}>{b.note}</div>:null}
                       <div style={{fontSize:10,color:th.tm,marginTop:6}}>Apasă pentru detalii / ștergere</div>
-                      <button type="button" onClick={(e)=>{e.stopPropagation();if(gcalActive&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});}} style={{marginTop:8,padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${th.b}`,background:"transparent",color:"#ef4444",cursor:"pointer"}}>Șterge rapid</button>
+                      {!isCollaborator && <button type="button" onClick={(e)=>{e.stopPropagation();if(gcalActive&&b.gcalId)deleteFromGCal(b.gcalId);const nb=(calBlocks||[]).filter(x=>x.id!==b.id);setCalBlocks(nb);saveNow({calBlocks:nb});}} style={{marginTop:8,padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${th.b}`,background:"transparent",color:"#ef4444",cursor:"pointer"}}>Șterge rapid</button>}
                     </div>;
                   })}
                 </div>
@@ -10053,7 +10156,7 @@ function App() {
         const [cy,cm,cd]=ds.split("-").map(Number);
         const dayEvs=evs.filter(e=>evMatchesCalendarCell(e,ds,cy,cm-1,cd));
         const dayOcc=(calBlocks||[]).filter(b=>b.date===ds);
-        const dayTasks=collectTasksForDate(tasks,ds);
+        const dayTasks=isCollaborator?[]:collectTasksForDate(tasks,ds);
         if(!dayEvs.length&&!dayOcc.length&&!dayTasks.length)return null;
         const occHueD=(mid)=>{const idx=MEMBERS.findIndex(x=>x.id===mid);const hues=["#6366f1","#f59e0b","#22c55e","#ec4899","#06b6d4","#a855f7"];return hues[(idx>=0?idx:0)%hues.length];};
         const go=(fn)=>{closeModal();setTimeout(fn,50);};
@@ -10063,7 +10166,7 @@ function App() {
             <div style={{padding:"16px 20px",borderBottom:`1px solid ${th.b}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
                 <h2 style={{fontSize:18,fontWeight:700,margin:0,color:th.t}}>{fD(ds)}</h2>
-                <div style={{fontSize:12,color:th.tm,marginTop:4}}>{dayEvs.length} eveniment{dayEvs.length!==1?"e":""} · {dayOcc.length} ocupare{dayOcc.length!==1?"i":""} · {dayTasks.length} task{dayTasks.length===1?"":"-uri"}</div>
+                <div style={{fontSize:12,color:th.tm,marginTop:4}}>{dayEvs.length} eveniment{dayEvs.length!==1?"e":""} · {dayOcc.length} ocupare{dayOcc.length!==1?"i":""}{isCollaborator?"":` · ${dayTasks.length} task${dayTasks.length===1?"":"-uri"}`}</div>
               </div>
               <button type="button" onClick={closeModal} style={{padding:6,border:"none",background:"transparent",color:th.tm,cursor:"pointer"}}><IcX s={18}/></button>
             </div>
@@ -10080,7 +10183,7 @@ function App() {
                 {dayOcc.map(b=>{
                   const mem=MEMBERS.find(x=>x.id===b.memberId);
                   const hue=occHueD(b.memberId);
-                  return <button key={b.id} type="button" onClick={()=>go(()=>openModal("calOcc",b.id))} style={{textAlign:"left",padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,borderLeft:`4px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",cursor:"pointer",width:"100%"}}>
+                  return <button key={b.id} type="button" onClick={()=>{if(!isCollaborator)go(()=>openModal("calOcc",b.id));}} style={{textAlign:"left",padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,borderLeft:`4px solid ${hue}`,borderLeftStyle:b.tentative?"dashed":"solid",cursor:isCollaborator?"default":"pointer",width:"100%"}}>
                     <div style={{fontSize:13,fontWeight:700,color:th.t}}>{b.tentative?"? ":""}Ocupat: {mem?.short||mem?.n||"?"}</div>
                     {b.note?<div style={{fontSize:11,color:th.tm,marginTop:4,whiteSpace:"pre-wrap"}}>{b.note}</div>:null}
                   </button>;
