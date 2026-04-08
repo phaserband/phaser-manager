@@ -659,7 +659,7 @@ const getSvcCostBreakdown = (ev, prices) => {
   if(svc.ecran){ const c=Math.round(ecranCost*100)/100; out.push({k:"ecran",label:SVC_COST_LABELS.ecran,cost:c}); }
   if(svc.scena){ const c=Math.round(scenaCost*100)/100; out.push({k:"scena",label:SVC_COST_LABELS.scena,cost:c}); }
   if(svc.dj&&djCost>0){ const c=Math.round(djCost*100)/100; out.push({k:"dj",label:"DJ",cost:c}); }
-  // Tehnic nr.1 = bază logistică (lei÷curs), implicit oficiu Levi. Tehnic nr.2 = supliment € pentru servicii extra (podium/lumini/LED) — beneficiar separat (tot implicit Levi).
+  // Tehnic nr.1 = bază logistică (lei÷curs). Suma € pentru servicii extra (podium/lumini/LED) se împarte între beneficiarii t1+t2 (vezi splitTechSuppl); în costuri apare ca linie Tehnic nr.2.
   const hasNonDjSvc = !!(svc.sunet || svc.lumini || svc.ecran || svc.scena);
   const techCount = hasNonDjSvc ? 2 : (svc.dj ? 1 : 0);
   const techBaseLei = Math.max(0, Number(p.fixedCostTechnician ?? DEFAULT_SERVICE_PRICES.fixedCostTechnician ?? 600) || 0);
@@ -681,7 +681,7 @@ const getSvcCostBreakdown = (ev, prices) => {
   if(techCount>0 && nSuppl>0 && supplPer>0){
     const c=Math.round(supplPer*nSuppl*100)/100;
     const nume=activeSuppl.map(x=>x.l).join(", ");
-    out.push({k:"tehnicSupplPlatouri",label:`Tehnic nr.2 — supliment servicii extra (${nume}, ${nSuppl}×${supplPer}€) — ${nmT2}`,cost:c});
+    out.push({k:"tehnicSupplPlatouri",label:`Tehnic nr.2 — ${nmT2} · extra ${nume} (${nSuppl}×${supplPer}€)`,cost:c});
   }
   return out;
 };
@@ -699,10 +699,18 @@ const getMemberTechPayoutLines = (ev, mId, servicePrices) => {
     lines.push({ label: byK.tehnic2Auto.label, eur });
     sum += eur;
   }
-  if (byK.tehnicSupplPlatouri && t2.who === "member" && t2.memberId === mId) {
-    const eur = Number(byK.tehnicSupplPlatouri.cost) || 0;
-    lines.push({ label: byK.tehnicSupplPlatouri.label, eur });
-    sum += eur;
+  if (byK.tehnicSupplPlatouri) {
+    const supp = Number(byK.tehnicSupplPlatouri.cost) || 0;
+    const { s1, s2 } = splitTechSupplementEur(supp, t1, t2);
+    const L = byK.tehnicSupplPlatouri.label;
+    if (s1 > 0 && t1.who === "member" && t1.memberId === mId) {
+      lines.push({ label: isTechPayeeResolved(t2) ? `${L} — parte tehnic 1` : L, eur: s1 });
+      sum += s1;
+    }
+    if (s2 > 0 && t2.who === "member" && t2.memberId === mId) {
+      lines.push({ label: isTechPayeeResolved(t1) ? `${L} — parte tehnic 2` : L, eur: s2 });
+      sum += s2;
+    }
   }
   return { lines, techExtraEur: Math.round(sum * 100) / 100 };
 };
@@ -823,30 +831,57 @@ const canonMemId = (id) => {
   const m = MEMBERS.find((x) => String(x.id) === String(id));
   return m ? m.id : null;
 };
-const DEFAULT_TECH_ASSIGN_SLOT = () => ({ who: "levi", memberId: "", name: "" });
-/** Atribuire separată: t1 = Tehnic nr.1 (bază logistică, implicit Levi oficiu); t2 = Tehnic nr.2 (supliment servicii extra). */
+const DEFAULT_TECH_ASSIGN_T1 = () => ({ who: "levi", memberId: "", name: "" });
+/** Tehnic nr.2 nu are implicit Levi — trebuie ales explicit (începe „nealocat”). */
+const DEFAULT_TECH_ASSIGN_T2 = () => ({ who: "unset", memberId: "", name: "" });
+/** @deprecated folosește T1/T2 */
+const DEFAULT_TECH_ASSIGN_SLOT = DEFAULT_TECH_ASSIGN_T1;
+/** Atribuire: t1 = logistică bază; t2 = al doilea tehnic (același rol împarte cu t1 plata extra pentru podium/lumini/LED). */
 const mergeEvTechAssign = (ev, slot, patch) => {
   const s = slot === "t2" ? "t2" : "t1";
+  const def = s === "t2" ? DEFAULT_TECH_ASSIGN_T2 : DEFAULT_TECH_ASSIGN_T1;
   const cur = {
-    t1: { ...DEFAULT_TECH_ASSIGN_SLOT(), ...(ev.techAssign?.t1 || {}) },
-    t2: { ...DEFAULT_TECH_ASSIGN_SLOT(), ...(ev.techAssign?.t2 || {}) },
+    t1: { ...DEFAULT_TECH_ASSIGN_T1(), ...(ev.techAssign?.t1 || {}) },
+    t2: { ...DEFAULT_TECH_ASSIGN_T2(), ...(ev.techAssign?.t2 || {}) },
   };
-  cur[s] = { ...DEFAULT_TECH_ASSIGN_SLOT(), ...cur[s], ...patch };
+  cur[s] = { ...def, ...cur[s], ...patch };
   return { techAssign: cur };
 };
-/** Cine încasează linia Tehnic 1 / 2: implicit Levi (oficiu). member → apare în Finanțe pe membru; custom → persoană externă. */
+/** t1 implicit Levi; t2 poate rămâne unset până îl alegi în fișă. */
 const normalizeTechSlot = (ev, slot) => {
   const raw = ev?.techAssign?.[slot];
-  const fallback = { who: "levi", memberId: null, name: "" };
+  const isT2 = slot === "t2";
+  const fallback = isT2 ? { who: "unset", memberId: null, name: "" } : { who: "levi", memberId: null, name: "" };
   if (!raw || typeof raw !== "object") return { ...fallback };
-  const who = raw.who === "member" ? "member" : raw.who === "custom" ? "custom" : "levi";
+  const w = raw.who;
+  const who =
+    w === "member" ? "member" : w === "custom" ? "custom" : w === "levi" ? "levi" : w === "unset" ? "unset" : isT2 ? "unset" : "levi";
   const memberId = who === "member" ? canonMemId(raw.memberId) : null;
   const name = String(raw.name || "").trim();
   if (who === "member" && !memberId) return { ...fallback };
   if (who === "custom" && !name) return { ...fallback };
+  if (who === "unset") return { who: "unset", memberId: null, name: "" };
   return { who, memberId, name };
 };
+const isTechPayeeResolved = (s) =>
+  s && (s.who === "levi" || (s.who === "member" && s.memberId) || (s.who === "custom" && s.name));
+/** Împarte suma extra (podium/lumini/LED) între cei doi tehnici când amândoi sunt setați; altfel totul la singurul valid. */
+const splitTechSupplementEur = (suppEur, t1, t2) => {
+  const eur = Number(suppEur) || 0;
+  if (eur <= 0) return { s1: 0, s2: 0 };
+  const v1 = isTechPayeeResolved(t1);
+  const v2 = isTechPayeeResolved(t2);
+  if (v1 && v2) {
+    const s1 = Math.round((eur / 2) * 100) / 100;
+    const s2 = Math.round((eur - s1) * 100) / 100;
+    return { s1, s2 };
+  }
+  if (v1) return { s1: Math.round(eur * 100) / 100, s2: 0 };
+  if (v2) return { s1: 0, s2: Math.round(eur * 100) / 100 };
+  return { s1: 0, s2: 0 };
+};
 const techSlotPayeeLabel = (slotCfg) => {
+  if (!slotCfg || slotCfg.who === "unset") return "— nealocat";
   if (slotCfg.name) return slotCfg.name;
   if (slotCfg.who === "member" && slotCfg.memberId) return MEMBERS.find((m) => m.id === slotCfg.memberId)?.short || slotCfg.memberId;
   if (slotCfg.who === "custom") return slotCfg.name || "Extern";
@@ -1137,7 +1172,13 @@ const getCollaboratorCostLines = (ev, collaboratorKey, servicePrices) => {
     const t1 = normalizeTechSlot(ev, "t1");
     const t2 = normalizeTechSlot(ev, "t2");
     if (byK.tehnic2Auto && t1.who === "levi") lines.push({ label: byK.tehnic2Auto.label, eur: Number(byK.tehnic2Auto.cost) || 0 });
-    if (byK.tehnicSupplPlatouri && t2.who === "levi") lines.push({ label: byK.tehnicSupplPlatouri.label, eur: Number(byK.tehnicSupplPlatouri.cost) || 0 });
+    if (byK.tehnicSupplPlatouri) {
+      const supp = Number(byK.tehnicSupplPlatouri.cost) || 0;
+      const { s1, s2 } = splitTechSupplementEur(supp, t1, t2);
+      const L = byK.tehnicSupplPlatouri.label;
+      if (s1 > 0 && t1.who === "levi") lines.push({ label: isTechPayeeResolved(t2) ? `${L} — parte tehnic 1` : L, eur: s1 });
+      if (s2 > 0 && t2.who === "levi") lines.push({ label: isTechPayeeResolved(t1) ? `${L} — parte tehnic 2` : L, eur: s2 });
+    }
     if (normalizeSoundAttribution(ev) === "levi") {
       const smLei = getSoundmanOutsourceLei(ev, spMerged);
       const smEur = smLei > 0 ? Math.round((smLei / curs) * 100) / 100 : 0;
@@ -5233,31 +5274,34 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
         {saFisa==="prezent" && "Prezent — sunetist"}
       </div>}
     </div>
-    {/* 5c. Tehnic nr.1 / nr.2 — cine încasează (nr.1 = bază oficiu Levi implicit; nr.2 = supliment servicii extra) */}
+    {/* 5c. Tehnic nr.1 / nr.2 — încasare (nr.2 nu e implicit Levi; extra € se împarte între cei doi setați) */}
     <div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
       <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Tehnic nr.1 / nr.2 — încasare</div>
       {editable ? <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{fontSize:10,color:th.tm,lineHeight:1.45}}><strong>Tehnic nr.1</strong> = linia din cheltuiala logistică tehnică (lei÷curs), <strong>din oficiu implicit Levi</strong>. <strong>Tehnic nr.2</strong> = suplimentul € pentru podium / lumini / ecran din ofertă — poți aloca alt membru, altcineva sau tot Levi. Membru trupă → Finanțe.</div>
+        <div style={{fontSize:10,color:th.tm,lineHeight:1.45}}><strong>Tehnic nr.1</strong> = linia logistică tehnică (lei÷curs), <strong>implicit Levi oficiu</strong>. <strong>Tehnic nr.2</strong> = al doilea tehnic — <strong>trebuie ales explicit</strong> la fiecare eveniment. Suma € pentru podium / lumini / ecran se împarte între cei doi când amândoi sunt setați; fiecare încasează și partea sa. Membru trupă → Finanțe.</div>
         {["t1","t2"].map((slotKey)=>{
-          const slot={...DEFAULT_TECH_ASSIGN_SLOT(),...(ev.techAssign?.[slotKey]||{})};
-          const isSuppl = slotKey==="t2";
+          const def = slotKey==="t2" ? DEFAULT_TECH_ASSIGN_T2() : DEFAULT_TECH_ASSIGN_T1();
+          const slot={...def,...(ev.techAssign?.[slotKey]||{})};
+          const isT2 = slotKey==="t2";
+          const normWho = normalizeTechSlot(ev, slotKey).who;
           return <div key={slotKey} style={{padding:12,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
-            <div style={{fontSize:11,fontWeight:700,marginBottom:6,color:th.t}}>{isSuppl?"Tehnic nr.2 — supliment servicii extra (cine încasează)":"Tehnic nr.1 — logistică bază (implicit Levi oficiu)"}</div>
-            <select value={slot.who} onChange={e=>{const w=e.target.value;const prev={...slot};if(w==="levi")updEv&&updEv(mergeEvTechAssign(ev,slotKey,{who:"levi",memberId:"",name:prev.name}));else if(w==="member")updEv&&updEv(mergeEvTechAssign(ev,slotKey,{who:"member",memberId:prev.memberId||"",name:prev.name}));else updEv&&updEv(mergeEvTechAssign(ev,slotKey,{who:"custom",memberId:"",name:prev.name}));}} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
-              <option value="levi">Levi (implicit oficiu)</option>
+            <div style={{fontSize:11,fontWeight:700,marginBottom:6,color:th.t}}>{isT2?"Tehnic nr.2 — cine încasează":"Tehnic nr.1 — logistică bază (implicit Levi oficiu)"}</div>
+            <select value={normWho} onChange={e=>{const w=e.target.value;const prev={...slot};if(w==="unset")updEv&&updEv(mergeEvTechAssign(ev,slotKey,{who:"unset",memberId:"",name:""}));else if(w==="levi")updEv&&updEv(mergeEvTechAssign(ev,slotKey,{who:"levi",memberId:"",name:prev.name}));else if(w==="member")updEv&&updEv(mergeEvTechAssign(ev,slotKey,{who:"member",memberId:prev.memberId||"",name:prev.name}));else updEv&&updEv(mergeEvTechAssign(ev,slotKey,{who:"custom",memberId:"",name:prev.name}));}} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
+              {isT2&&<option value="unset">— alege Tehnic nr.2 —</option>}
+              <option value="levi">Levi (oficiu)</option>
               <option value="member">Membru trupă</option>
               <option value="custom">Alt nume (persoană externă / înlocuitor)</option>
             </select>
-            {slot.who==="member"&&<select value={slot.memberId||""} onChange={e=>updEv&&updEv(mergeEvTechAssign(ev,slotKey,{memberId:e.target.value}))} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
+            {normWho==="member"&&<select value={slot.memberId||""} onChange={e=>updEv&&updEv(mergeEvTechAssign(ev,slotKey,{memberId:e.target.value}))} className="modernSel" style={{...iStyle,maxWidth:380,marginBottom:6,paddingRight:28}}>
               <option value="">— alege membru —</option>
               {MEMBERS.map(mm=><option key={mm.id} value={mm.id}>{mm.n}</option>)}
             </select>}
-            <input value={slot.name||""} onChange={e=>updEv&&updEv(mergeEvTechAssign(ev,slotKey,{name:e.target.value}))} style={{...iStyle,fontSize:12}} placeholder="Nume afișat (opțional)"/>
+            {normWho!=="unset"&&<input value={slot.name||""} onChange={e=>updEv&&updEv(mergeEvTechAssign(ev,slotKey,{name:e.target.value}))} style={{...iStyle,fontSize:12}} placeholder={normWho==="custom"?"Nume (obligatoriu pentru extern)":"Nume afișat (opțional)"}/>}
           </div>;
         })}
       </div> : <div style={{display:"flex",flexDirection:"column",gap:8,fontSize:13,color:th.ts}}>
         <div><span style={{color:th.tm}}>Tehnic nr.1:</span> {techSlotPayeeLabel(normalizeTechSlot(ev,"t1"))}</div>
-        <div><span style={{color:th.tm}}>Tehnic nr.2 (supliment):</span> {techSlotPayeeLabel(normalizeTechSlot(ev,"t2"))}</div>
+        <div><span style={{color:th.tm}}>Tehnic nr.2:</span> {techSlotPayeeLabel(normalizeTechSlot(ev,"t2"))}</div>
       </div>}
     </div>
     {/* 6. Servicii — fără prețuri, cu ce aducem + nume furnizor */}
@@ -5373,7 +5417,7 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
       transport: Number(templates?.servicePrices?.fixedCostTransport ?? DEFAULT_SERVICE_PRICES.fixedCostTransport) || DEFAULT_SERVICE_PRICES.fixedCostTransport,
     },
     soundAttribution: normalizeSoundAttribution(mData || {}),
-    techAssign: (()=>{const t=mData?.techAssign;const slot=(x)=>({...DEFAULT_TECH_ASSIGN_SLOT(),...(x&&typeof x==="object"?x:{})});return{t1:slot(t?.t1),t2:slot(t?.t2)};})(),
+    techAssign: (()=>{const t=mData?.techAssign;const s1=(x)=>({...DEFAULT_TECH_ASSIGN_T1(),...(x&&typeof x==="object"?x:{})});const s2=(x)=>({...DEFAULT_TECH_ASSIGN_T2(),...(x&&typeof x==="object"?x:{})});return{t1:s1(t?.t1),t2:s2(t?.t2)};})(),
     ex: (()=>{const existing=mData?.ex||[];const oficiu=[{id:"ex_tehnicii",n:"Tehnicii",a:200,v:"Oficiu",cxCat:EX_FIN_CAT.tehnic},{id:"ex_backline",n:"Backline",a:250,v:"Oficiu",cxCat:EX_FIN_CAT.furnizor},{id:"ex_transport",n:"Transport",a:10,v:"Oficiu",cxCat:EX_FIN_CAT.alt}];const others=existing.filter(x=>!/tehnic/i.test(x.n||"")&&!/backline/i.test(x.n||"")&&!/transport/i.test(x.n||""));return[...oficiu,...others];})(), ven: mData?.ven||[], notes: mData?.notes||"", fisaExtra: mData?.fisaExtra||"", fisaExtraItems: mData?.fisaExtraItems||[], svcInfo: mData?.svcInfo||{},
     impozitVenit: mData?.impozitVenit??1, plataAvansFirma: mData?.plataAvansFirma ?? (mData?.plataDirect===false), plataRestFirma: mData?.plataRestFirma ?? (mData?.plataDirect===false), sumaAvansLei: mData?.sumaAvansLei??0, sumaRestLei: mData?.sumaRestLei??0, modalitatePlataAvans: mData?.modalitatePlataAvans||"", modalitatePlataRest: mData?.modalitatePlataRest||"", dividende: mData?.dividende??16, cuFond: mData?.cuFond??true, fondPct: mData?.fondPct??10, fondPct2: mData?.fondPct2??10,
     videos: mData?.videos||tplVideos, covers: mData?.covers||(tplCovers.map(c=>({...c,checked:true}))),
@@ -5406,11 +5450,13 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
   const setTechSlot = (slot, patch) => {
     setFm((p) => {
       const s = slot === "t2" ? "t2" : "t1";
+      const d1 = DEFAULT_TECH_ASSIGN_T1();
+      const d2 = DEFAULT_TECH_ASSIGN_T2();
       const cur = {
-        t1: { ...DEFAULT_TECH_ASSIGN_SLOT(), ...(p.techAssign?.t1 || {}) },
-        t2: { ...DEFAULT_TECH_ASSIGN_SLOT(), ...(p.techAssign?.t2 || {}) },
+        t1: { ...d1, ...(p.techAssign?.t1 || {}) },
+        t2: { ...d2, ...(p.techAssign?.t2 || {}) },
       };
-      cur[s] = { ...DEFAULT_TECH_ASSIGN_SLOT(), ...cur[s], ...patch };
+      cur[s] = { ...(s === "t2" ? d2 : d1), ...cur[s], ...patch };
       return { ...p, techAssign: cur };
     });
   };
@@ -5441,8 +5487,8 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
     const payload = { ...fm, ...dp, title, ...extra };
     if (payload.techAssign) {
       payload.techAssign = {
-        t1: { ...DEFAULT_TECH_ASSIGN_SLOT(), ...(payload.techAssign.t1 || {}) },
-        t2: { ...DEFAULT_TECH_ASSIGN_SLOT(), ...(payload.techAssign.t2 || {}) },
+        t1: { ...DEFAULT_TECH_ASSIGN_T1(), ...(payload.techAssign.t1 || {}) },
+        t2: { ...DEFAULT_TECH_ASSIGN_T2(), ...(payload.techAssign.t2 || {}) },
       };
     }
     if (payload.cat !== "private") delete payload.contractBen;
@@ -5809,22 +5855,25 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
                   </select>
                 </div>
                 <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${th.b}`}}>
-                  <div style={{fontSize:10,color:th.tm,marginBottom:8,lineHeight:1.45}}><strong>Tehnic nr.1</strong> = bază logistică (implicit Levi oficiu). <strong>Tehnic nr.2</strong> = cine încasează <strong>suplimentul</strong> pentru podium / lumini / ecran bifate în ofertă. Poți pune membri diferiți pe cele două linii.</div>
+                  <div style={{fontSize:10,color:th.tm,marginBottom:8,lineHeight:1.45}}><strong>Tehnic nr.1</strong> = bază logistică (implicit Levi oficiu). <strong>Tehnic nr.2</strong> = al doilea tehnic — <strong>ales explicit</strong>; suma extra pentru podium / lumini / ecran se împarte între nr.1 și nr.2 când amândoi sunt setați.</div>
                   {["t1","t2"].map((slotKey)=>{
-                    const slot={...DEFAULT_TECH_ASSIGN_SLOT(),...(fm.techAssign?.[slotKey]||{})};
-                    const isSuppl=slotKey==="t2";
+                    const def = slotKey==="t2" ? DEFAULT_TECH_ASSIGN_T2() : DEFAULT_TECH_ASSIGN_T1();
+                    const slot={...def,...(fm.techAssign?.[slotKey]||{})};
+                    const isT2=slotKey==="t2";
+                    const normWho = normalizeTechSlot(fm, slotKey).who;
                     return <div key={slotKey} style={{marginBottom:10,padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
-                      <div style={{fontSize:11,fontWeight:700,marginBottom:6,color:th.t}}>{isSuppl?"Tehnic nr.2 — supliment servicii extra":"Tehnic nr.1 — logistică bază"}</div>
-                      <select value={slot.who} onChange={e=>{const w=e.target.value;const prev={...slot};if(w==="levi")setTechSlot(slotKey,{who:"levi",memberId:"",name:prev.name});else if(w==="member")setTechSlot(slotKey,{who:"member",memberId:prev.memberId||"",name:prev.name});else setTechSlot(slotKey,{who:"custom",memberId:"",name:prev.name});}} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
-                        <option value="levi">Levi (implicit oficiu)</option>
+                      <div style={{fontSize:11,fontWeight:700,marginBottom:6,color:th.t}}>{isT2?"Tehnic nr.2 — cine încasează":"Tehnic nr.1 — logistică bază"}</div>
+                      <select value={normWho} onChange={e=>{const w=e.target.value;const prev={...slot};if(w==="unset")setTechSlot(slotKey,{who:"unset",memberId:"",name:""});else if(w==="levi")setTechSlot(slotKey,{who:"levi",memberId:"",name:prev.name});else if(w==="member")setTechSlot(slotKey,{who:"member",memberId:prev.memberId||"",name:prev.name});else setTechSlot(slotKey,{who:"custom",memberId:"",name:prev.name});}} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
+                        {isT2&&<option value="unset">— alege Tehnic nr.2 —</option>}
+                        <option value="levi">Levi (oficiu)</option>
                         <option value="member">Membru trupă</option>
                         <option value="custom">Alt nume (persoană externă / înlocuitor)</option>
                       </select>
-                      {slot.who==="member"&&<select value={slot.memberId||""} onChange={e=>setTechSlot(slotKey,{memberId:e.target.value})} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
+                      {normWho==="member"&&<select value={slot.memberId||""} onChange={e=>setTechSlot(slotKey,{memberId:e.target.value})} className="modernSel" style={{...iStyle,maxWidth:360,marginBottom:6,paddingRight:28}}>
                         <option value="">— alege membru —</option>
                         {MEMBERS.map(mm=><option key={mm.id} value={mm.id}>{mm.n}</option>)}
                       </select>}
-                      <input value={slot.name||""} onChange={e=>setTechSlot(slotKey,{name:e.target.value})} style={{...iStyle,fontSize:12}} placeholder="Nume afișat (opțional — pe ofertă și linii cost)"/>
+                      {normWho!=="unset"&&<input value={slot.name||""} onChange={e=>setTechSlot(slotKey,{name:e.target.value})} style={{...iStyle,fontSize:12}} placeholder={normWho==="custom"?"Nume (obligatoriu pentru extern)":"Nume afișat (opțional — pe ofertă și linii cost)"}/>}
                     </div>;
                   })}
                 </div>
