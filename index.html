@@ -3038,14 +3038,34 @@ function getDefaultContractModelPrivatePf() {
     footerLine: "PHASER MUSIC SRL · CUI 37199434 · Timișoara, Str. Răsăritului 17 · contact@phaser.ro · www.phaser.ro"
   };
 }
+/** Etichete cap. 1.2 — beneficiar firmă (privat+firmă și public). Editabile în Docs pentru modelele respective. */
+function getDefaultCap1BenFirmaLabels() {
+  return {
+    cap1BenFirmaLblSocietate: "**Societatea comercială:**",
+    cap1BenFirmaLblSediu: "**Sediul:**",
+    cap1BenFirmaLblOnrc: "**Oficiul Național al Registrului Comerțului:** Nr:",
+    cap1BenFirmaLblCui: "**Cod unic de înregistrare:**",
+    cap1BenFirmaLblIban: "**Contul bancar numărul:**",
+    cap1BenFirmaLblBanca: "**Banca:**",
+    cap1BenFirmaLblEmail: "**Adresă mail:**",
+    cap1BenFirmaLblTel: "**Telefon:**",
+    cap1BenFirmaRepreIntro: "reprezentată legal de ",
+    cap1BenFirmaRepreMid: ", în calitate de ",
+    cap1BenFirmaRepreOutro: ", denumită în continuare în prezentul contract **Beneficiar**.",
+  };
+}
 /** Eveniment privat + beneficiar firmă — același schelet ca PF; poți diferenția clauzele în Docs. */
 function getDefaultContractModelPrivateFirma() {
-  return JSON.parse(JSON.stringify(getDefaultContractModelPrivatePf()));
+  return {
+    ...JSON.parse(JSON.stringify(getDefaultContractModelPrivatePf())),
+    ...getDefaultCap1BenFirmaLabels(),
+  };
 }
 function getDefaultContractModelPublic() {
   const p = getDefaultContractModelPrivatePf();
   return {
     ...JSON.parse(JSON.stringify(p)),
+    ...getDefaultCap1BenFirmaLabels(),
     art21: "Art.2.1 Obiectul prezentului contract constă în îndeplinirea activității de interpretare artistică de către Prestator prin actul artistic „PHASER\" în cadrul unui eveniment public organizat de Beneficiar.",
   };
 }
@@ -3181,19 +3201,23 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
 
         <p style={{ margin: "14px 0 8px", fontStyle: "italic" }}>{m.cap1Art12Title || "Art.1.2 Beneficiarul"}</p>
         {benFirmaLayout ? <>
-          <p style={{ marginTop: 2 }}>{formatContractCap1Inline("**Societatea comercială:**")} <Fi k="benFirma" w={320} placeholder={ev.cn || "Denumire societate"} align="left" /></p>
-          <p>{formatContractCap1Inline("**Sediul:**")} <Fi k="benSediu" w={420} align="left" placeholder="Adresa sediului" /></p>
-          <p>{formatContractCap1Inline("**Oficiul Național al Registrului Comerțului:**")} Nr: <Fi k="benOnrcNr" w={200} align="left" placeholder="nr. înregistrare" /></p>
-          <p>{formatContractCap1Inline("**Cod unic de înregistrare:**")} <Fi k="benCui" w={140} align="left" placeholder="CUI" /></p>
-          <p>{formatContractCap1Inline("**Contul bancar numărul:**")} <Fi k="benIban" w={280} align="left" placeholder="IBAN" /></p>
-          <p>{formatContractCap1Inline("**Banca:**")} <Fi k="benBanca" w={220} align="left" /></p>
+          <p style={{ marginTop: 2 }}>{formatContractCap1Inline(m.cap1BenFirmaLblSocietate || "**Societatea comercială:**")} <Fi k="benFirma" w={320} placeholder={ev.cn || "Denumire societate"} align="left" /></p>
+          <p>{formatContractCap1Inline(m.cap1BenFirmaLblSediu || "**Sediul:**")} <Fi k="benSediu" w={420} align="left" placeholder="Adresa sediului" /></p>
+          <p>{formatContractCap1Inline(m.cap1BenFirmaLblOnrc || "**Oficiul Național al Registrului Comerțului:** Nr:")} <Fi k="benOnrcNr" w={200} align="left" placeholder="nr. înregistrare" /></p>
+          <p>{formatContractCap1Inline(m.cap1BenFirmaLblCui || "**Cod unic de înregistrare:**")} <Fi k="benCui" w={140} align="left" placeholder="CUI" /></p>
+          <p>{formatContractCap1Inline(m.cap1BenFirmaLblIban || "**Contul bancar numărul:**")} <Fi k="benIban" w={280} align="left" placeholder="IBAN" /></p>
+          <p>{formatContractCap1Inline(m.cap1BenFirmaLblBanca || "**Banca:**")} <Fi k="benBanca" w={220} align="left" /></p>
           <p>
-            {formatContractCap1Inline("**Adresă mail:**")} <Fi k="clientEmail" w={200} placeholder={ev.ce || "email@..."} align="left" />
+            {formatContractCap1Inline(m.cap1BenFirmaLblEmail || "**Adresă mail:**")} <Fi k="clientEmail" w={200} placeholder={ev.ce || "email@..."} align="left" />
             {"  |  "}
-            {formatContractCap1Inline("**Telefon:**")} <Fi k="clientTel" w={150} placeholder={ev.cp || "+40..."} align="left" />
+            {formatContractCap1Inline(m.cap1BenFirmaLblTel || "**Telefon:**")} <Fi k="clientTel" w={150} placeholder={ev.cp || "+40..."} align="left" />
           </p>
           <p style={{ marginTop: 6 }}>
-            Reprezentată legal de <Fi k="benRepreNum" w={220} align="left" placeholder="nume și prenume" />, în calitate de <Fi k="benRepreCal" w={180} align="left" placeholder="funcție" />, denumită în continuare în prezentul contract {formatContractCap1Inline("**Beneficiar**")}.
+            {m.cap1BenFirmaRepreIntro ?? "reprezentată legal de "}
+            <Fi k="benRepreNum" w={220} align="left" placeholder="nume și prenume" />
+            {m.cap1BenFirmaRepreMid ?? ", în calitate de "}
+            <Fi k="benRepreCal" w={180} align="left" placeholder="funcție" />
+            {formatContractCap1Inline(m.cap1BenFirmaRepreOutro ?? ", denumită în continuare în prezentul contract **Beneficiar**.")}
           </p>
         </> : <>
           <p><strong>{(m.cap1BeneficiarPartyLabel || "Persoană fizică:").replace(/:\s*$/, "")}:</strong> <Fi k="clientNume" w={200} placeholder={ev.cn || "Numele beneficiarului"} align="left" /></p>
@@ -8513,7 +8537,27 @@ function App() {
                         <div><label style={sty.l}>Rând e-mail</label><input value={cm.cap1BenLblEmail||""} onChange={e=>patchCm({ cap1BenLblEmail: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                         <div><label style={sty.l}>Rând telefon</label><input value={cm.cap1BenLblTel||""} onChange={e=>patchCm({ cap1BenLblTel: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
                         <div><label style={sty.l}>Încheiere Beneficiar (înainte de Cap. 2)</label><textarea value={cm.cap1BeneficiarClosing||""} onChange={e=>patchCm({ cap1BeneficiarClosing: e.target.value })} style={{...sty.i,minHeight:48,resize:"vertical",fontSize:12}} placeholder={"**Beneficiar** pentru îngroșat"}/></div>
-                      </> : null}
+                      </> : <>
+                        <div style={{marginTop:14,paddingTop:12,borderTop:`2px solid ${th.b}`}}>
+                          <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:6}}>Cap. 1.2 — <strong>beneficiar firmă</strong> (Privat · firmă / Public)</div>
+                          <p style={{fontSize:10,color:th.tm,marginBottom:10,lineHeight:1.5}}>Etichetele de mai jos apar în contract la privat+când beneficiarul e <strong>Firmă</strong>, și la toate evenimentele <strong>public</strong>. Folosește <code>**text**</code> pentru îngroșat.</p>
+                        </div>
+                        {[
+                          { k:"cap1BenFirmaLblSocietate", l:"Societatea comercială (etichetă)" },
+                          { k:"cap1BenFirmaLblSediu", l:"Sediul" },
+                          { k:"cap1BenFirmaLblOnrc", l:"ONRC (inclusiv «Nr:» în text dacă vrei)" },
+                          { k:"cap1BenFirmaLblCui", l:"Cod unic de înregistrare" },
+                          { k:"cap1BenFirmaLblIban", l:"Contul bancar numărul" },
+                          { k:"cap1BenFirmaLblBanca", l:"Banca" },
+                          { k:"cap1BenFirmaLblEmail", l:"Adresă mail" },
+                          { k:"cap1BenFirmaLblTel", l:"Telefon" },
+                        ].map(({ k, l }) => (
+                          <div key={k}><label style={sty.l}>{l}</label><input value={cm[k]||""} onChange={e=>patchCm({ [k]: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}}/></div>
+                        ))}
+                        <div><label style={sty.l}>Înainte de nume reprezentant</label><input value={cm.cap1BenFirmaRepreIntro||""} onChange={e=>patchCm({ cap1BenFirmaRepreIntro: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}} placeholder="reprezentată legal de "/></div>
+                        <div><label style={sty.l}>Între nume și funcție</label><input value={cm.cap1BenFirmaRepreMid||""} onChange={e=>patchCm({ cap1BenFirmaRepreMid: e.target.value })} style={{...sty.i,width:"100%",fontSize:12}} placeholder=", în calitate de "/></div>
+                        <div><label style={sty.l}>După funcție (final + **Beneficiar**)</label><textarea value={cm.cap1BenFirmaRepreOutro||""} onChange={e=>patchCm({ cap1BenFirmaRepreOutro: e.target.value })} style={{...sty.i,minHeight:44,resize:"vertical",fontSize:12}} placeholder=", denumită în continuare în prezentul contract **Beneficiar**."/></div>
+                      </>}
                     </div>
                     {[{ k:"art21", l:"Art. 2.1 (obiect)" },{ k:"art31", l:"Art. 3.1" },{ k:"art42", l:"Art. 4.2 (plată RON)" },{ k:"art43Intro", l:"Art. 4.3 introducere" },{ k:"art43a", l:"Art. 4.3 a)" },{ k:"art43b", l:"Art. 4.3 b)" },{ k:"art44", l:"Art. 4.4 penalități" }].map(({k,l})=>(
                       <div key={k}><label style={sty.l}>{l}</label><textarea value={cm[k]||""} onChange={e=>patchCm({ [k]: e.target.value })} style={{...sty.i,minHeight:56,resize:"vertical",fontSize:12}} /></div>
