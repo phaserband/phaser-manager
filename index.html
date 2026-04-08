@@ -8602,7 +8602,7 @@ function App() {
               <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Pasul 1</div>
               <h2 style={{fontSize:22,fontWeight:700,color:"#fafafa",margin:0,lineHeight:1.2}}>{loginCategory ? "Alege profilul tău" : "Alege categoria"}</h2>
             </div>
-            <p style={{fontSize:13,color:"#888",textAlign:"center",lineHeight:1.55,margin:0}}>{loginCategory ? "Alege profilul din categoria selectată." : "Membrii/Admin folosesc Supabase, iar colaboratorii intră cu parola dedicată."}</p>
+            {loginCategory ? <p style={{fontSize:13,color:"#888",textAlign:"center",lineHeight:1.55,margin:0}}>Alege profilul din categoria selectată.</p> : null}
             {loginCategory && <button type="button" onClick={()=>{ setLoginCategory(""); setLoginPick(""); setLoginEmail(""); setAuthErr(""); }} style={{alignSelf:"flex-start",background:"transparent",border:"none",color:"#737373",fontSize:13,cursor:"pointer",padding:"2px 0",fontFamily:"inherit"}}>← Înapoi la categorii</button>}
             <div style={{width:"100%",maxWidth:380,borderRadius:12,border:"1px solid #2a2a2a",overflow:"hidden",background:"#111"}}>
               {!loginCategory && <>
