@@ -4602,7 +4602,6 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
 // ─── OFFER PREVIEW ───
 function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail, htmlProxyBase, onRequestIdCardScan, saveTemplates }) {
   const [copied, setCopied] = useState(false);
-  const [factureazaInvoiceBusy, setFactureazaInvoiceBusy] = useState(false);
   const [mediaTitle, setMediaTitle] = useState(ev.mediaTitle||"PHASER Live");
   const [videos, setVideos] = useState(ev.videos||DEFAULT_VIDEOS);
   const syncOffer = (up)=>{ onOfferUpdate&&onOfferUpdate(ev.id,up); };
@@ -5317,7 +5316,7 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     isPriv &&
     !contractBeneficiaryIsFirma(ev) &&
     typeof onRequestIdCardScan === "function";
-  const showFacturaAvansCta = localSt === "plata_avans" && typeof saveTemplates === "function";
+  const showFacturaAvansCta = ["plata_avans", "confirmat"].includes(localSt) && !ev.restPaid;
   const offerFacturaModel = useMemo(() => {
     try {
       return buildFinanceFisaModel(ev, templates?.servicePrices);
@@ -5334,25 +5333,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     Number(v).toLocaleString("ro-RO", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) +
     (offerInvoiceIsLei ? " lei" : "€");
 
-  const emitFactureazaFromOffer = useCallback(async () => {
-    await emitFactureazaInvoiceForEvent(ev, offerInvoiceTotal, {
-      templates,
-      showToast,
-      saveTemplates,
-      getSbClient: typeof getSbClient === "function" ? getSbClient : () => null,
-      setBusy: setFactureazaInvoiceBusy,
-      patchEventAfterSuccess: onOfferUpdate
-        ? (j) => {
-            const urlOut = j.previewUrl || j.pdfUrl || "";
-            onOfferUpdate(ev.id, {
-              factureazaInvoiceId: j.invoiceId,
-              factureazaInvoiceAt: Date.now(),
-              factureazaInvoiceUrl: urlOut,
-            });
-          }
-        : undefined,
-    });
-  }, [ev, offerInvoiceTotal, showToast, saveTemplates, onOfferUpdate, getSbClient]);
+  const emitFactureazaFromOffer = useCallback(() => {
+    window.open("https://factureaza.ro", "_blank", "noopener,noreferrer");
+    showToast("Se deschide factureaza.ro pentru emitere manuală.", "success", 4000);
+  }, [showToast]);
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={onClose}>
@@ -5472,24 +5456,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                 </button>
               )}
               <p style={{ fontSize: 10, color: "#334155", lineHeight: 1.45, marginBottom: 10 }}>
-                Total factură (brut fișă): <strong>{fvOfferInvoice(offerInvoiceTotal)}</strong> — preț fără TVA se calculează din setările TVA (Docs → Facturează).
+                Total orientativ: <strong>{fvOfferInvoice(offerInvoiceTotal)}</strong>. Factura se emite manual în contul factureaza.ro.
               </p>
-              {ev.factureazaInvoiceId && (
-                <div style={{ fontSize: 11, marginBottom: 10, lineHeight: 1.5, color: "#0f172a" }}>
-                  Ultima factură: ID <strong>{ev.factureazaInvoiceId}</strong>
-                  {ev.factureazaInvoiceUrl && (
-                    <>
-                      <br />
-                      <a href={ev.factureazaInvoiceUrl} target="_blank" rel="noreferrer" style={{ color: "#2563eb", fontWeight: 600 }}>
-                        Deschide link / PDF
-                      </a>
-                    </>
-                  )}
-                </div>
-              )}
               <button
                 type="button"
-                disabled={factureazaInvoiceBusy}
                 onClick={emitFactureazaFromOffer}
                 style={{
                   width: "100%",
@@ -5500,11 +5470,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
                   color: "#fff",
                   fontWeight: 700,
                   fontSize: 12,
-                  cursor: factureazaInvoiceBusy ? "wait" : "pointer",
-                  opacity: factureazaInvoiceBusy ? 0.65 : 1,
+                  cursor: "pointer",
                 }}
               >
-                {factureazaInvoiceBusy ? "Se trimite…" : "Creează factură în factureaza.ro"}
+                Creează factură (deschide factureaza.ro)
               </button>
             </div>
           </div>
@@ -8055,13 +8024,6 @@ function App() {
     setCalNewOccTent(false);
   }, [calSidebarDate]);
   const [globalSearch, setGlobalSearch] = useState("");
-  const [factureazaInvoiceBusy, setFactureazaInvoiceBusy] = useState(false);
-  const [factureazaSeriesProbe, setFactureazaSeriesProbe] = useState({
-    busy: false,
-    items: null,
-    err: null,
-    xmlPreview: null,
-  });
   const [idCardScanEvId, setIdCardScanEvId] = useState(null);
   const [sectTab, setSectTab] = useState("playlist");
   const docsSectTab = sectTab==="poveste" ? "playlist" : sectTab;
@@ -8074,65 +8036,6 @@ function App() {
   const [memberProfiles, setMemberProfiles] = useState(loadMemberProfiles);
   const { toast, showToast } = useToasts();
   const saveMemberProfile = (memberId, data) => { setMemberProfiles(p=>{ const n={...p,[memberId]:{...(p[memberId]||{}),...data}}; try{localStorage.setItem(LS_KEYS.memberProfiles,JSON.stringify(n));}catch(e){} return n; }); };
-
-  const fetchFactureazaInvoiceSeriesList = useCallback(async () => {
-    const cfg = normFactureaza(templates?.factureaza);
-    const sb = getSbClient();
-    if (!sb) {
-      showToast("Lipsește conexiunea Supabase.", "error");
-      return;
-    }
-    let { data: { session } } = await sb.auth.getSession();
-    if (!session?.access_token) {
-      const refreshed = await sb.auth.refreshSession().catch(() => null);
-      session = refreshed?.data?.session || null;
-    }
-    if (!session?.access_token) {
-      showToast("Sesiunea ta a expirat (JWT). Fă logout/login și reîncearcă.", "error");
-      return;
-    }
-    setFactureazaSeriesProbe({ busy: true, items: null, err: null, xmlPreview: null });
-    try {
-      const baseFn = `${String(SUPABASE_CFG.url || "").replace(/\/$/, "")}/functions/v1`;
-      const r = await fetch(`${baseFn}/factureaza-api`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: SUPABASE_CFG.key,
-        },
-        body: JSON.stringify({ listInvoiceSeries: true, sandbox: !!cfg.useSandbox }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.error) {
-        const msg = j.message || j.error || `HTTP ${r.status}`;
-        setFactureazaSeriesProbe({
-          busy: false,
-          items: null,
-          err: String(msg),
-          xmlPreview: typeof j.detail === "string" ? j.detail.slice(0, 4000) : null,
-        });
-        showToast(String(msg), "error", 9000);
-        return;
-      }
-      const items = Array.isArray(j.series) ? j.series : [];
-      setFactureazaSeriesProbe({
-        busy: false,
-        items,
-        err: items.length ? null : (j.emptyParseHint || "Lista e goală."),
-        xmlPreview: items.length ? null : j.xmlPreview || null,
-      });
-      if (items.length) {
-        showToast(`Serii găsite: ${items.length}. Apasă pe rând ca să pui ID-ul în câmp.`, "success", 5500);
-      } else {
-        showToast("Nu s-au recunoscut serii în răspuns — vezi fragmentul XML mai jos sau întreabă suportul factureaza.", "error", 9000);
-      }
-    } catch (e) {
-      const m = String(e?.message || e);
-      setFactureazaSeriesProbe({ busy: false, items: null, err: m, xmlPreview: null });
-      showToast(m, "error");
-    }
-  }, [templates, showToast]);
 
   const onNotifyAssign = useCallback(({ taskId, taskText, toMemberId, fromMemberId }) => {
     if (!toMemberId || toMemberId === fromMemberId) return;
@@ -10650,52 +10553,15 @@ function App() {
                 const fz = normFactureaza(templates.factureaza);
                 const patch = (partial)=>saveTemplates((tpl)=>({...tpl,factureaza:{...normFactureaza(tpl.factureaza),...partial}}));
                 return <div>
-                  <label style={sty.l}>Integrare factureaza.ro (API REST v1)</label>
+                  <label style={sty.l}>Factureaza.ro (emitere manuală)</label>
                   <p style={{fontSize:11,color:th.tm,marginBottom:12,lineHeight:1.5}}>
-                    Facturile se creează prin <strong>Supabase Edge Function</strong> <code style={{fontSize:10}}>factureaza-api</code> — cheia API nu stă în browser, ci în secretul <code style={{fontSize:10}}>FACTUREAZA_API_KEY</code> (Contul meu → Cheie API pe factureaza.ro). După deploy: <code style={{fontSize:10}}>supabase secrets set FACTUREAZA_API_KEY=…</code> și <code style={{fontSize:10}}>supabase functions deploy factureaza-api</code>.
-                    Documentație API: <a href="https://factureaza.ro/documentatie-api-v1" target="_blank" rel="noreferrer" style={{color:th.a}}>factureaza.ro/documentatie-api-v1</a>.
+                    În Phaser, butonul <strong>Creează factură</strong> doar deschide <a href="https://factureaza.ro" target="_blank" rel="noreferrer" style={{color:th.a}}>factureaza.ro</a>. Factura se emite manual acolo.
                   </p>
-                  <div style={{padding:12,borderRadius:10,border:`1px solid ${th.b}`,background:th.h,marginBottom:12}}>
-                    <label style={{...sty.l,fontSize:10}}><input type="checkbox" checked={fz.useSandbox} onChange={e=>patch({useSandbox:e.target.checked})}/> Sandbox (sandbox.factureaza.ro)</label>
-                  </div>
-                  <div style={{padding:14,borderRadius:10,border:"1px solid rgba(245,158,11,.45)",background:"rgba(245,158,11,.08)",marginBottom:14}}>
-                    <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:8}}>Unde găsesc ID-ul seriei de facturi? (număr gen 1061105361)</div>
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0 0 10px"}}>
-                      Nu apare mare pe ecran ca „ID”. E <strong>codul numeric intern</strong> al seriei din baza factureaza. <strong>Nu</strong> e cheia API și <strong>nici</strong> prefixul de pe factură (ex. FCT-2026-…).
-                    </p>
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0 0 8px"}}>
-                      <strong>Metoda simplă (recomandat):</strong> cu aceeași <strong>cheie API</strong> ca în Supabase, cere lista seriilor prin API REST v1. În Terminal (Mac) înlocuiești <code style={{fontSize:9}}>CHEIA_API</code> și, dacă ești pe sandbox, schimbă domeniul în <code style={{fontSize:9}}>sandbox.factureaza.ro</code>:
-                    </p>
-                    <pre style={{fontSize:9,lineHeight:1.45,margin:"0 0 10px",padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>{`curl -s -u "CHEIA_API:x" "https://factureaza.ro/api/v1/invoice_series.xml"`}</pre>
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"10px 0 8px"}}>
-                      <strong>Fără Terminal:</strong> butonul de mai jos folosește aceeași cheie API ca în Supabase (prin <code style={{fontSize:9}}>factureaza-api</code>) și îți arată ID-urile. Apasă pe o serie ca să o pui în câmpul „ID serie facturi”.
-                    </p>
-                    <button type="button" disabled={factureazaSeriesProbe.busy} onClick={fetchFactureazaInvoiceSeriesList} style={{...sty.bg,marginBottom:10,padding:"9px 14px",fontSize:12}}>
-                      {factureazaSeriesProbe.busy ? "Se încarcă seriile…" : "Încarcă liste serii (automat, din API)"}
-                    </button>
-                    {Array.isArray(factureazaSeriesProbe.items) && factureazaSeriesProbe.items.length > 0 && (
-                      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
-                        {factureazaSeriesProbe.items.map((s) => (
-                          <button key={String(s.id)} type="button" onClick={()=>{ patch({ documentSeriesId: String(s.id) }); showToast("ID serie pus în câmp. Salvează dacă vrei să păstrezi setarea.", "success", 4500); }} style={{...sty.bg,textAlign:"left",fontSize:11,padding:"8px 10px"}}>
-                            <strong>ID {s.id}</strong>
-                            {s.label ? ` — ${s.label}` : ""}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {factureazaSeriesProbe.err && (
-                      <div style={{fontSize:10,color:"#f87171",marginBottom:8,lineHeight:1.45}}>{factureazaSeriesProbe.err}</div>
-                    )}
-                    {factureazaSeriesProbe.xmlPreview && (
-                      <pre style={{fontSize:9,maxHeight:180,overflow:"auto",marginBottom:10,padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`,whiteSpace:"pre-wrap",wordBreak:"break-all"}}>{factureazaSeriesProbe.xmlPreview}</pre>
-                    )}
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0 0 8px"}}>
-                      În fișierul XML primit, fiecare serie are un tag <code style={{fontSize:9}}>&lt;id&gt;</code> — valoarea dintre ele (doar cifre) este ce pui la <strong>ID serie facturi</strong> în Phaser.
-                    </p>
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:0}}>
-                      Alternativ: în <a href="https://factureaza.ro/documentatie-api" target="_blank" rel="noreferrer" style={{color:th.a}}>documentația GraphQL</a>, query <code style={{fontSize:9}}>invoiceSeries &#123; id prefix year counterCurrent &#125;</code> — câmpul <code style={{fontSize:9}}>id</code>. Ajutor serii în interfață:{" "}
-                      <a href="https://factureaza.ro/ajutor/cum-adaug-o-serie-de-facturi" target="_blank" rel="noreferrer" style={{color:th.a}}>cum adaug o serie de facturi</a>.
-                    </p>
+                  <div style={{padding:14,borderRadius:10,border:"1px solid rgba(37,99,235,.35)",background:"rgba(59,130,246,.08)",marginBottom:14}}>
+                    <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:8}}>Pași rapizi</div>
+                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0 0 6px"}}>1) În factureaza creezi factura manual pentru eveniment.</p>
+                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0 0 6px"}}>2) La serie folosești ce ai în cont (ex. <strong>PM</strong>).</p>
+                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0"}}>3) TVA rămâne 0% (neplătitor TVA).</p>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
                     <div>
@@ -12350,31 +12216,11 @@ function App() {
                   <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
                   <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
                   <button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",{evId:ev.id,from:"detail"}),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>
-                  {typeof saveTemplates==="function"&&<button type="button" disabled={factureazaInvoiceBusy} onClick={async()=>{
-                    let invTotal;
-                    try {
-                      const fm = buildFinanceFisaModel(ev, templates?.servicePrices);
-                      invTotal = fm?.total ?? (ev.fee || 0) + svc;
-                    } catch {
-                      invTotal = (ev.fee || 0) + svc;
-                    }
-                    await emitFactureazaInvoiceForEvent(ev, invTotal, {
-                      templates,
-                      showToast,
-                      saveTemplates,
-                      getSbClient,
-                      setBusy: setFactureazaInvoiceBusy,
-                      patchEventAfterSuccess: (j) => {
-                        const urlOut = j.previewUrl || j.pdfUrl || "";
-                        updEv({
-                          factureazaInvoiceId: j.invoiceId,
-                          factureazaInvoiceAt: Date.now(),
-                          factureazaInvoiceUrl: urlOut,
-                        });
-                      },
-                    });
-                  }} style={{...sty.b,padding:"8px 12px",fontSize:12,opacity:factureazaInvoiceBusy?0.65:1,cursor:factureazaInvoiceBusy?"wait":"pointer"}}>
-                    {factureazaInvoiceBusy?"Se trimite…":"Creează factură"}
+                  {!ev.restPaid&&<button type="button" onClick={()=>{
+                    window.open("https://factureaza.ro", "_blank", "noopener,noreferrer");
+                    showToast("Se deschide factureaza.ro pentru emitere manuală.", "success", 4000);
+                  }} style={{...sty.b,padding:"8px 12px",fontSize:12}}>
+                    Creează factură
                   </button>}
                   {!!p.d&&<button onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
                 </div> : <p style={{fontSize:12,color:th.tm,marginTop:4}}>Contract, oferta și finanțele complete nu sunt disponibile pentru contul de colaborator.</p>}
@@ -12939,29 +12785,16 @@ function App() {
                 </div>
               </div>
 
-              {/* Factură factureaza.ro — la «De plătit avans» emiterea e în pop-up eveniment / Ofertă */}
-              {ev.st!=="plata_avans"&&<div style={{padding:"12px 14px",borderRadius:8,border:`1px solid ${th.b}`,background:th.h}}>
+              {/* Factură manuală în factureaza.ro — activă până la încasare integrală */}
+              {["plata_avans","confirmat"].includes(ev.st) && !ev.restPaid && <div style={{padding:"12px 14px",borderRadius:8,border:`1px solid ${th.b}`,background:th.h}}>
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Factură factureaza.ro</div>
                 {isPrivate && !contractBeneficiaryIsFirma(ev) && <button type="button" onClick={()=>setIdCardScanEvId(ev.id)} style={{...sty.bg,width:"100%",marginBottom:10,padding:"9px 12px",fontSize:12}}>🪪 Date client din buletin (AI) → contract & factură</button>}
-                <p style={{fontSize:10,color:th.tm,lineHeight:1.45,marginBottom:10}}>Creează o factură în contul factureaza cu totalul <strong>{fv(total)}</strong> (brut fișă) și o poziție: preț fără TVA derivat din total cu TVA (setări TVA în Docs → Facturează).</p>
-                {ev.factureazaInvoiceId&&<div style={{fontSize:11,marginBottom:10,lineHeight:1.5}}>
-                  Ultima factură: ID <strong style={{color:th.t}}>{ev.factureazaInvoiceId}</strong>
-                  {ev.factureazaInvoiceUrl&&<><br/><a href={ev.factureazaInvoiceUrl} target="_blank" rel="noreferrer" style={{color:th.a,fontWeight:600}}>Deschide link / PDF</a></>}
-                </div>}
-                <button type="button" disabled={factureazaInvoiceBusy} onClick={async()=>{
-                  await emitFactureazaInvoiceForEvent(ev, total, {
-                    templates,
-                    showToast,
-                    saveTemplates,
-                    getSbClient,
-                    setBusy: setFactureazaInvoiceBusy,
-                    patchEventAfterSuccess: (j) => {
-                      const urlOut = j.previewUrl || j.pdfUrl || "";
-                      upd({ factureazaInvoiceId: j.invoiceId, factureazaInvoiceAt: Date.now(), factureazaInvoiceUrl: urlOut });
-                    },
-                  });
-                }} style={{...sty.b,padding:"10px 14px",fontSize:12,opacity:factureazaInvoiceBusy?0.65:1}}>
-                  {factureazaInvoiceBusy?"Se trimite…":"Creează factură în factureaza.ro"}
+                <p style={{fontSize:10,color:th.tm,lineHeight:1.45,marginBottom:10}}>Deschide factureaza.ro și emite factura manual pentru totalul <strong>{fv(total)}</strong>.</p>
+                <button type="button" onClick={()=>{
+                  window.open("https://factureaza.ro", "_blank", "noopener,noreferrer");
+                  showToast("Se deschide factureaza.ro pentru emitere manuală.", "success", 4000);
+                }} style={{...sty.b,padding:"10px 14px",fontSize:12}}>
+                  Creează factură (deschide factureaza.ro)
                 </button>
               </div>}
 
