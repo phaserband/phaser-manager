@@ -3698,6 +3698,95 @@ function factureazaDocumentDate(ev) {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Emite factura prin Edge Function factureaza-api. `invoiceTotalTtc` = total brut (fișă).
+ * `patchEventAfterSuccess(j)` — răspuns API; actualizează evenimentul (invoiceId, URL din j.previewUrl / j.pdfUrl).
+ */
+async function emitFactureazaInvoiceForEvent(ev, invoiceTotalTtc, {
+  templates,
+  showToast,
+  saveTemplates,
+  getSbClient,
+  setBusy,
+  patchEventAfterSuccess,
+}) {
+  const run = async () => {
+    const cfg = normFactureaza(templates?.factureaza);
+    const sid = Number(String(cfg.documentSeriesId).trim()) || 0;
+    let ctr = Number(String(cfg.documentSeriesCounter).trim()) || 0;
+    if (!sid || !ctr) {
+      showToast("Completează în Docs → Facturează: ID serie și număr (din backend factureaza).", "error");
+      return;
+    }
+    const sb = typeof getSbClient === "function" ? getSbClient() : null;
+    if (!sb) {
+      showToast("Lipsește conexiunea Supabase.", "error");
+      return;
+    }
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session?.access_token) {
+      showToast("Autentifică-te pentru a emite factura.", "error");
+      return;
+    }
+    const currencyId = Number(String(ev.valuta === "lei" ? cfg.currencyIdRon : cfg.currencyIdEur).trim()) || 0;
+    if (!currencyId) {
+      showToast("Setează currency_id (RON/EUR) în Docs → Facturează.", "error");
+      return;
+    }
+    const clientPayload = getFactureazaClientPayload(ev);
+    if (!clientPayload.name) {
+      showToast("Lipsește numele clientului (contract / ofertă).", "error");
+      return;
+    }
+    const vat = cfg.vatPercent;
+    const priceHt = factureazaPriceHtFromTtc(invoiceTotalTtc, vat);
+    const desc = `${cfg.invoiceLineLabel} · ${ev.type || "Eveniment"} · O${ev.offerNr || "?"} · ${fEvDate(ev)}`;
+    const reqBody = {
+      sandbox: !!cfg.useSandbox,
+      documentSeriesId: sid,
+      documentSeriesCounter: ctr,
+      currencyId,
+      vatType: cfg.vatType,
+      documentDate: factureazaDocumentDate(ev),
+      client: { ...clientPayload, country_id: cfg.countryId },
+      lines: [{ description: desc, unit: "buc", unit_count: 1, price: priceHt, vat }],
+      upperAnnotation: `Phaser Manager · eveniment ${ev.id}`,
+    };
+    const baseFn = `${String(SUPABASE_CFG.url || "").replace(/\/$/, "")}/functions/v1`;
+    const r = await fetch(`${baseFn}/factureaza-api`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: SUPABASE_CFG.key,
+      },
+      body: JSON.stringify(reqBody),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const errList = Array.isArray(j.errors) ? j.errors.filter(Boolean) : [];
+      const msg = errList.length ? errList.join("; ") : j.message || j.error || `HTTP ${r.status}`;
+      showToast("factureaza.ro: " + msg, "error", 9000);
+      if (j.detail) console.error("factureaza-api detail", j.detail);
+      return;
+    }
+    if (typeof patchEventAfterSuccess === "function") patchEventAfterSuccess(j);
+    saveTemplates((tpl) => ({
+      ...tpl,
+      factureaza: { ...normFactureaza(tpl.factureaza), documentSeriesCounter: String(ctr + 1) },
+    }));
+    showToast(j.invoiceId ? `Factură creată în factureaza (id ${j.invoiceId}).` : "Factură creată.", "success");
+  };
+  if (typeof setBusy === "function") setBusy(true);
+  try {
+    await run();
+  } catch (e) {
+    showToast("Eroare: " + (e?.message || e), "error");
+  } finally {
+    if (typeof setBusy === "function") setBusy(false);
+  }
+}
+
 /** Micșorează imaginea base64 dacă e prea mare pentru vision API (max latura ~1600px). */
 function downscaleDataUrlIfLarge(dataUrl, maxSide = 1600, quality = 0.88) {
   return new Promise((resolve) => {
@@ -5240,85 +5329,24 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     (offerInvoiceIsLei ? " lei" : "€");
 
   const emitFactureazaFromOffer = useCallback(async () => {
-    const cfg = normFactureaza(templates?.factureaza);
-    const sid = Number(String(cfg.documentSeriesId).trim()) || 0;
-    let ctr = Number(String(cfg.documentSeriesCounter).trim()) || 0;
-    if (!sid || !ctr) {
-      showToast("Completează în Docs → Facturează: ID serie și număr (din backend factureaza).", "error");
-      return;
-    }
-    const sb = typeof getSbClient === "function" ? getSbClient() : null;
-    if (!sb) {
-      showToast("Lipsește conexiunea Supabase.", "error");
-      return;
-    }
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session?.access_token) {
-      showToast("Autentifică-te pentru a emite factura.", "error");
-      return;
-    }
-    const currencyId = Number(String(ev.valuta === "lei" ? cfg.currencyIdRon : cfg.currencyIdEur).trim()) || 0;
-    if (!currencyId) {
-      showToast("Setează currency_id (RON/EUR) în Docs → Facturează.", "error");
-      return;
-    }
-    const clientPayload = getFactureazaClientPayload(ev);
-    if (!clientPayload.name) {
-      showToast("Lipsește numele clientului (contract / ofertă).", "error");
-      return;
-    }
-    const vat = cfg.vatPercent;
-    const priceHt = factureazaPriceHtFromTtc(offerInvoiceTotal, vat);
-    const desc = `${cfg.invoiceLineLabel} · ${ev.type || "Eveniment"} · O${ev.offerNr || "?"} · ${fEvDate(ev)}`;
-    const reqBody = {
-      sandbox: !!cfg.useSandbox,
-      documentSeriesId: sid,
-      documentSeriesCounter: ctr,
-      currencyId,
-      vatType: cfg.vatType,
-      documentDate: factureazaDocumentDate(ev),
-      client: { ...clientPayload, country_id: cfg.countryId },
-      lines: [{ description: desc, unit: "buc", unit_count: 1, price: priceHt, vat }],
-      upperAnnotation: `Phaser Manager · eveniment ${ev.id}`,
-    };
-    setFactureazaInvoiceBusy(true);
-    try {
-      const baseFn = `${String(SUPABASE_CFG.url || "").replace(/\/$/, "")}/functions/v1`;
-      const r = await fetch(`${baseFn}/factureaza-api`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: SUPABASE_CFG.key,
-        },
-        body: JSON.stringify(reqBody),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const errList = Array.isArray(j.errors) ? j.errors.filter(Boolean) : [];
-        const msg = errList.length ? errList.join("; ") : j.message || j.error || `HTTP ${r.status}`;
-        showToast("factureaza.ro: " + msg, "error", 9000);
-        if (j.detail) console.error("factureaza-api detail", j.detail);
-        return;
-      }
-      const urlOut = j.previewUrl || j.pdfUrl || "";
-      onOfferUpdate &&
-        onOfferUpdate(ev.id, {
-          factureazaInvoiceId: j.invoiceId,
-          factureazaInvoiceAt: Date.now(),
-          factureazaInvoiceUrl: urlOut,
-        });
-      saveTemplates((tpl) => ({
-        ...tpl,
-        factureaza: { ...normFactureaza(tpl.factureaza), documentSeriesCounter: String(ctr + 1) },
-      }));
-      showToast(j.invoiceId ? `Factură creată în factureaza (id ${j.invoiceId}).` : "Factură creată.", "success");
-    } catch (e) {
-      showToast("Eroare: " + (e?.message || e), "error");
-    } finally {
-      setFactureazaInvoiceBusy(false);
-    }
-  }, [ev, templates, offerInvoiceTotal, showToast, saveTemplates, onOfferUpdate]);
+    await emitFactureazaInvoiceForEvent(ev, offerInvoiceTotal, {
+      templates,
+      showToast,
+      saveTemplates,
+      getSbClient: typeof getSbClient === "function" ? getSbClient : () => null,
+      setBusy: setFactureazaInvoiceBusy,
+      patchEventAfterSuccess: onOfferUpdate
+        ? (j) => {
+            const urlOut = j.previewUrl || j.pdfUrl || "";
+            onOfferUpdate(ev.id, {
+              factureazaInvoiceId: j.invoiceId,
+              factureazaInvoiceAt: Date.now(),
+              factureazaInvoiceUrl: urlOut,
+            });
+          }
+        : undefined,
+    });
+  }, [ev, offerInvoiceTotal, showToast, saveTemplates, onOfferUpdate, getSbClient]);
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={onClose}>
@@ -12212,10 +12240,36 @@ function App() {
                     <div style={{fontSize:14,fontWeight:700,color:ev.restPaid?"#22c55e":"#ef4444"}}>{fFmt(Math.max(0,(ev.fee||0)+svc-(ev.dep||0)),ev.valuta)}</div>
                   </div>
                 </div>
-                {!isCollaborator ? <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:12}}>
+                {!isCollaborator ? <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:12,alignItems:"center"}}>
                   <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>
                   <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
                   <button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",{evId:ev.id,from:"detail"}),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>
+                  {typeof saveTemplates==="function"&&<button type="button" disabled={factureazaInvoiceBusy} onClick={async()=>{
+                    let invTotal;
+                    try {
+                      const fm = buildFinanceFisaModel(ev, templates?.servicePrices);
+                      invTotal = fm?.total ?? (ev.fee || 0) + svc;
+                    } catch {
+                      invTotal = (ev.fee || 0) + svc;
+                    }
+                    await emitFactureazaInvoiceForEvent(ev, invTotal, {
+                      templates,
+                      showToast,
+                      saveTemplates,
+                      getSbClient,
+                      setBusy: setFactureazaInvoiceBusy,
+                      patchEventAfterSuccess: (j) => {
+                        const urlOut = j.previewUrl || j.pdfUrl || "";
+                        updEv({
+                          factureazaInvoiceId: j.invoiceId,
+                          factureazaInvoiceAt: Date.now(),
+                          factureazaInvoiceUrl: urlOut,
+                        });
+                      },
+                    });
+                  }} style={{...sty.b,padding:"8px 12px",fontSize:12,opacity:factureazaInvoiceBusy?0.65:1,cursor:factureazaInvoiceBusy?"wait":"pointer"}}>
+                    {factureazaInvoiceBusy?"Se trimite…":"Creează factură"}
+                  </button>}
                   {!!p.d&&<button onClick={()=>{if(window.confirm("Ștergi?"))delEv(ev.id)}} style={{...sty.bg,color:"#ef4444",borderColor:"#ef4444"}}><IcTrash s={13}/> Șterge</button>}
                 </div> : <p style={{fontSize:12,color:th.tm,marginTop:4}}>Contract, oferta și finanțele complete nu sunt disponibile pentru contul de colaborator.</p>}
               </>}
@@ -12779,8 +12833,8 @@ function App() {
                 </div>
               </div>
 
-              {/* Factură factureaza.ro — cheia API pe server (Edge Function) */}
-              <div style={{padding:"12px 14px",borderRadius:8,border:`1px solid ${th.b}`,background:th.h}}>
+              {/* Factură factureaza.ro — la «De plătit avans» emiterea e în pop-up eveniment / Ofertă */}
+              {ev.st!=="plata_avans"&&<div style={{padding:"12px 14px",borderRadius:8,border:`1px solid ${th.b}`,background:th.h}}>
                 <div style={{fontSize:10,color:th.tm,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Factură factureaza.ro</div>
                 {isPrivate && !contractBeneficiaryIsFirma(ev) && <button type="button" onClick={()=>setIdCardScanEvId(ev.id)} style={{...sty.bg,width:"100%",marginBottom:10,padding:"9px 12px",fontSize:12}}>🪪 Date client din buletin (AI) → contract & factură</button>}
                 <p style={{fontSize:10,color:th.tm,lineHeight:1.45,marginBottom:10}}>Creează o factură în contul factureaza cu totalul <strong>{fv(total)}</strong> (brut fișă) și o poziție: preț fără TVA derivat din total cu TVA (setări TVA în Docs → Facturează).</p>
@@ -12789,61 +12843,21 @@ function App() {
                   {ev.factureazaInvoiceUrl&&<><br/><a href={ev.factureazaInvoiceUrl} target="_blank" rel="noreferrer" style={{color:th.a,fontWeight:600}}>Deschide link / PDF</a></>}
                 </div>}
                 <button type="button" disabled={factureazaInvoiceBusy} onClick={async()=>{
-                  const cfg = normFactureaza(templates?.factureaza);
-                  const sid = Number(String(cfg.documentSeriesId).trim()) || 0;
-                  let ctr = Number(String(cfg.documentSeriesCounter).trim()) || 0;
-                  if (!sid || !ctr) { showToast("Completează în Docs → Facturează: ID serie și număr (din backend factureaza).", "error"); return; }
-                  const sb = typeof getSbClient==="function"?getSbClient():null;
-                  if (!sb) { showToast("Lipsește conexiunea Supabase.", "error"); return; }
-                  const { data: { session } } = await sb.auth.getSession();
-                  if (!session?.access_token) { showToast("Autentifică-te pentru a emite factura.", "error"); return; }
-                  const currencyId = Number(String(ev.valuta==="lei"?cfg.currencyIdRon:cfg.currencyIdEur).trim()) || 0;
-                  if (!currencyId) { showToast("Setează currency_id (RON/EUR) în Docs → Facturează.", "error"); return; }
-                  const clientPayload = getFactureazaClientPayload(ev);
-                  if (!clientPayload.name) { showToast("Lipsește numele clientului (contract / ofertă).", "error"); return; }
-                  const vat = cfg.vatPercent;
-                  const priceHt = factureazaPriceHtFromTtc(total, vat);
-                  const desc = `${cfg.invoiceLineLabel} · ${ev.type||"Eveniment"} · O${ev.offerNr||"?"} · ${fEvDate(ev)}`;
-                  const reqBody = {
-                    sandbox: !!cfg.useSandbox,
-                    documentSeriesId: sid,
-                    documentSeriesCounter: ctr,
-                    currencyId,
-                    vatType: cfg.vatType,
-                    documentDate: factureazaDocumentDate(ev),
-                    client: { ...clientPayload, country_id: cfg.countryId },
-                    lines: [{ description: desc, unit: "buc", unit_count: 1, price: priceHt, vat }],
-                    upperAnnotation: `Phaser Manager · eveniment ${ev.id}`,
-                  };
-                  setFactureazaInvoiceBusy(true);
-                  try {
-                    const baseFn = `${String(SUPABASE_CFG.url||"").replace(/\/$/,"")}/functions/v1`;
-                    const r = await fetch(`${baseFn}/factureaza-api`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_CFG.key },
-                      body: JSON.stringify(reqBody),
-                    });
-                    const j = await r.json().catch(()=>({}));
-                    if (!r.ok) {
-                      const errList = Array.isArray(j.errors)?j.errors.filter(Boolean):[];
-                      const msg = errList.length?errList.join("; "):(j.message||j.error||`HTTP ${r.status}`);
-                      showToast("factureaza.ro: "+msg, "error", 9000);
-                      if (j.detail) console.error("factureaza-api detail", j.detail);
-                      return;
-                    }
-                    const urlOut = j.previewUrl || j.pdfUrl || "";
-                    upd({ factureazaInvoiceId: j.invoiceId, factureazaInvoiceAt: Date.now(), factureazaInvoiceUrl: urlOut });
-                    saveTemplates((tpl)=>({...tpl,factureaza:{...normFactureaza(tpl.factureaza),documentSeriesCounter:String(ctr+1)}}));
-                    showToast(j.invoiceId?`Factură creată în factureaza (id ${j.invoiceId}).`:"Factură creată.", "success");
-                  } catch (e) {
-                    showToast("Eroare: "+(e?.message||e), "error");
-                  } finally {
-                    setFactureazaInvoiceBusy(false);
-                  }
+                  await emitFactureazaInvoiceForEvent(ev, total, {
+                    templates,
+                    showToast,
+                    saveTemplates,
+                    getSbClient,
+                    setBusy: setFactureazaInvoiceBusy,
+                    patchEventAfterSuccess: (j) => {
+                      const urlOut = j.previewUrl || j.pdfUrl || "";
+                      upd({ factureazaInvoiceId: j.invoiceId, factureazaInvoiceAt: Date.now(), factureazaInvoiceUrl: urlOut });
+                    },
+                  });
                 }} style={{...sty.b,padding:"10px 14px",fontSize:12,opacity:factureazaInvoiceBusy?0.65:1}}>
                   {factureazaInvoiceBusy?"Se trimite…":"Creează factură în factureaza.ro"}
                 </button>
-              </div>
+              </div>}
 
               {/* Calcul distribuție */}
               <div>
