@@ -74,9 +74,11 @@ function xmlChildText(el: Element, ...tagNames: string[]): string {
   return "";
 }
 
+type InvoiceSeriesRow = { id: string; prefix: string; label: string };
+
 /** Extrage seriile de facturi din răspunsul XML list (REST v1). */
-function parseInvoiceSeriesListXml(xml: string): { rows: { id: string; label: string }[]; rootTag: string } {
-  const rows: { id: string; label: string }[] = [];
+function parseInvoiceSeriesListXml(xml: string): { rows: InvoiceSeriesRow[]; rootTag: string } {
+  const rows: InvoiceSeriesRow[] = [];
   const seen = new Set<string>();
   let rootTag = "";
   try {
@@ -94,7 +96,7 @@ function parseInvoiceSeriesListXml(xml: string): { rows: { id: string; label: st
         const year = xmlChildText(el, "year");
         const cc = xmlChildText(el, "counter-current", "counter_current", "counterCurrent");
         const label = [prefix && `prefix ${prefix}`, year && `an ${year}`, cc && `ultim nr. ${cc}`].filter(Boolean).join(" · ") || "fără detalii";
-        rows.push({ id, label });
+        rows.push({ id, prefix, label });
       }
       if (rows.length > 0) break;
     }
@@ -102,6 +104,27 @@ function parseInvoiceSeriesListXml(xml: string): { rows: { id: string; label: st
     /* ignore */
   }
   return { rows, rootTag };
+}
+
+async function resolveDocumentSeriesId(base: string, apiKey: string, rawSeries: unknown): Promise<number | null> {
+  const token = String(rawSeries ?? "").trim();
+  if (!token) return null;
+  if (/^\d+$/.test(token)) return Number(token);
+
+  const norm = token.toUpperCase();
+  const tryPaths = ["invoice_series.xml", "document_series.xml"];
+  for (const path of tryPaths) {
+    const r = await factFetch(base, apiKey, path, { method: "GET" });
+    const xml = await r.text();
+    if (!r.ok) continue;
+    const { rows } = parseInvoiceSeriesListXml(xml);
+    if (!rows.length) continue;
+    const direct = rows.find((x) => x.prefix.toUpperCase() === norm);
+    if (direct) return Number(direct.id);
+    const loose = rows.find((x) => x.label.toUpperCase().includes(norm));
+    if (loose) return Number(loose.id);
+  }
+  return null;
 }
 
 async function factFetch(base: string, apiKey: string, path: string, init: RequestInit): Promise<Response> {
@@ -161,7 +184,7 @@ Deno.serve(async (req) => {
   type Line = { description: string; unit?: string; unit_count?: string | number; price: string; vat: number };
   type Body = {
     sandbox?: boolean;
-    documentSeriesId: number;
+    documentSeriesId: number | string;
     documentSeriesCounter: number;
     currencyId: number;
     vatType: number;
@@ -251,6 +274,16 @@ Deno.serve(async (req) => {
   }
 
   const base = body.sandbox ? BASE_SANDBOX : BASE_PROD;
+  const resolvedSeriesId = await resolveDocumentSeriesId(base, apiKey, body.documentSeriesId);
+  if (!resolvedSeriesId) {
+    return new Response(
+      JSON.stringify({
+        error: "validation",
+        message: "Serie facturi invalidă. Pune ID numeric sau prefix existent (ex. PM).",
+      }),
+      { status: 400, headers: { ...ch, "Content-Type": "application/json" } },
+    );
+  }
   const uid = (body.client.uid || "").replace(/\D/g, "").trim();
 
   let clientId: string | null = null;
@@ -319,7 +352,7 @@ Deno.serve(async (req) => {
     client_id: clientId,
     currency_id: body.currencyId,
     document_date: body.documentDate,
-    document_series_id: body.documentSeriesId,
+    document_series_id: resolvedSeriesId,
     document_series_counter: body.documentSeriesCounter,
     vat_type: body.vatType,
     document_positions: positions,

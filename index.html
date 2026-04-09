@@ -3719,18 +3719,9 @@ async function emitFactureazaInvoiceForEvent(ev, invoiceTotalTtc, {
   const run = async () => {
     const cfg = normFactureaza(templates?.factureaza);
     const rawSid = String(cfg.documentSeriesId ?? "").trim();
-    const sid = /^\d+$/.test(rawSid) ? Number(rawSid) : 0;
     let ctr = Number(String(cfg.documentSeriesCounter).trim()) || 0;
-    if (!sid || !ctr) {
-      if (rawSid && !sid) {
-        showToast(
-          "ID serie facturi trebuie să fie un NUMĂR (ex. 1061105363) din seria de facturi din factureaza — nu cheia API. Cheia API se pune doar în Supabase → secret FACTUREAZA_API_KEY.",
-          "error",
-          12000
-        );
-      } else {
-        showToast("Completează în Docs → Facturează: ID serie (numeric) și număr în serie.", "error");
-      }
+    if (!rawSid || !ctr) {
+      showToast("Completează în Docs → Facturează: serie (ID numeric sau prefix, ex. PM) și număr în serie.", "error");
       return;
     }
     const sb = typeof getSbClient === "function" ? getSbClient() : null;
@@ -3758,7 +3749,7 @@ async function emitFactureazaInvoiceForEvent(ev, invoiceTotalTtc, {
     const desc = `${cfg.invoiceLineLabel} · ${ev.type || "Eveniment"} · O${ev.offerNr || "?"} · ${fEvDate(ev)}`;
     const reqBody = {
       sandbox: !!cfg.useSandbox,
-      documentSeriesId: sid,
+      documentSeriesId: rawSid,
       documentSeriesCounter: ctr,
       currencyId,
       vatType: cfg.vatType,
@@ -10704,8 +10695,8 @@ function App() {
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
                     <div>
-                      <label style={{...sty.l,fontSize:10}}>ID serie facturi — doar cifre (ex. 1061105361), din <code style={{fontSize:9}}>invoice_series.xml</code> sau GraphQL. Nu cheia API.</label>
-                      <input value={fz.documentSeriesId} onChange={e=>patch({documentSeriesId:e.target.value})} placeholder="ex: 1061105361" inputMode="numeric" style={sty.i}/>
+                      <label style={{...sty.l,fontSize:10}}>Serie facturi — ID numeric (ex. 1061105361) sau prefix (ex. PM). Nu cheia API.</label>
+                      <input value={fz.documentSeriesId} onChange={e=>patch({documentSeriesId:e.target.value})} placeholder="ex: PM sau 1061105361" style={sty.i}/>
                     </div>
                     <div>
                       <label style={{...sty.l,fontSize:10}}>Număr în serie (document_series_counter)</label>
