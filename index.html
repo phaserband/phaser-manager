@@ -3701,8 +3701,35 @@ function downscaleDataUrlIfLarge(dataUrl, maxSide = 1600, quality = 0.88) {
   });
 }
 
+/** Parsează JSON din răspuns vision (markdown ```json sau text în jurul obiectului). */
+function parseIdCardJsonFromAiResponseText(raw) {
+  let s = String(raw || "")
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const tryParse = (str) => JSON.parse(str);
+  let parsed;
+  try {
+    parsed = tryParse(s);
+  } catch {
+    const i0 = s.indexOf("{");
+    const i1 = s.lastIndexOf("}");
+    if (i0 >= 0 && i1 > i0) {
+      try {
+        parsed = tryParse(s.slice(i0, i1 + 1));
+      } catch {
+        throw new Error("Răspuns AI invalid — încearcă o poză mai clară.");
+      }
+    } else {
+      throw new Error("Răspuns AI invalid — încearcă o poză mai clară.");
+    }
+  }
+  if (!(parsed && typeof parsed === "object")) throw new Error("Date extrase goale.");
+  return parsed;
+}
+
 /**
- * Extrage câmpuri din poză CI/buletin (OpenAI vision). Cheia trebuie în setări AI (openai).
+ * Extrage câmpuri din poză CI/buletin (OpenAI vision). `apiKey` obligatoriu.
  * Imaginea pleacă către OpenAI — folosește doar dacă ai acordul persoanei.
  */
 async function extractRomanianIdCardFieldsOpenAI(imageDataUrl, apiKey) {
@@ -3737,15 +3764,50 @@ async function extractRomanianIdCardFieldsOpenAI(imageDataUrl, apiKey) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error?.message || "OpenAI: " + res.status);
   const raw = data?.choices?.[0]?.message?.content?.trim() || "";
-  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch {
-    throw new Error("Răspuns AI invalid — încearcă o poză mai clară.");
+  return parseIdCardJsonFromAiResponseText(raw);
+}
+
+/** Llama 3.2 11B Vision pe Worker-ul Phaser (același URL ca chat-ul Llama). */
+async function extractRomanianIdCardFieldsCloudflareVision(imageDataUrl, workerBaseUrl) {
+  const base = String(workerBaseUrl || "").trim().replace(/\/$/, "");
+  if (!/^https?:\/\//i.test(base)) {
+    throw new Error("Configurează URL-ul Worker Cloudflare în ⚙️ Setări AI.");
   }
-  if (!(parsed && typeof parsed === "object")) throw new Error("Date extrase goale.");
-  return parsed;
+  const urlImg = await downscaleDataUrlIfLarge(imageDataUrl);
+  const res = await fetch(base, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visionIdCard: true, imageDataUrl: urlImg }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || `Worker vision (${res.status})`);
+  }
+  const raw = String(data.raw ?? data.response ?? "").trim();
+  return parseIdCardJsonFromAiResponseText(raw);
+}
+
+/**
+ * Buletin: încearcă Cloudflare Llama 3.2 Vision; dacă eșuează, OpenAI dacă există cheie.
+ */
+async function extractRomanianIdCardFields(imageDataUrl, aiSettings) {
+  const workerUrl =
+    phaserWorkersMigrateUrl(String(aiSettings?.llamaWorker || "").trim()) || DEFAULT_AI_WORKER_URL;
+  const openaiKey = String(aiSettings?.openai || "").trim();
+  let cfErr;
+  try {
+    return await extractRomanianIdCardFieldsCloudflareVision(imageDataUrl, workerUrl);
+  } catch (e) {
+    cfErr = e;
+  }
+  if (openaiKey) {
+    try {
+      return await extractRomanianIdCardFieldsOpenAI(imageDataUrl, openaiKey);
+    } catch (e2) {
+      throw new Error(String(e2?.message || e2) + "\n(Cloudflare: " + String(cfErr?.message || cfErr) + ")");
+    }
+  }
+  throw cfErr;
 }
 
 /** Propune câmpuri `contractDraftFields` din obiectul returnat de vision. */
@@ -3836,7 +3898,7 @@ function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToas
           <button type="button" onClick={onClose} style={{ border: "none", background: "transparent", color: th.tm, cursor: "pointer", fontSize: 18 }}>×</button>
         </div>
         <div style={{ padding: 16, fontSize: 11, color: th.tm, lineHeight: 1.5 }}>
-          Încarcă o poză clară cu CI-ul (WhatsApp etc.). Imaginea e trimisă la <strong>OpenAI</strong> pentru citire — ai nevoie de cheie în setările AI. Verifică totul înainte de salvare.
+          Încarcă o poză clară cu CI-ul. Se folosește mai întâi <strong>Llama 3.2 Vision</strong> (Cloudflare Worker — același URL ca chat-ul); dacă eșuează, <strong>OpenAI</strong> dacă ai cheie. Prima dată pe cont, dacă apare eroare de licență Meta, trimite o dată la același Worker un POST JSON: <code style={{fontSize:10}}>{`{"metaVisionAgree":true}`}</code>. Verifică totul înainte de salvare.
         </div>
         <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           <input
@@ -3860,7 +3922,7 @@ function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToas
             onClick={async () => {
               setBusy(true);
               try {
-                const raw = await extractRomanianIdCardFieldsOpenAI(img, aiSettings?.openai);
+                const raw = await extractRomanianIdCardFields(img, aiSettings);
                 const d = idCardAiResultToContractDraft(raw);
                 setFields((prev) => ({ ...prev, ...d, clientNume: d.clientNume || prev.clientNume, cnp: d.cnp || prev.cnp, ciSeria: d.ciSeria || prev.ciSeria, ciNr: d.ciNr || prev.ciNr, jud: d.jud || prev.jud, mun: d.mun || prev.mun, str: d.str || prev.str, nr2: d.nr2 || prev.nr2, ap: d.ap || prev.ap }));
                 showToast?.("Text extras — verifică câmpurile înainte de a salva.");
@@ -4128,7 +4190,7 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
   );
 }
 // ─── OFFER PREVIEW ───
-function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail, htmlProxyBase }) {
+function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail, htmlProxyBase, onRequestIdCardScan }) {
   const [copied, setCopied] = useState(false);
   const [mediaTitle, setMediaTitle] = useState(ev.mediaTitle||"PHASER Live");
   const [videos, setVideos] = useState(ev.videos||DEFAULT_VIDEOS);
@@ -4829,6 +4891,11 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
       ? [...baseTabs,{id:"contract",l:"📝 Contract"}]
       : baseTabs;
   const singleViewMode = fromDetail && (initialTab==="contract"||initialTab==="oferta");
+  const showIdCardCta =
+    localSt === "asteptare" &&
+    isPriv &&
+    !contractBeneficiaryIsFirma(ev) &&
+    typeof onRequestIdCardScan === "function";
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={onClose}>
@@ -4883,6 +4950,39 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             <button onClick={onClose} style={{padding:mob?12:4,minWidth:mob?44:undefined,minHeight:mob?44:undefined,border:"none",background:"transparent",color:"rgba(255,255,255,.6)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><IcX s={18}/></button>
           </div>
         </div>
+
+        {showIdCardCta && (
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "#ede9fe",
+              borderBottom: "1px solid #c4b5fd",
+              flexShrink: 0,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#2e1065", marginBottom: 8, letterSpacing: 0.3 }}>
+              Aștepți contractul — completează datele din buletin pentru cap. 1 (persoană fizică)
+            </div>
+            <button
+              type="button"
+              onClick={onRequestIdCardScan}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 8,
+                border: "1px solid #7c3aed",
+                background: "#7c3aed",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              🪪 Încarcă poză buletin (AI) → contract și factură
+            </button>
+          </div>
+        )}
 
         {/* Tabs — ascunse când singleViewMode (doar contract sau ofertă din detail) */}
         {!singleViewMode&&<div style={{display:"flex",gap:1,padding:"8px 16px",borderBottom:"1px solid #e5e5e5",background:"#fafafa",flexShrink:0,overflowX:"auto"}} onClick={e=>e.stopPropagation()}>
@@ -6753,7 +6853,7 @@ function SettingsAI(props) {
     React.createElement("h3",{style:{fontSize:15,fontWeight:700,marginBottom:4}},"⚙️ Setări AI și linkuri clienți"),
     React.createElement("div",{style:{fontSize:11,color:"#f59e0b",fontWeight:600,marginBottom:18}},"🦙 Llama 3.1 8B · Cloudflare AI Workers · Gratuit"),
     React.createElement("div",{style:{marginBottom:18}},
-      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"Worker URL (AI)"),
+      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"Worker URL (AI — chat Llama + citire buletin Llama 3.2 Vision)"),
       React.createElement("input",{type:"text",value:keys.llamaWorker,onChange:function(e){setKeys(function(k){return Object.assign({},k,{llamaWorker:e.target.value});});},placeholder:DEFAULT_AI_WORKER_URL,style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid rgba(245,158,11,.4)",background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box"}})
     ),
     React.createElement("div",{style:{marginBottom:18}},
@@ -6762,8 +6862,8 @@ function SettingsAI(props) {
       React.createElement("input",{type:"text",value:keys.offerHtmlProxy,onChange:function(e){setKeys(function(k){return Object.assign({},k,{offerHtmlProxy:e.target.value});});},placeholder:"Lasă gol = link direct Supabase",title:FISA_PUBLIC_BASE_HINT,style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid "+th.b,background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box",fontFamily:"ui-monospace,monospace"}})
     ),
     React.createElement("div",{style:{marginBottom:18}},
-      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"OpenAI API key (opțional — citire buletin / vision)"),
-      React.createElement("div",{style:{fontSize:10,color:th.tm,marginBottom:6,lineHeight:1.45}},"Se salvează în profil (cloud). Folosit doar din browser pentru extragere CI — nu pentru chat Llama."),
+      React.createElement("label",{style:{fontSize:11,color:th.tm,fontWeight:600,display:"block",marginBottom:6}},"OpenAI API key (opțional — fallback citire buletin dacă Worker vision eșuează)"),
+      React.createElement("div",{style:{fontSize:10,color:th.tm,marginBottom:6,lineHeight:1.45}},"Se salvează în profil (cloud). Implicit extragerea CI folosește Llama 3.2 Vision pe Worker; OpenAI doar ca rezervă."),
       React.createElement("input",{type:"password",value:keys.openai,onChange:function(e){setKeys(function(k){return Object.assign({},k,{openai:e.target.value});});},placeholder:"sk-...",autoComplete:"off",style:{width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid rgba(34,197,94,.35)",background:th.h,color:th.t,fontSize:11,outline:"none",boxSizing:"border-box",fontFamily:"ui-monospace,monospace"}})
     ),
     React.createElement("div",{style:{display:"flex",gap:8}},
@@ -11886,6 +11986,7 @@ function App() {
               </div>}
 
               {!(ev.st==="plata_avans"||isConfirmed)&&<div style={{display:"flex",gap:4,justifyContent:mob?"center":"flex-end",flexWrap:"wrap",marginTop:16,paddingTop:12,borderTop:`1px solid ${th.b}`}}>
+                {ev.st==="asteptare"&&isP&&!contractBeneficiaryIsFirma(ev)&&!isCollaborator&&<button type="button" onClick={()=>setIdCardScanEvId(ev.id)} style={{...sty.b,padding:"8px 12px",fontSize:12}}>🪪 Buletin (AI)</button>}
                 <button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"oferta",from:"detail"}),80);}} style={sty.bg}><IcFile s={13}/> Ofertă</button>
                 {["asteptare","plata_avans","confirmat"].includes(ev.st)&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("oferta",{evId:ev.id,initialTab:"contract",from:"detail"}),80);}} style={sty.bg}><IcDoc s={13}/> Contract</button>}
                 {(isConfirmed||ev.st==="plata_avans")&&<button onClick={()=>{closeModal();setTimeout(()=>openModal("finance",{evId:ev.id,from:"detail"}),80);}} style={sty.bg}><IcMoney s={13}/> Finanțe</button>}
@@ -12413,12 +12514,13 @@ function App() {
       })()}
 
             {/* OFFER PREVIEW */}
-      {modal==="oferta"&&mData&&(()=>{const ev=mData.ev||mData; const fromDetail=mData.from==="detail"; return <OfferPreview
+      {modal==="oferta"&&mData&&(()=>{const ev=mData.ev||mData; const fromDetail=mData.from==="detail"; const isPEv=ev.cat==="private"||!ev.cat; return <OfferPreview
         ev={ev}
         initialTab={mData.initialTab}
         fromDetail={fromDetail}
         onBackToDetail={fromDetail?()=>{closeModal();setTimeout(()=>openModal("detail",ev.id),80);}:undefined}
         evStatus={ev.st}
+        onRequestIdCardScan={isPEv&&!contractBeneficiaryIsFirma(ev)?()=>setIdCardScanEvId(ev.id):undefined}
         onStatusChange={updSt}
         onOfferUpdate={(id,up)=>{
           setEvs(p=>p.map(e=>e.id===id?{...e,...up}:e));
