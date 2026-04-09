@@ -344,7 +344,7 @@ Deno.serve(async (req) => {
       unit: line.unit || "buc",
       unit_count: String(line.unit_count ?? 1),
       price: String(line.price),
-      vat: line.vat,
+      vat: 0,
     };
   });
 

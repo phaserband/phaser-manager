@@ -3643,7 +3643,7 @@ const DEFAULT_FACTUREAZA = {
   currencyIdRon: "183",
   currencyIdEur: "183",
   vatType: 2,
-  vatPercent: 21,
+  vatPercent: 0,
   countryId: "167",
   invoiceLineLabel: "Prestație artistică — eveniment",
 };
@@ -3659,11 +3659,7 @@ function normFactureaza(f) {
     currencyIdRon: String(f.currencyIdRon ?? d.currencyIdRon),
     currencyIdEur: String(f.currencyIdEur ?? d.currencyIdEur),
     vatType: Number(f.vatType ?? d.vatType) || d.vatType,
-    vatPercent: (() => {
-      const n = Number(f.vatPercent);
-      if (f.vatPercent != null && f.vatPercent !== "" && Number.isFinite(n) && n >= 0) return n;
-      return d.vatPercent;
-    })(),
+    vatPercent: 0,
     countryId: String(f.countryId ?? d.countryId),
     invoiceLineLabel: String(f.invoiceLineLabel || d.invoiceLineLabel),
   };
@@ -3729,9 +3725,13 @@ async function emitFactureazaInvoiceForEvent(ev, invoiceTotalTtc, {
       showToast("Lipsește conexiunea Supabase.", "error");
       return;
     }
-    const { data: { session } } = await sb.auth.getSession();
+    let { data: { session } } = await sb.auth.getSession();
     if (!session?.access_token) {
-      showToast("Autentifică-te pentru a emite factura.", "error");
+      const refreshed = await sb.auth.refreshSession().catch(() => null);
+      session = refreshed?.data?.session || null;
+    }
+    if (!session?.access_token) {
+      showToast("Sesiunea ta a expirat (JWT). Fă logout/login și reîncearcă.", "error");
       return;
     }
     const currencyId = Number(String(ev.valuta === "lei" ? cfg.currencyIdRon : cfg.currencyIdEur).trim()) || 0;
@@ -3744,7 +3744,7 @@ async function emitFactureazaInvoiceForEvent(ev, invoiceTotalTtc, {
       showToast("Lipsește numele clientului (contract / ofertă).", "error");
       return;
     }
-    const vat = cfg.vatPercent;
+    const vat = 0;
     const priceHt = factureazaPriceHtFromTtc(invoiceTotalTtc, vat);
     const desc = `${cfg.invoiceLineLabel} · ${ev.type || "Eveniment"} · O${ev.offerNr || "?"} · ${fEvDate(ev)}`;
     const reqBody = {
@@ -8082,9 +8082,13 @@ function App() {
       showToast("Lipsește conexiunea Supabase.", "error");
       return;
     }
-    const { data: { session } } = await sb.auth.getSession();
+    let { data: { session } } = await sb.auth.getSession();
     if (!session?.access_token) {
-      showToast("Autentifică-te.", "error");
+      const refreshed = await sb.auth.refreshSession().catch(() => null);
+      session = refreshed?.data?.session || null;
+    }
+    if (!session?.access_token) {
+      showToast("Sesiunea ta a expirat (JWT). Fă logout/login și reîncearcă.", "error");
       return;
     }
     setFactureazaSeriesProbe({ busy: true, items: null, err: null, xmlPreview: null });
@@ -10710,13 +10714,8 @@ function App() {
                       <label style={{...sty.l,fontSize:10}}>currency_id — EUR (sau altă monedă afișată)</label>
                       <input value={fz.currencyIdEur} onChange={e=>patch({currencyIdEur:e.target.value})} style={sty.i}/>
                     </div>
-                    <div>
-                      <label style={{...sty.l,fontSize:10}}>vat_type (tip document în factureaza — vezi <a href="https://factureaza.ro/documentatie-api-v1" target="_blank" rel="noreferrer" style={{color:th.a}}>doc REST</a>; firme fără TVA: alege codul potrivit contului tău)</label>
-                      <input type="number" value={fz.vatType} onChange={e=>{const n=Number(e.target.value);patch({vatType:Number.isFinite(n)?n:2});}} style={sty.i}/>
-                    </div>
-                    <div>
-                      <label style={{...sty.l,fontSize:10}}>TVA % pe poziție — <strong>0</strong> = firmă neplătitoare / fără TVA (prețul pe factură = totalul din fișă, fără scădere TVA)</label>
-                      <input type="number" min={0} max={100} step={0.5} value={fz.vatPercent} onChange={e=>{const raw=e.target.value;if(raw==="")return;const n=parseFloat(raw);if(!Number.isFinite(n))return;patch({vatPercent:Math.max(0,Math.min(100,n))});}} style={sty.i}/>
+                    <div style={{gridColumn:mob?"auto":"1 / -1",padding:"8px 10px",borderRadius:8,background:th.c,border:`1px solid ${th.b}`,fontSize:11,color:th.tm}}>
+                      TVA este dezactivat în aplicație pentru emiterea facturilor: se trimite automat <strong>0%</strong> pe poziții.
                     </div>
                     <div style={{gridColumn:mob?"auto":"1 / -1"}}>
                       <label style={{...sty.l,fontSize:10}}>Text linie factură (prefix)</label>
@@ -10724,7 +10723,7 @@ function App() {
                     </div>
                   </div>
                   <p style={{fontSize:10,color:th.tm,lineHeight:1.45}}>După fiecare factură emisă crește manual numărul din serie (sau numerotează din factureaza dacă folosești acolo următorul număr). Clientul: firmă = date din contract (CUI căutat în factureaza); persoană fizică = nume + CNP dacă e completat.</p>
-                  <p style={{fontSize:10,color:th.tm,lineHeight:1.45,marginTop:8}}><strong>Fără TVA (SRL neplătitor etc.):</strong> pune <strong>TVA % = 0</strong>. Ajustează <strong>vat_type</strong> la valoarea cerută de factureaza pentru documente fără TVA (verifică în cont sau în documentația API — poate diferi de la un plan la altul).</p>
+                  <p style={{fontSize:10,color:th.tm,lineHeight:1.45,marginTop:8}}><strong>Setare activă:</strong> TVA 0% este aplicat automat la facturile emise din Phaser.</p>
                 </div>;
               })()}
               {docsSectTab==="playlist"&&(()=>{
