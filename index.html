@@ -3613,6 +3613,23 @@ function contractFieldsForInvoicing(ev) {
   const out = normalizeContractNrFields({ ...withSnap, ...draft });
   return contractBeneficiaryIsFirma(ev) ? normalizeFirmaContractFields(out, ev) : out;
 }
+
+function getSavedIdCardFields(src) {
+  const d = src && typeof src === "object" ? src : {};
+  const out = [];
+  const push = (label, value) => {
+    const v = String(value || "").trim();
+    if (v) out.push({ label, value: v });
+  };
+  push("Nume", d.clientNume);
+  push("CNP", d.cnp);
+  const ci = [String(d.ciSeria || "").trim(), String(d.ciNr || "").trim()].filter(Boolean).join(" ");
+  push("CI", ci);
+  push("Județ", d.jud);
+  push("Localitate", d.mun);
+  push("Adresă", d.str);
+  return out;
+}
 /** Snapshot-uri vechi / chei lipsă: completează câmpuri firmă + mapează clientNume → benFirma dacă e gol. */
 function normalizeFirmaContractFields(fields, ev) {
   if (!contractBeneficiaryIsFirma(ev)) return { ...fields };
@@ -6301,6 +6318,22 @@ function FisaEveniment({ ev, updEv, th, SVC_LABELS, fFmt, fD, editable, sty, mob
     <div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
       <div style={{fontSize:10,color:th.tm,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Client</div>
       {editable ? <><input value={ev.cn||""} onChange={e=>u("cn",e.target.value)} style={iStyle} placeholder="Nume client"/><input value={ev.cp||""} onChange={e=>u("cp",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Telefon"/><input value={ev.ce||""} onChange={e=>u("ce",e.target.value)} style={{...iStyle,marginTop:6}} placeholder="Email"/></> : <><div style={{fontSize:14,fontWeight:600}}>{ev.cn||"—"}</div>{ev.cp&&<div style={{fontSize:11,color:th.ts,marginTop:2}}>{ev.cp}</div>}{ev.ce&&<div style={{fontSize:11,color:th.ts}}>{ev.ce}</div>}</>}
+      {(() => {
+        const idRows = getSavedIdCardFields(ev.contractDraftFields);
+        if (!idRows.length) return null;
+        return (
+          <details style={{marginTop:10,padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
+            <summary style={{cursor:"pointer",fontSize:11,fontWeight:700,color:th.t}}>🪪 Date buletin salvate</summary>
+            <div style={{marginTop:8,display:"grid",gap:4}}>
+              {idRows.map((r)=>(
+                <div key={r.label} style={{fontSize:11,color:th.tm,lineHeight:1.4}}>
+                  <strong style={{color:th.t}}>{r.label}:</strong> {r.value}
+                </div>
+              ))}
+            </div>
+          </details>
+        );
+      })()}
     </div>
     {/* 4. Ospitalitate — cazare doar dacă există în ofertă (>0 camere); fără „Adaugă cazare” pe fișă */}
     {ev.cat==="private"&&<div style={{padding:16,borderRadius:10,background:th.h,border:`1px solid ${th.b}`}}>
@@ -6894,6 +6927,22 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
                 </select>
               </div>
               <div><label style={sty.l}>ID / Handle / Username</label><input value={fm.platformId||""} onChange={e=>u("platformId",e.target.value)} style={iStyle} placeholder="@username sau link..."/></div>
+              {(() => {
+                const idRows = getSavedIdCardFields(fm.contractDraftFields);
+                if (!idRows.length) return null;
+                return (
+                  <div style={{gridColumn:"1/-1",padding:10,borderRadius:8,background:th.c,border:`1px solid ${th.b}`}}>
+                    <div style={{fontSize:11,fontWeight:700,color:th.t,marginBottom:6}}>🪪 Date buletin salvate pe eveniment</div>
+                    <div style={{display:"grid",gap:4}}>
+                      {idRows.map((r)=>(
+                        <div key={r.label} style={{fontSize:11,color:th.tm,lineHeight:1.4}}>
+                          <strong style={{color:th.t}}>{r.label}:</strong> {r.value}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               <div style={{gridColumn:"1/-1",padding:10,borderRadius:7,background:th.h,fontSize:11,color:th.tm}}>
                 ℹ️ Datele clientului sunt <strong style={{color:th.t}}>interne</strong> — nu apar în oferta trimisă.
               </div>
