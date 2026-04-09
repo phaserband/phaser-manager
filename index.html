@@ -10549,49 +10549,6 @@ function App() {
                   showToast(`Setări salvate. Actualizate ${touched} evenimente neîncasate integral.`);
                 }} style={{...sty.bg,marginTop:16}}>Salvează setări</button>
               </div>}
-              {docsSectTab==="factureaza"&&(()=>{
-                const fz = normFactureaza(templates.factureaza);
-                const patch = (partial)=>saveTemplates((tpl)=>({...tpl,factureaza:{...normFactureaza(tpl.factureaza),...partial}}));
-                return <div>
-                  <label style={sty.l}>Factureaza.ro (emitere manuală)</label>
-                  <p style={{fontSize:11,color:th.tm,marginBottom:12,lineHeight:1.5}}>
-                    În Phaser, butonul <strong>Creează factură</strong> doar deschide <a href="https://factureaza.ro" target="_blank" rel="noreferrer" style={{color:th.a}}>factureaza.ro</a>. Factura se emite manual acolo.
-                  </p>
-                  <div style={{padding:14,borderRadius:10,border:"1px solid rgba(37,99,235,.35)",background:"rgba(59,130,246,.08)",marginBottom:14}}>
-                    <div style={{fontSize:12,fontWeight:700,color:th.t,marginBottom:8}}>Pași rapizi</div>
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0 0 6px"}}>1) În factureaza creezi factura manual pentru eveniment.</p>
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0 0 6px"}}>2) La serie folosești ce ai în cont (ex. <strong>PM</strong>).</p>
-                    <p style={{fontSize:10,color:th.tm,lineHeight:1.55,margin:"0"}}>3) TVA rămâne 0% (neplătitor TVA).</p>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
-                    <div>
-                      <label style={{...sty.l,fontSize:10}}>Serie facturi — ID numeric (ex. 1061105361) sau prefix (ex. PM). Nu cheia API.</label>
-                      <input value={fz.documentSeriesId} onChange={e=>patch({documentSeriesId:e.target.value})} placeholder="ex: PM sau 1061105361" style={sty.i}/>
-                    </div>
-                    <div>
-                      <label style={{...sty.l,fontSize:10}}>Număr în serie (document_series_counter)</label>
-                      <input value={fz.documentSeriesCounter} onChange={e=>patch({documentSeriesCounter:e.target.value})} placeholder="Următorul număr liber din serie" style={sty.i}/>
-                    </div>
-                    <div>
-                      <label style={{...sty.l,fontSize:10}}>currency_id — RON</label>
-                      <input value={fz.currencyIdRon} onChange={e=>patch({currencyIdRon:e.target.value})} style={sty.i}/>
-                    </div>
-                    <div>
-                      <label style={{...sty.l,fontSize:10}}>currency_id — EUR (sau altă monedă afișată)</label>
-                      <input value={fz.currencyIdEur} onChange={e=>patch({currencyIdEur:e.target.value})} style={sty.i}/>
-                    </div>
-                    <div style={{gridColumn:mob?"auto":"1 / -1",padding:"8px 10px",borderRadius:8,background:th.c,border:`1px solid ${th.b}`,fontSize:11,color:th.tm}}>
-                      TVA este dezactivat în aplicație pentru emiterea facturilor: se trimite automat <strong>0%</strong> pe poziții.
-                    </div>
-                    <div style={{gridColumn:mob?"auto":"1 / -1"}}>
-                      <label style={{...sty.l,fontSize:10}}>Text linie factură (prefix)</label>
-                      <input value={fz.invoiceLineLabel} onChange={e=>patch({invoiceLineLabel:e.target.value})} style={sty.i}/>
-                    </div>
-                  </div>
-                  <p style={{fontSize:10,color:th.tm,lineHeight:1.45}}>După fiecare factură emisă crește manual numărul din serie (sau numerotează din factureaza dacă folosești acolo următorul număr). Clientul: firmă = date din contract (CUI căutat în factureaza); persoană fizică = nume + CNP dacă e completat.</p>
-                  <p style={{fontSize:10,color:th.tm,lineHeight:1.45,marginTop:8}}><strong>Setare activă:</strong> TVA 0% este aplicat automat la facturile emise din Phaser.</p>
-                </div>;
-              })()}
               {docsSectTab==="playlist"&&(()=>{
                 const pl = (templates.playlist&&templates.playlist.length>0)?templates.playlist:DEFAULT_COVERS;
                 const downloadPlaylistPdf = async () => {
