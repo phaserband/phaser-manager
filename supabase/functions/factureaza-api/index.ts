@@ -65,6 +65,45 @@ function firstClientIdFromSearch(xml: string): string | null {
   }
 }
 
+function xmlChildText(el: Element, ...tagNames: string[]): string {
+  for (const n of tagNames) {
+    const c = el.getElementsByTagName(n)[0];
+    const t = (c?.textContent || "").trim();
+    if (t) return t;
+  }
+  return "";
+}
+
+/** Extrage seriile de facturi din răspunsul XML list (REST v1). */
+function parseInvoiceSeriesListXml(xml: string): { rows: { id: string; label: string }[]; rootTag: string } {
+  const rows: { id: string; label: string }[] = [];
+  const seen = new Set<string>();
+  let rootTag = "";
+  try {
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    rootTag = doc.documentElement?.tagName || "";
+    const containerTags = ["invoice-series", "invoice_series", "document-series", "document_series"];
+    for (const tag of containerTags) {
+      const nodes = doc.getElementsByTagName(tag);
+      for (let i = 0; i < nodes.length; i++) {
+        const el = nodes[i];
+        const id = xmlChildText(el, "id");
+        if (!/^\d+$/.test(id) || seen.has(id)) continue;
+        seen.add(id);
+        const prefix = xmlChildText(el, "prefix");
+        const year = xmlChildText(el, "year");
+        const cc = xmlChildText(el, "counter-current", "counter_current", "counterCurrent");
+        const label = [prefix && `prefix ${prefix}`, year && `an ${year}`, cc && `ultim nr. ${cc}`].filter(Boolean).join(" · ") || "fără detalii";
+        rows.push({ id, label });
+      }
+      if (rows.length > 0) break;
+    }
+  } catch {
+    /* ignore */
+  }
+  return { rows, rootTag };
+}
+
 async function factFetch(base: string, apiKey: string, path: string, init: RequestInit): Promise<Response> {
   const url = new URL(path.replace(/^\//, ""), base);
   const basic = btoa(`${apiKey}:x`);
@@ -140,15 +179,69 @@ Deno.serve(async (req) => {
     lowerAnnotation?: string;
   };
 
-  let body: Body;
+  let raw: Record<string, unknown>;
   try {
-    body = await req.json();
+    raw = await req.json();
   } catch {
     return new Response(JSON.stringify({ error: "invalid_json" }), {
       status: 400,
       headers: { ...ch, "Content-Type": "application/json" },
     });
   }
+
+  if (raw.listInvoiceSeries === true) {
+    const sandbox = !!raw.sandbox;
+    const base = sandbox ? BASE_SANDBOX : BASE_PROD;
+    const tryPaths = ["invoice_series.xml", "document_series.xml"];
+    let lastText = "";
+    let lastStatus = 0;
+    let fallbackEmpty: { path: string; rootTag: string; xml: string } | null = null;
+    for (const path of tryPaths) {
+      const lr = await factFetch(base, apiKey, path, { method: "GET" });
+      lastText = await lr.text();
+      lastStatus = lr.status;
+      if (!lr.ok) continue;
+      const { rows, rootTag } = parseInvoiceSeriesListXml(lastText);
+      if (rows.length > 0) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            series: rows,
+            endpoint: path,
+            rootTag,
+          }),
+          { headers: { ...ch, "Content-Type": "application/json" } },
+        );
+      }
+      if (!fallbackEmpty) fallbackEmpty = { path, rootTag, xml: lastText };
+    }
+    if (fallbackEmpty) {
+      const { path, rootTag, xml } = fallbackEmpty;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          series: [],
+          endpoint: path,
+          rootTag,
+          emptyParseHint:
+            "XML primit dar fără serii recunoscute — încearcă celălalt endpoint sau contactează suportul factureaza.",
+          xmlPreview: xml.slice(0, 2200),
+        }),
+        { headers: { ...ch, "Content-Type": "application/json" } },
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        error: "list_series_failed",
+        status: lastStatus,
+        message: "Nu am putut citi lista de serii de la factureaza (verifică cheia API și sandbox vs producție).",
+        detail: lastText.slice(0, 2800),
+      }),
+      { status: 502, headers: { ...ch, "Content-Type": "application/json" } },
+    );
+  }
+
+  const body = raw as unknown as Body;
 
   if (!body.client?.name?.trim() || !Array.isArray(body.lines) || body.lines.length === 0) {
     return new Response(JSON.stringify({ error: "validation", message: "Client și cel puțin o poziție sunt obligatorii." }), {
