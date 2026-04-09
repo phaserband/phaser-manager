@@ -63,16 +63,13 @@ export default {
         const userText =
           "Read this Romanian ID card image and fill every JSON field from what is printed on the card. Use \"\" only if truly unreadable.";
 
-        /** Imaginea trebuie în mesaj (documentație CF: `image` la rădăcină e depreciat). */
+        /**
+         * Tutorialul CF folosește `image` la rădăcină + `messages` (text). Fără `image`, modelul nu „vede” poza.
+         * Încercăm mai întâi cu JSON schema; dacă eșuează, același input fără schema.
+         */
         const messages = [
           { role: "system", content: sys },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: userText },
-              { type: "image_url", image_url: { url: imageDataUrl } },
-            ],
-          },
+          { role: "user", content: userText },
         ];
 
         const idCardJsonSchema = {
@@ -89,7 +86,7 @@ export default {
           required: ["clientNume", "cnp", "ciSeria", "ciNr", "jud", "localitate", "adresaDomiciliu"],
         };
 
-        const baseOpts = { messages, max_tokens: 768 };
+        const baseOpts = { messages, image: imageDataUrl, max_tokens: 768 };
 
         let aiRes;
         try {
