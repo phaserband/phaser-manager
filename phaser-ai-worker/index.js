@@ -55,13 +55,17 @@ export default {
           "You are an expert at reading Romanian national ID cards (buletin / carte de identitate). " +
           "Reply ONLY with valid JSON, no markdown code fences, with exactly these keys: " +
           "clientNume (full legal name as printed, UPPERCASE), cnp (13 digits), " +
-          "ciSeria (2 letters), ciNr (serial number digits), jud (județ / county as on card), " +
-          "localitate (ONE field: copy exactly what the card shows for place — municipiu OR oraș OR comună/sat OR sat name; do not split), " +
-          "adresaDomiciliu (ONE string: the full domiciliu line(s) as printed — street, number, block, stair, apartment, village details, etc.; keep it as on the card, do not force separate nr/ap). " +
+          "ciSeria (2 letters), ciNr (serial number digits), " +
+          "jud (Romanian county / județ from the DOMICILIU block only — e.g. CS, TM, or full county name; " +
+          "NEVER the country from the card header: Romania, România, Roumanie, ROU), " +
+          "localitate (municipiu / oraș / comună / sat from DOMICILIU only, e.g. REȘIȚA; NEVER «Romania» or «Roumanie» as localitate), " +
+          "adresaDomiciliu (single copy of domiciliu text — do NOT repeat the same JUD… MUN… segment twice; " +
+          "then street, nr., bloc, scară, ap. as printed). " +
           'Use empty string "" for unreadable or missing fields.';
 
         const userText =
-          "Read this Romanian ID card image and fill every JSON field from what is printed on the card. Use \"\" only if truly unreadable.";
+          "Use the DOMICILIU lines: jud = county from there, not the country line. localitate = city/municipality from domiciliu, not Romania. " +
+          "adresaDomiciliu: one JUD.… MUN.… prefix at most, then the rest. Use \"\" only if unreadable.";
 
         /**
          * Tutorialul CF folosește `image` la rădăcină + `messages` (text). Fără `image`, modelul nu „vede” poza.

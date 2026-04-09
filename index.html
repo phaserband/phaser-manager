@@ -3847,9 +3847,10 @@ async function extractRomanianIdCardFieldsOpenAI(imageDataUrl, apiKey) {
     "Ești expert în citirea cărții de identitate românești (buletin/CI). " +
     "Răspunde DOAR cu JSON valid, fără markdown, cu cheile exact: " +
     "clientNume (nume complet cum apare pe act, MAJUSCULE), cnp (13 cifre), " +
-    "ciSeria (2 litere), ciNr (număr serie, cifre), jud (județ), " +
-    "localitate (un singur câmp: copiază cum e pe buletin — municipiu SAU oraș SAU comună/sat SAU sat; nu împărți), " +
-    "adresaDomiciliu (un singur text: tot rândul/rândurile de domiciliu cum sunt tipărite — stradă, nr., bloc, scară, apartament, sate, etc.; nu forța câmpuri separate pentru nr sau ap). " +
+    "ciSeria (2 litere), ciNr (număr serie, cifre), " +
+    "jud (județul din zona DOMICILIU — cod sau nume, ex. CS, TM; NU pune aici țara de pe antet: România, Roumanie, ROU), " +
+    "localitate (municipiu/oraș/comună/sat din DOMICILIU, ex. REȘIȚA; NU folosi «România» sau «Roumanie» ca localitate), " +
+    "adresaDomiciliu (un singur text: nu repeta de două ori același prefix JUD.… MUN.…; apoi stradă, nr., bloc, scară, ap. cum e tipărit). " +
     "Pentru câmpuri nelizibile folosește string gol.";
   const oaCtrl = new AbortController();
   const oaTo = setTimeout(() => oaCtrl.abort(), 120000);
@@ -3870,7 +3871,7 @@ async function extractRomanianIdCardFieldsOpenAI(imageDataUrl, apiKey) {
             content: [
               {
                 type: "text",
-                text: "Extrage în JSON cu cheile: clientNume, cnp, ciSeria, ciNr, jud, localitate, adresaDomiciliu (vezi instrucțiunile din system).",
+                text: "Extrage din zona DOMICILIU: jud = județ (nu România de pe antet); localitate = municipiu/oraș (nu țara); adresaDomiciliu fără același JUD.… MUN.… repetat de două ori.",
               },
               { type: "image_url", image_url: { url: url } },
             ],
@@ -3957,6 +3958,81 @@ async function extractRomanianIdCardFields(imageDataUrl, aiSettings) {
   throw cfErr;
 }
 
+/** Normalizează text pentru comparare (fără diacritice). */
+function normIdCardKey(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/** Județ / localitate greșit puse cu țara de pe antetul CI. */
+function looksLikeRoCountryNotCounty(s) {
+  const n = normIdCardKey(s);
+  if (!n) return false;
+  if (n === "rom" || n === "rou" || n === "roe") return true;
+  return (
+    n === "romania" ||
+    n === "roumanie" ||
+    n === "rumania" ||
+    n === "romanie" ||
+    /^romania/.test(n) ||
+    /^roumanie/.test(n)
+  );
+}
+
+/** Elimină primul bloc identic repetat (ex. «JUD.CS MUN.RESITA» de două ori). */
+function dedupeRepeatedAddressPrefix(str) {
+  const t = String(str || "").trim();
+  if (!t) return t;
+  const parts = t.split(/\s+/).filter(Boolean);
+  const half = Math.floor(parts.length / 2);
+  for (let k = Math.min(12, half); k >= 1; k--) {
+    const a = parts.slice(0, k).join(" ");
+    const b = parts.slice(k, 2 * k).join(" ");
+    if (a === b) return parts.slice(k).join(" ");
+  }
+  return t;
+}
+
+function extractJudFromDomiciliuLine(addr) {
+  const m = String(addr).match(/\bJUD\.?\s*([A-Za-zĂÂÎȘȚăâîșț]{1,4})\b/);
+  return m ? m[1].toUpperCase() : "";
+}
+
+function extractMunFromDomiciliuLine(addr) {
+  const m = String(addr).match(/\bMUN\.?\s*([A-Za-zĂÂÎȘȚ][A-Za-zĂÂÎȘȚa-zăâîșț.]*)/);
+  if (!m) return "";
+  return m[1].replace(/\./g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Dacă jud/mun sunt deja completate, scoate un singur prefix JUD.* MUN.* de la începutul adresei (rămâne strada). */
+function stripOneLeadingJudMunPrefix(str) {
+  return String(str || "").replace(/^\s*JUD\.\s*\S+\s+MUN\.\s*\S+\s+/i, "").trim();
+}
+
+/** Corectează în loc: țară la județ/localitate, adresă dublată. */
+function normalizeRoIdCardDomiciliuInPlace(out) {
+  if (!out || typeof out !== "object") return;
+  if (out.str != null && String(out.str).trim()) {
+    out.str = dedupeRepeatedAddressPrefix(String(out.str).trim());
+  }
+  let addr = String(out.str || "");
+  if (looksLikeRoCountryNotCounty(out.jud)) {
+    const ex = extractJudFromDomiciliuLine(addr);
+    out.jud = ex || "";
+  }
+  if (looksLikeRoCountryNotCounty(out.mun)) {
+    const ex = extractMunFromDomiciliuLine(addr);
+    out.mun = ex || "";
+  }
+  addr = String(out.str || "");
+  if (String(out.jud || "").trim() && String(out.mun || "").trim() && /^\s*JUD\./i.test(addr)) {
+    out.str = stripOneLeadingJudMunPrefix(addr);
+  }
+}
+
 /** Propune câmpuri `contractDraftFields` din obiectul returnat de vision (domiciliu întreg în str; fără ap separat la nevoie). */
 function idCardAiResultToContractDraft(obj) {
   const o = obj && typeof obj === "object" ? obj : {};
@@ -4017,6 +4093,7 @@ function idCardAiResultToContractDraft(obj) {
     "street"
   );
   if (addrFull) out.str = addrFull;
+  normalizeRoIdCardDomiciliuInPlace(out);
   return out;
 }
 
@@ -4437,8 +4514,9 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
   );
 }
 // ─── OFFER PREVIEW ───
-function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail, htmlProxyBase, onRequestIdCardScan }) {
+function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, onClose, onEdit, sty, templates, memberProfiles, showToast, initialTab, fromDetail, onBackToDetail, htmlProxyBase, onRequestIdCardScan, saveTemplates }) {
   const [copied, setCopied] = useState(false);
+  const [factureazaInvoiceBusy, setFactureazaInvoiceBusy] = useState(false);
   const [mediaTitle, setMediaTitle] = useState(ev.mediaTitle||"PHASER Live");
   const [videos, setVideos] = useState(ev.videos||DEFAULT_VIDEOS);
   const syncOffer = (up)=>{ onOfferUpdate&&onOfferUpdate(ev.id,up); };
@@ -5153,6 +5231,103 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
     isPriv &&
     !contractBeneficiaryIsFirma(ev) &&
     typeof onRequestIdCardScan === "function";
+  const showFacturaAvansCta = localSt === "plata_avans" && typeof saveTemplates === "function";
+  const offerFacturaModel = useMemo(() => {
+    try {
+      return buildFinanceFisaModel(ev, templates?.servicePrices);
+    } catch {
+      return null;
+    }
+  }, [ev, templates?.servicePrices]);
+  const offerInvoiceTotal =
+    offerFacturaModel?.total ??
+    (ev.fee || 0) +
+      Object.entries(ev.svcp || {}).reduce((s, [k, v]) => s + (ev.svc?.[k] ? v : 0), 0);
+  const offerInvoiceIsLei = offerFacturaModel?.isLei ?? ev.valuta === "lei";
+  const fvOfferInvoice = (v) =>
+    Number(v).toLocaleString("ro-RO", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) +
+    (offerInvoiceIsLei ? " lei" : "€");
+
+  const emitFactureazaFromOffer = useCallback(async () => {
+    const cfg = normFactureaza(templates?.factureaza);
+    const sid = Number(String(cfg.documentSeriesId).trim()) || 0;
+    let ctr = Number(String(cfg.documentSeriesCounter).trim()) || 0;
+    if (!sid || !ctr) {
+      showToast("Completează în Docs → Facturează: ID serie și număr (din backend factureaza).", "error");
+      return;
+    }
+    const sb = typeof getSbClient === "function" ? getSbClient() : null;
+    if (!sb) {
+      showToast("Lipsește conexiunea Supabase.", "error");
+      return;
+    }
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session?.access_token) {
+      showToast("Autentifică-te pentru a emite factura.", "error");
+      return;
+    }
+    const currencyId = Number(String(ev.valuta === "lei" ? cfg.currencyIdRon : cfg.currencyIdEur).trim()) || 0;
+    if (!currencyId) {
+      showToast("Setează currency_id (RON/EUR) în Docs → Facturează.", "error");
+      return;
+    }
+    const clientPayload = getFactureazaClientPayload(ev);
+    if (!clientPayload.name) {
+      showToast("Lipsește numele clientului (contract / ofertă).", "error");
+      return;
+    }
+    const vat = cfg.vatPercent;
+    const priceHt = factureazaPriceHtFromTtc(offerInvoiceTotal, vat);
+    const desc = `${cfg.invoiceLineLabel} · ${ev.type || "Eveniment"} · O${ev.offerNr || "?"} · ${fEvDate(ev)}`;
+    const reqBody = {
+      sandbox: !!cfg.useSandbox,
+      documentSeriesId: sid,
+      documentSeriesCounter: ctr,
+      currencyId,
+      vatType: cfg.vatType,
+      documentDate: factureazaDocumentDate(ev),
+      client: { ...clientPayload, country_id: cfg.countryId },
+      lines: [{ description: desc, unit: "buc", unit_count: 1, price: priceHt, vat }],
+      upperAnnotation: `Phaser Manager · eveniment ${ev.id}`,
+    };
+    setFactureazaInvoiceBusy(true);
+    try {
+      const baseFn = `${String(SUPABASE_CFG.url || "").replace(/\/$/, "")}/functions/v1`;
+      const r = await fetch(`${baseFn}/factureaza-api`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: SUPABASE_CFG.key,
+        },
+        body: JSON.stringify(reqBody),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const errList = Array.isArray(j.errors) ? j.errors.filter(Boolean) : [];
+        const msg = errList.length ? errList.join("; ") : j.message || j.error || `HTTP ${r.status}`;
+        showToast("factureaza.ro: " + msg, "error", 9000);
+        if (j.detail) console.error("factureaza-api detail", j.detail);
+        return;
+      }
+      const urlOut = j.previewUrl || j.pdfUrl || "";
+      onOfferUpdate &&
+        onOfferUpdate(ev.id, {
+          factureazaInvoiceId: j.invoiceId,
+          factureazaInvoiceAt: Date.now(),
+          factureazaInvoiceUrl: urlOut,
+        });
+      saveTemplates((tpl) => ({
+        ...tpl,
+        factureaza: { ...normFactureaza(tpl.factureaza), documentSeriesCounter: String(ctr + 1) },
+      }));
+      showToast(j.invoiceId ? `Factură creată în factureaza (id ${j.invoiceId}).` : "Factură creată.", "success");
+    } catch (e) {
+      showToast("Eroare: " + (e?.message || e), "error");
+    } finally {
+      setFactureazaInvoiceBusy(false);
+    }
+  }, [ev, templates, offerInvoiceTotal, showToast, saveTemplates, onOfferUpdate]);
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1200}} onClick={onClose}>
@@ -5238,6 +5413,75 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
             >
               🪪 Încarcă poză buletin (AI) → contract și factură
             </button>
+          </div>
+        )}
+
+        {showFacturaAvansCta && (
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "#dbeafe",
+              borderBottom: "1px solid #93c5fd",
+              flexShrink: 0,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#1e3a8a", marginBottom: 6, letterSpacing: 0.3 }}>
+              De plătit avans — factură către client (factureaza.ro)
+            </div>
+            <div
+              style={{
+                marginTop: 8,
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #93c5fd",
+                background: "#fff",
+              }}
+            >
+              <div style={{ fontSize: 10, color: th.tm, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                Factură factureaza.ro
+              </div>
+              {isPriv && !contractBeneficiaryIsFirma(ev) && typeof onRequestIdCardScan === "function" && (
+                <button type="button" onClick={onRequestIdCardScan} style={{ ...sty.bg, width: "100%", marginBottom: 10, padding: "9px 12px", fontSize: 12 }}>
+                  🪪 Date client din buletin (AI) → contract & factură
+                </button>
+              )}
+              <p style={{ fontSize: 10, color: "#334155", lineHeight: 1.45, marginBottom: 10 }}>
+                Total factură (brut fișă): <strong>{fvOfferInvoice(offerInvoiceTotal)}</strong> — preț fără TVA se calculează din setările TVA (Docs → Facturează).
+              </p>
+              {ev.factureazaInvoiceId && (
+                <div style={{ fontSize: 11, marginBottom: 10, lineHeight: 1.5, color: "#0f172a" }}>
+                  Ultima factură: ID <strong>{ev.factureazaInvoiceId}</strong>
+                  {ev.factureazaInvoiceUrl && (
+                    <>
+                      <br />
+                      <a href={ev.factureazaInvoiceUrl} target="_blank" rel="noreferrer" style={{ color: "#2563eb", fontWeight: 600 }}>
+                        Deschide link / PDF
+                      </a>
+                    </>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={factureazaInvoiceBusy}
+                onClick={emitFactureazaFromOffer}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#2563eb",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  cursor: factureazaInvoiceBusy ? "wait" : "pointer",
+                  opacity: factureazaInvoiceBusy ? 0.65 : 1,
+                }}
+              >
+                {factureazaInvoiceBusy ? "Se trimite…" : "Creează factură în factureaza.ro"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -12780,6 +13024,7 @@ function App() {
         onBackToDetail={fromDetail?()=>{closeModal();setTimeout(()=>openModal("detail",ev.id),80);}:undefined}
         evStatus={ev.st}
         onRequestIdCardScan={isPEv&&!contractBeneficiaryIsFirma(ev)?()=>setIdCardScanEvId(ev.id):undefined}
+        saveTemplates={!isCollaborator?saveTemplates:undefined}
         onStatusChange={updSt}
         onOfferUpdate={(id,up)=>{
           setEvs(p=>p.map(e=>e.id===id?{...e,...up}:e));
