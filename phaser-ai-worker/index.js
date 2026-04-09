@@ -56,16 +56,19 @@ export default {
           "Reply ONLY with valid JSON, no markdown code fences, with exactly these keys: " +
           "clientNume (full legal name as printed, UPPERCASE), cnp (13 digits), " +
           "ciSeria (2 letters), ciNr (serial number digits), " +
-          "jud (Romanian county / județ from the DOMICILIU block only — e.g. CS, TM, or full county name; " +
-          "NEVER the country from the card header: Romania, România, Roumanie, ROU), " +
-          "localitate (municipiu / oraș / comună / sat from DOMICILIU only, e.g. REȘIȚA; NEVER «Romania» or «Roumanie» as localitate), " +
-          "adresaDomiciliu (single copy of domiciliu text — do NOT repeat the same JUD… MUN… segment twice; " +
-          "then street, nr., bloc, scară, ap. as printed). " +
+          "jud (Romanian county / județ from the DOMICILIU / «Loc domiciliu» section ONLY — e.g. CS, TM; " +
+          "NEVER use text from LOCUL NAȘTERII / L-N / «Loc naștere» / birthplace lines for jud, localitate, or adresaDomiciliu), " +
+          "localitate (municipiu / oraș / comună / sat from DOMICILIU only — NEVER birthplace city/county; NEVER «Romania» as locality), " +
+          "adresaDomiciliu (ONLY the domiciliu/residence address lines — street, JUD., MUN., nr., bloc, ap.; " +
+          "NEVER copy or mix in the birthplace address or locality). " +
+          "NEVER the country from the card header (Romania, Roumanie) for jud/localitate. " +
+          "Single copy of JUD… MUN… if present — no duplicate prefix. " +
           'Use empty string "" for unreadable or missing fields.';
 
         const userText =
-          "Use the DOMICILIU lines: jud = county from there, not the country line. localitate = city/municipality from domiciliu, not Romania. " +
-          "adresaDomiciliu: one JUD.… MUN.… prefix at most, then the rest. Use \"\" only if unreadable.";
+          "CRITICAL: jud, localitate, adresaDomiciliu must come ONLY from the DOMICILIU block on the card. " +
+          "Ignore completely any «Loc naștere», «L-N», birthplace, or place-of-birth fields for those three keys. " +
+          "Name, CNP, CI series/number: from the identity fields as printed. Use \"\" only if unreadable.";
 
         /**
          * Tutorialul CF folosește `image` la rădăcină + `messages` (text). Fără `image`, modelul nu „vede” poza.
