@@ -3535,8 +3535,19 @@ function makeDefaultContractFields(ev) {
   const tot = (ev.fee || 0) + svcTot;
   const avans = ev.dep || 0;
   const base = {
-    nr: "", dataSemnare: "", clientNume: ev.cn || "", clientEmail: ev.ce || "", clientTel: ev.cp || "",
-    jud: "", mun: "", str: "", nr2: "", ap: "", ciSeria: "", ciNr: "", cnp: "",
+    nrContract: "",
+    dataSemnare: "",
+    clientNume: ev.cn || "",
+    clientEmail: ev.ce || "",
+    clientTel: ev.cp || "",
+    jud: "",
+    mun: "",
+    str: "",
+    nr: "",
+    ap: "",
+    ciSeria: "",
+    ciNr: "",
+    cnp: "",
     dataEv: fEvDate(ev) || "", locatie: ev.venue || "", adresaEv: ev.city || "",
     durataTotal: String((ev.rep || 1) * 45), nrSeturiInput: String(ev.rep || 1), durataSeturiInput: "45",
     valoare: String(tot),
@@ -3557,10 +3568,38 @@ function makeDefaultContractFields(ev) {
   }
   return base;
 }
+/**
+ * Antet contract: `nrContract`. Număr la adresă (stradă): `nr` (nu „nr2”).
+ * Migrare din schema veche (`nr` = antet, `nr2` = număr stradă).
+ */
+function normalizeContractNrFields(fields) {
+  if (!fields || typeof fields !== "object") return { ...(fields || {}) };
+  const o = { ...fields };
+  const nrc = String(o.nrContract ?? "").trim();
+  const nr = String(o.nr ?? "").trim();
+  const nr2 = String(o.nr2 ?? "").trim();
+  const hasAddrHints = String(o.str || o.mun || o.jud || o.ap || "").trim().length > 0;
+
+  if (!nrc) {
+    if (nr2) {
+      o.nrContract = nr;
+      o.nr = nr2;
+    } else if (nr && !hasAddrHints) {
+      o.nrContract = nr;
+      o.nr = "";
+    }
+  } else if (nr2 && !nr) {
+    o.nr = nr2;
+  }
+  delete o.nr2;
+  if (o.nr === undefined) o.nr = "";
+  if (o.nrContract === undefined) o.nrContract = "";
+  return o;
+}
 /** Câmpuri contract + completări manuale / din buletin (înainte sau după snapshot, pentru factură). */
 function mergeContractBaseWithDraft(ev) {
   const d = ev.contractDraftFields && typeof ev.contractDraftFields === "object" ? ev.contractDraftFields : {};
-  return { ...makeDefaultContractFields(ev), ...d };
+  return normalizeContractNrFields({ ...makeDefaultContractFields(ev), ...d });
 }
 /** Pentru factură / date client: bază + draft; dacă există snapshot, se aplică peste, apoi iar draft (corecții ulterioare, ex. CNP din buletin). */
 function contractFieldsForInvoicing(ev) {
@@ -3571,7 +3610,7 @@ function contractFieldsForInvoicing(ev) {
   }
   const withSnap = { ...merged, ...snap };
   const draft = ev.contractDraftFields && typeof ev.contractDraftFields === "object" ? ev.contractDraftFields : {};
-  const out = { ...withSnap, ...draft };
+  const out = normalizeContractNrFields({ ...withSnap, ...draft });
   return contractBeneficiaryIsFirma(ev) ? normalizeFirmaContractFields(out, ev) : out;
 }
 /** Snapshot-uri vechi / chei lipsă: completează câmpuri firmă + mapează clientNume → benFirma dacă e gol. */
@@ -3586,11 +3625,12 @@ function normalizeFirmaContractFields(fields, ev) {
 }
 function buildContractSnapshot(ev, templates, contractFields) {
   const cmKey = getContractModelTemplateKey(ev);
+  const fields = normalizeFirmaContractFields(normalizeContractNrFields({ ...contractFields }), ev);
   return {
     cat: ev.cat,
     contractModelKey: cmKey,
     model: mergeContractModelFromTemplatesByKey(templates, cmKey),
-    fields: { ...contractFields },
+    fields,
     savedAt: Date.now()
   };
 }
@@ -3642,7 +3682,7 @@ function getFactureazaClientPayload(ev) {
     name: String(cf.clientNume || ev.cn || "Client").trim(),
     uid: cnp || undefined,
     city: String(cf.mun || "").trim() || String(ev.city || "").trim() || undefined,
-    address: [cf.str, cf.nr2, cf.ap].filter(Boolean).join(" ").trim() || undefined,
+    address: [cf.str, cf.nr || cf.nr2, cf.ap].filter(Boolean).join(" ").trim() || undefined,
     registration_id: undefined,
   };
 }
@@ -3701,6 +3741,49 @@ function downscaleDataUrlIfLarge(dataUrl, maxSide = 1600, quality = 0.88) {
   });
 }
 
+/**
+ * Reduce imaginea pentru vision API (Worker): max latura + JPEG — evită body-uri uriașe și timeout la edge.
+ */
+function dataUrlToJpegMaxSide(dataUrl, maxSide = 1280, quality = 0.82) {
+  return new Promise((resolve) => {
+    if (!dataUrl || !String(dataUrl).startsWith("data:image")) {
+      resolve(dataUrl);
+      return;
+    }
+    try {
+      const im = new Image();
+      im.onload = () => {
+        try {
+          let w = im.width;
+          let h = im.height;
+          const m = Math.max(w, h);
+          const scale = m > maxSide ? maxSide / m : 1;
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const c = document.createElement("canvas");
+          c.width = w;
+          c.height = h;
+          const ctx = c.getContext("2d");
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.drawImage(im, 0, 0, w, h);
+          resolve(c.toDataURL("image/jpeg", quality));
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      im.onerror = () => resolve(dataUrl);
+      im.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
+}
+
+const VISION_FETCH_MS = 95000;
+
 /** Parsează JSON din răspuns vision (markdown ```json sau text în jurul obiectului). */
 function parseIdCardJsonFromAiResponseText(raw) {
   let s = String(raw || "")
@@ -3735,32 +3818,49 @@ function parseIdCardJsonFromAiResponseText(raw) {
 async function extractRomanianIdCardFieldsOpenAI(imageDataUrl, apiKey) {
   const key = String(apiKey || "").trim();
   if (!key) throw new Error("Adaugă cheia OpenAI în ⚙️ din chat AI → setări (câmp OpenAI API Key).");
-  const url = await downscaleDataUrlIfLarge(imageDataUrl);
+  let url = await downscaleDataUrlIfLarge(imageDataUrl);
+  url = await dataUrlToJpegMaxSide(url, 1600, 0.85);
   const sys =
     "Ești expert în citirea cărții de identitate românești (buletin/CI). " +
     "Răspunde DOAR cu JSON valid, fără markdown, cu cheile exact: " +
     "clientNume (nume complet cum apare pe act, MAJUSCULE), cnp (13 cifre), " +
-    "ciSeria (2 litere), ciNr (număr serie, cifre), jud, mun, str, nr2, ap (opțional), domiciliu (o singură linie cu adresa completă dacă separarea e incertă). " +
+    "ciSeria (2 litere), ciNr (număr serie, cifre), jud (județ), " +
+    "localitate (un singur câmp: copiază cum e pe buletin — municipiu SAU oraș SAU comună/sat SAU sat; nu împărți), " +
+    "adresaDomiciliu (un singur text: tot rândul/rândurile de domiciliu cum sunt tipărite — stradă, nr., bloc, scară, apartament, sate, etc.; nu forța câmpuri separate pentru nr sau ap). " +
     "Pentru câmpuri nelizibile folosește string gol.";
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      max_tokens: 600,
-      temperature: 0.05,
-      messages: [
-        { role: "system", content: sys },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Extrage datele pentru contract și factură din imaginea actului de identitate." },
-            { type: "image_url", image_url: { url: url } },
-          ],
-        },
-      ],
-    }),
-  });
+  const oaCtrl = new AbortController();
+  const oaTo = setTimeout(() => oaCtrl.abort(), 120000);
+  let res;
+  try {
+    res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      signal: oaCtrl.signal,
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 600,
+        temperature: 0.05,
+        messages: [
+          { role: "system", content: sys },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Extrage în JSON cu cheile: clientNume, cnp, ciSeria, ciNr, jud, localitate, adresaDomiciliu (vezi instrucțiunile din system).",
+              },
+              { type: "image_url", image_url: { url: url } },
+            ],
+          },
+        ],
+      }),
+    });
+  } catch (e) {
+    if (e?.name === "AbortError") throw new Error("OpenAI: timeout (120s).");
+    throw e;
+  } finally {
+    clearTimeout(oaTo);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error?.message || "OpenAI: " + res.status);
   const raw = data?.choices?.[0]?.message?.content?.trim() || "";
@@ -3773,12 +3873,28 @@ async function extractRomanianIdCardFieldsCloudflareVision(imageDataUrl, workerB
   if (!/^https?:\/\//i.test(base)) {
     throw new Error("Configurează URL-ul Worker Cloudflare în ⚙️ Setări AI.");
   }
-  const urlImg = await downscaleDataUrlIfLarge(imageDataUrl);
-  const res = await fetch(base, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ visionIdCard: true, imageDataUrl: urlImg }),
-  });
+  let urlImg = await downscaleDataUrlIfLarge(imageDataUrl);
+  urlImg = await dataUrlToJpegMaxSide(urlImg, 1280, 0.82);
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), VISION_FETCH_MS);
+  let res;
+  try {
+    res = await fetch(base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visionIdCard: true, imageDataUrl: urlImg }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(to);
+    if (e?.name === "AbortError") {
+      throw new Error(
+        "Worker vision: timeout (~95s) — imaginea e prea mare sau modelul e lent. Încearcă poză mai mică sau cheie OpenAI ca rezervă."
+      );
+    }
+    throw e;
+  }
+  clearTimeout(to);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data?.error || `Worker vision (${res.status})`);
@@ -3810,27 +3926,66 @@ async function extractRomanianIdCardFields(imageDataUrl, aiSettings) {
   throw cfErr;
 }
 
-/** Propune câmpuri `contractDraftFields` din obiectul returnat de vision. */
+/** Propune câmpuri `contractDraftFields` din obiectul returnat de vision (domiciliu întreg în str; fără ap separat la nevoie). */
 function idCardAiResultToContractDraft(obj) {
   const o = obj && typeof obj === "object" ? obj : {};
+  const nk = (s) => String(s || "").toLowerCase().replace(/[\s_\-]/g, "");
   const pick = (k) => (o[k] != null ? String(o[k]).trim() : "");
+  const pickAlias = (...keys) => {
+    for (const k of keys) {
+      const v = pick(k);
+      if (v) return v;
+    }
+    const want = new Set(keys.map((k) => nk(k)));
+    for (const ok of Object.keys(o)) {
+      if (want.has(nk(ok))) {
+        const v = String(o[ok] ?? "").trim();
+        if (v) return v;
+      }
+    }
+    return "";
+  };
   const out = {};
-  const cn = pick("clientNume");
-  const cnp = pick("cnp").replace(/\D/g, "");
-  const ser = pick("ciSeria").replace(/[^A-Za-zĂÂÎȘȚăâîșț]/g, "").toUpperCase().slice(0, 2);
-  const nr = pick("ciNr").replace(/\D/g, "").slice(0, 7);
+  const cn = pickAlias("clientNume", "nume", "name", "Nume", "nume_complet", "NumeComplet");
+  const cnp = pickAlias("cnp", "CNP").replace(/\D/g, "");
+  const ser = pickAlias("ciSeria", "serie", "seria", "Serie", "serie_ci", "SerieCI")
+    .replace(/[^A-Za-zĂÂÎȘȚăâîșț]/g, "")
+    .toUpperCase()
+    .slice(0, 2);
+  const nr = pickAlias("ciNr", "nr_ci", "NrCI", "numar_ci", "număr_ci", "nrserie", "nr_serie")
+    .replace(/\D/g, "")
+    .slice(0, 7);
   if (cn) out.clientNume = cn;
   if (cnp.length === 13) out.cnp = cnp;
   if (ser.length === 2) out.ciSeria = ser;
   if (nr) out.ciNr = nr;
-  ["jud", "mun", "str", "nr2", "ap"].forEach((k) => {
-    const v = pick(k);
-    if (v) out[k] = v;
-  });
-  const dom = pick("domiciliu");
-  if (dom && !pick("str")) {
-    out.str = dom;
-  }
+  const jud = pickAlias("jud", "judet", "județ", "county");
+  if (jud) out.jud = jud;
+  const mun = pickAlias(
+    "localitate",
+    "mun",
+    "municipiu",
+    "oras",
+    "oraș",
+    "comuna",
+    "comună",
+    "sat",
+    "city",
+    "localitate_domiciliu"
+  );
+  if (mun) out.mun = mun;
+  const addrFull = pickAlias(
+    "adresaDomiciliu",
+    "adresa_domiciliu",
+    "domiciliu",
+    "adresaCompleta",
+    "adresa_completa",
+    "address",
+    "str",
+    "strada",
+    "street"
+  );
+  if (addrFull) out.str = addrFull;
   return out;
 }
 
@@ -3838,6 +3993,25 @@ function idCardAiResultToContractDraft(obj) {
  * Modal: încarcă buletin → extrage cu AI → editezi → Aplică pe eveniment (contractDraftFields + cn).
  * `onApplyPatch(patch, evId)` — al doilea parametru evită closure stale în App.
  */
+const ID_CARD_FORM_ROWS = [
+  { key: "clientNume", label: "Nume" },
+  { key: "cnp", label: "CNP" },
+  { key: "ciSeria", label: "Serie CI" },
+  { key: "ciNr", label: "Nr. serie" },
+  { key: "jud", label: "Județ" },
+  {
+    key: "mun",
+    label: "Localitate",
+    hint: "Municipiu, oraș, comună sau sat — cum apare pe buletin",
+  },
+  {
+    key: "str",
+    label: "Adresa domiciliului",
+    hint: "Tot rândul: stradă, nr., bloc, scară, apartament, casă la țară etc.",
+    multiline: true,
+  },
+];
+
 function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToast, onApplyPatch }) {
   const [busy, setBusy] = useState(false);
   const [img, setImg] = useState(null);
@@ -3849,13 +4023,12 @@ function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToas
     jud: "",
     mun: "",
     str: "",
-    nr2: "",
-    ap: "",
   }));
 
   useEffect(() => {
     if (!open || !ev) return;
     const cf = mergeContractBaseWithDraft(ev);
+    const strCombined = [cf.str, cf.nr || cf.nr2, cf.ap].filter((x) => String(x || "").trim()).join(" ").trim();
     setFields({
       clientNume: cf.clientNume || ev.cn || "",
       cnp: cf.cnp || "",
@@ -3863,9 +4036,7 @@ function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToas
       ciNr: cf.ciNr || "",
       jud: cf.jud || "",
       mun: cf.mun || "",
-      str: cf.str || "",
-      nr2: cf.nr2 || "",
-      ap: cf.ap || "",
+      str: strCombined || cf.str || "",
     });
     setImg(null);
   }, [open, ev?.id]);
@@ -3873,15 +4044,24 @@ function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToas
   if (!open || !ev) return null;
 
   const applyDraft = () => {
-    const draft = {};
-    Object.entries(fields).forEach(([k, v]) => {
-      const t = String(v || "").trim();
-      if (t) draft[k] = t;
-    });
-    const cn = fields.clientNume?.trim() || ev.cn || "";
+    const draft = {
+      clientNume: String(fields.clientNume || "").trim(),
+      cnp: String(fields.cnp || "").trim(),
+      ciSeria: String(fields.ciSeria || "").trim(),
+      ciNr: String(fields.ciNr || "").trim(),
+      jud: String(fields.jud || "").trim(),
+      mun: String(fields.mun || "").trim(),
+      str: String(fields.str || "").trim(),
+      nr: "",
+      ap: "",
+    };
+    const cn = draft.clientNume || ev.cn || "";
     onApplyPatch(
       {
-        contractDraftFields: { ...(ev.contractDraftFields && typeof ev.contractDraftFields === "object" ? ev.contractDraftFields : {}), ...draft },
+        contractDraftFields: normalizeContractNrFields({
+          ...(ev.contractDraftFields && typeof ev.contractDraftFields === "object" ? ev.contractDraftFields : {}),
+          ...draft,
+        }),
         ...(cn ? { cn } : {}),
       },
       ev.id
@@ -3924,8 +4104,26 @@ function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToas
               try {
                 const raw = await extractRomanianIdCardFields(img, aiSettings);
                 const d = idCardAiResultToContractDraft(raw);
-                setFields((prev) => ({ ...prev, ...d, clientNume: d.clientNume || prev.clientNume, cnp: d.cnp || prev.cnp, ciSeria: d.ciSeria || prev.ciSeria, ciNr: d.ciNr || prev.ciNr, jud: d.jud || prev.jud, mun: d.mun || prev.mun, str: d.str || prev.str, nr2: d.nr2 || prev.nr2, ap: d.ap || prev.ap }));
-                showToast?.("Text extras — verifică câmpurile înainte de a salva.");
+                setFields((prev) => ({
+                  ...prev,
+                  ...d,
+                  clientNume: d.clientNume || prev.clientNume,
+                  cnp: d.cnp || prev.cnp,
+                  ciSeria: d.ciSeria || prev.ciSeria,
+                  ciNr: d.ciNr || prev.ciNr,
+                  jud: d.jud || prev.jud,
+                  mun: d.mun || prev.mun,
+                  str: d.str || prev.str,
+                }));
+                const filled = Object.keys(d).filter((k) => String(d[k] || "").trim()).length;
+                if (filled > 0) {
+                  showToast?.("Text extras — verifică câmpurile înainte de a salva.");
+                } else {
+                  showToast?.(
+                    "Modelul a răspuns dar nu am putut mapa câmpuri — completează manual sau încearcă altă poză / OpenAI în setări.",
+                    "error"
+                  );
+                }
               } catch (err) {
                 showToast?.(String(err?.message || err), "error");
               } finally {
@@ -3936,10 +4134,28 @@ function IdCardScanModal({ open, onClose, th, sty, mob, ev, aiSettings, showToas
           >
             {busy ? "Se analizează…" : "Extrage cu AI din poză"}
           </button>
-          {["clientNume", "cnp", "ciSeria", "ciNr", "jud", "mun", "str", "nr2", "ap"].map((k) => (
-            <div key={k}>
-              <label style={{ ...sty.l, fontSize: 10 }}>{k === "clientNume" ? "Nume complet" : k === "ciSeria" ? "Serie CI" : k === "ciNr" ? "Nr. CI" : k}</label>
-              <input value={fields[k] || ""} onChange={(e) => setFields((p) => ({ ...p, [k]: e.target.value }))} style={sty.i} autoComplete="off" />
+          {ID_CARD_FORM_ROWS.map((row) => (
+            <div key={row.key}>
+              <label style={{ ...sty.l, fontSize: 10 }}>{row.label}</label>
+              {row.hint && (
+                <div style={{ fontSize: 9, color: th.tm, marginBottom: 4, lineHeight: 1.35 }}>{row.hint}</div>
+              )}
+              {row.multiline ? (
+                <textarea
+                  value={fields[row.key] || ""}
+                  onChange={(e) => setFields((p) => ({ ...p, [row.key]: e.target.value }))}
+                  style={{ ...sty.i, minHeight: 72, resize: "vertical", fontFamily: "inherit" }}
+                  rows={3}
+                  autoComplete="off"
+                />
+              ) : (
+                <input
+                  value={fields[row.key] || ""}
+                  onChange={(e) => setFields((p) => ({ ...p, [row.key]: e.target.value }))}
+                  style={sty.i}
+                  autoComplete="off"
+                />
+              )}
             </div>
           ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
@@ -3996,7 +4212,7 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div style={{ fontSize: 17, fontWeight: 700, textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>CONTRACT DE PRESTĂRI SERVICII</div>
         <div style={{ fontSize: 13, color: "#555" }}>
-          NR. <Fi k="nr" w={50} placeholder="____" /> / <Fi k="dataSemnare" w={120} placeholder={today} type="text" />
+          NR. <Fi k="nrContract" w={50} placeholder="____" /> / <Fi k="dataSemnare" w={120} placeholder={today} type="text" />
         </div>
       </div>
 
@@ -4032,7 +4248,7 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
           <p style={{ marginTop: 4 }}>{m.cap1BeneficiarIdIntro || "cu următoarele date de identificare:"}</p>
           <p style={{ marginTop: 4 }}>
             {formatContractCap1Inline(m.cap1BenLblDomiciliu || "**Locul de domiciliu:**")}{" "}
-            Jud. <Fi k="jud" w={100} placeholder="Județ" /> , Mun./Or. <Fi k="mun" w={120} placeholder="Municipiu" /> , Str. <Fi k="str" w={150} placeholder="Strada" align="left" /> , nr. <Fi k="nr2" w={50} placeholder="nr" /> , ap. <Fi k="ap" w={50} placeholder="ap" /></p>
+            Jud. <Fi k="jud" w={100} placeholder="Județ" /> , Mun./Or. <Fi k="mun" w={120} placeholder="Municipiu" /> , Str. <Fi k="str" w={150} placeholder="Strada" align="left" /> , nr. <Fi k="nr" w={50} placeholder="nr" /> , ap. <Fi k="ap" w={50} placeholder="ap" /></p>
           <p>
             {formatContractCap1Inline(m.cap1BenLblCI || "**Cartea de identitate:**")}{" "}
             seria <Fi k="ciSeria" w={50} placeholder="XX" /> , nr. <Fi k="ciNr" w={80} placeholder="000000" /> , CNP: <Fi k="cnp" w={140} placeholder="0000000000000" /></p>
@@ -4234,15 +4450,20 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   }, [ev.contractSnapshot?.savedAt, templates, contractTplKey]);
   const [contractFields, setContractFields] = useState(() =>
     normalizeFirmaContractFields(
-      ev.contractSnapshot?.fields ? { ...ev.contractSnapshot.fields } : mergeContractBaseWithDraft(ev),
+      normalizeContractNrFields(
+        ev.contractSnapshot?.fields ? { ...ev.contractSnapshot.fields } : mergeContractBaseWithDraft(ev)
+      ),
       ev
     )
   );
   const pastContractSnapRef = useRef(false);
   useEffect(() => { pastContractSnapRef.current = false; }, [ev.id]);
   useEffect(() => {
-    if (ev.contractSnapshot?.fields) setContractFields(normalizeFirmaContractFields({ ...ev.contractSnapshot.fields }, ev));
-    else setContractFields(normalizeFirmaContractFields(mergeContractBaseWithDraft(ev), ev));
+    if (ev.contractSnapshot?.fields)
+      setContractFields(
+        normalizeFirmaContractFields(normalizeContractNrFields({ ...ev.contractSnapshot.fields }), ev)
+      );
+    else setContractFields(normalizeFirmaContractFields(normalizeContractNrFields(mergeContractBaseWithDraft(ev)), ev));
   }, [ev.id, ev.contractSnapshot?.savedAt]);
   useEffect(() => {
     if (ev.contractSnapshot) return;
@@ -4254,31 +4475,36 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
         if (next[k] == null) next[k] = d[k] ?? "";
       }
       if (!(String(next.benFirma || "").trim())) next.benFirma = d.benFirma || String(next.clientNume || "").trim() || "";
-      return normalizeFirmaContractFields(next, ev);
+      return normalizeFirmaContractFields(normalizeContractNrFields(next), ev);
     });
   }, [ev.contractBen, ev.cat, ev.id]);
   useEffect(() => {
     if (ev.contractSnapshot) return;
     const d = mergeContractBaseWithDraft(ev);
-    setContractFields((prev) => ({
-      ...prev,
-      valoare: d.valoare,
-      avansContract: d.avansContract,
-      restContract: d.restContract,
-      dataEv: d.dataEv,
-      locatie: d.locatie,
-      adresaEv: d.adresaEv,
-      durataTotal: d.durataTotal,
-      nrSeturiInput: d.nrSeturiInput,
-      durataSeturiInput: d.durataSeturiInput,
-      zileRest: d.zileRest,
-      clientNume: prev.clientNume || d.clientNume,
-      clientEmail: prev.clientEmail || d.clientEmail,
-      clientTel: prev.clientTel || d.clientTel,
-      ...(contractBeneficiaryIsFirma(ev)
-        ? { benFirma: String(prev.benFirma || "").trim() ? prev.benFirma : (d.benFirma || d.clientNume || "") }
-        : {}),
-    }));
+    setContractFields((prev) =>
+      normalizeFirmaContractFields(
+        normalizeContractNrFields({
+          ...prev,
+          valoare: d.valoare,
+          avansContract: d.avansContract,
+          restContract: d.restContract,
+          dataEv: d.dataEv,
+          locatie: d.locatie,
+          adresaEv: d.adresaEv,
+          durataTotal: d.durataTotal,
+          nrSeturiInput: d.nrSeturiInput,
+          durataSeturiInput: d.durataSeturiInput,
+          zileRest: d.zileRest,
+          clientNume: prev.clientNume || d.clientNume,
+          clientEmail: prev.clientEmail || d.clientEmail,
+          clientTel: prev.clientTel || d.clientTel,
+          ...(contractBeneficiaryIsFirma(ev)
+            ? { benFirma: String(prev.benFirma || "").trim() ? prev.benFirma : (d.benFirma || d.clientNume || "") }
+            : {}),
+        }),
+        ev
+      )
+    );
   }, [ev.fee, ev.dep, ev.rep, ev.repDur, ev.date, ev.venue, ev.city, ev.zileRest, ev.cn, ev.ce, ev.cp, ev.cat, ev.contractBen, JSON.stringify(ev.svcp||{}), JSON.stringify(ev.svc||{}), ev.contractSnapshot]);
   useEffect(() => {
     if (ev.contractSnapshot || !isEventPastForContract(ev) || pastContractSnapRef.current) return;
@@ -6031,7 +6257,9 @@ function EventForm({ th, sty, isE, isP, mData, user, onSave, onClose, mob, templ
       camere: 0, meniuri: 6, micDejun: false, pranz: false, extra: [], protocolOverride: "",
     },
     includeTehnicAnnex: mData?.includeTehnicAnnex||false,
-    contractDraftFields: mData?.contractDraftFields && typeof mData.contractDraftFields === "object" ? { ...mData.contractDraftFields } : {},
+    contractDraftFields: normalizeContractNrFields(
+      mData?.contractDraftFields && typeof mData.contractDraftFields === "object" ? { ...mData.contractDraftFields } : {}
+    ),
     tehnic: mData?.tehnic||[
       {id:"t1",l:"Sistem de sunet profesional dimensionat corespunzător spațiului",checked:true},
       {id:"t2",l:"Inginer de sistem (sound engineer) la FOH",checked:true},

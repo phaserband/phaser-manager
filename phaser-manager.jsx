@@ -463,8 +463,19 @@ function makeDefaultContractFields(ev) {
   const avans = ev.dep || 0;
   const repDur = ev.repDur != null ? Number(ev.repDur) : 45;
   const base = {
-    nr: "", dataSemnare: "", clientNume: ev.cn || "", clientEmail: ev.ce || "", clientTel: ev.cp || "",
-    jud: "", mun: "", str: "", nr2: "", ap: "", ciSeria: "", ciNr: "", cnp: "",
+    nrContract: "",
+    dataSemnare: "",
+    clientNume: ev.cn || "",
+    clientEmail: ev.ce || "",
+    clientTel: ev.cp || "",
+    jud: "",
+    mun: "",
+    str: "",
+    nr: "",
+    ap: "",
+    ciSeria: "",
+    ciNr: "",
+    cnp: "",
     dataEv: fEvDate(ev) || "", locatie: ev.venue || "", adresaEv: ev.city || "",
     durataTotal: String((ev.rep || 1) * repDur), nrSeturiInput: String(ev.rep || 1), durataSeturiInput: String(repDur),
     valoare: String(tot),
@@ -492,6 +503,31 @@ function normalizeFirmaContractFields(fields, ev) {
     if (o[k] == null) o[k] = "";
   }
   if (!(String(o.benFirma || "").trim()) && (String(o.clientNume || "").trim())) o.benFirma = o.clientNume;
+  return o;
+}
+
+/** Antet: `nrContract`. Număr stradă: `nr`. Migrare din `nr`+`nr2` vechi. */
+function normalizeContractNrFields(fields) {
+  if (!fields || typeof fields !== "object") return { ...(fields || {}) };
+  const o = { ...fields };
+  const nrc = String(o.nrContract ?? "").trim();
+  const nr = String(o.nr ?? "").trim();
+  const nr2 = String(o.nr2 ?? "").trim();
+  const hasAddrHints = String(o.str || o.mun || o.jud || o.ap || "").trim().length > 0;
+  if (!nrc) {
+    if (nr2) {
+      o.nrContract = nr;
+      o.nr = nr2;
+    } else if (nr && !hasAddrHints) {
+      o.nrContract = nr;
+      o.nr = "";
+    }
+  } else if (nr2 && !nr) {
+    o.nr = nr2;
+  }
+  delete o.nr2;
+  if (o.nr === undefined) o.nr = "";
+  if (o.nrContract === undefined) o.nrContract = "";
   return o;
 }
 
@@ -537,7 +573,7 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
       <div style={{textAlign:"center",marginBottom:28}}>
         <div style={{fontSize:17,fontWeight:700,textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>CONTRACT DE PRESTĂRI SERVICII</div>
         <div style={{fontSize:13,color:"#555"}}>
-          NR. <Fi k="nr" w={50} placeholder="____"/> / <Fi k="dataSemnare" w={120} placeholder={today} type="text"/>
+          NR. <Fi k="nrContract" w={50} placeholder="____"/> / <Fi k="dataSemnare" w={120} placeholder={today} type="text"/>
         </div>
       </div>
 
@@ -569,7 +605,7 @@ function ContractView({ ev, th, contractFields, onContractChange, contractModel,
           <p style={{ marginTop: 4 }}>{m.cap1BeneficiarIdIntro || "cu următoarele date de identificare:"}</p>
           <p style={{ marginTop: 4 }}>
             {formatContractCap1Inline(m.cap1BenLblDomiciliu || "**Locul de domiciliu:**")}{" "}
-            Jud. <Fi k="jud" w={100} placeholder="Județ" /> , Mun./Or. <Fi k="mun" w={120} placeholder="Municipiu" /> , Str. <Fi k="str" w={150} placeholder="Strada" align="left" /> , nr. <Fi k="nr2" w={50} placeholder="nr" /> , ap. <Fi k="ap" w={50} placeholder="ap" /></p>
+            Jud. <Fi k="jud" w={100} placeholder="Județ" /> , Mun./Or. <Fi k="mun" w={120} placeholder="Municipiu" /> , Str. <Fi k="str" w={150} placeholder="Strada" align="left" /> , nr. <Fi k="nr" w={50} placeholder="nr" /> , ap. <Fi k="ap" w={50} placeholder="ap" /></p>
           <p>
             {formatContractCap1Inline(m.cap1BenLblCI || "**Cartea de identitate:**")}{" "}
             seria <Fi k="ciSeria" w={50} placeholder="XX" /> , nr. <Fi k="ciNr" w={80} placeholder="000000" /> , CNP: <Fi k="cnp" w={140} placeholder="0000000000000" /></p>
@@ -811,10 +847,10 @@ function OfferPreview({ ev, evStatus, onStatusChange, th, mob, onClose, sty }) {
   const isPriv = ev.cat==="private";
   const contractModel = useMemo(() => mergeContractModelFromTemplates(null, isPriv), [isPriv]);
   const [contractFields, setContractFields] = useState(() =>
-    normalizeFirmaContractFields(makeDefaultContractFields(ev), ev)
+    normalizeFirmaContractFields(normalizeContractNrFields(makeDefaultContractFields(ev)), ev)
   );
   useEffect(() => {
-    setContractFields(normalizeFirmaContractFields(makeDefaultContractFields(ev), ev));
+    setContractFields(normalizeFirmaContractFields(normalizeContractNrFields(makeDefaultContractFields(ev)), ev));
   }, [ev.id]);
   useEffect(() => {
     if (!contractBeneficiaryIsFirma(ev)) return;
@@ -825,30 +861,35 @@ function OfferPreview({ ev, evStatus, onStatusChange, th, mob, onClose, sty }) {
         if (next[k] == null) next[k] = d[k] ?? "";
       }
       if (!(String(next.benFirma || "").trim())) next.benFirma = d.benFirma || String(next.clientNume || "").trim() || "";
-      return normalizeFirmaContractFields(next, ev);
+      return normalizeFirmaContractFields(normalizeContractNrFields(next), ev);
     });
   }, [ev.contractBen, ev.cat, ev.id]);
   useEffect(() => {
     const d = makeDefaultContractFields(ev);
-    setContractFields((prev) => ({
-      ...prev,
-      valoare: d.valoare,
-      avansContract: d.avansContract,
-      restContract: d.restContract,
-      dataEv: d.dataEv,
-      locatie: d.locatie,
-      adresaEv: d.adresaEv,
-      durataTotal: d.durataTotal,
-      nrSeturiInput: d.nrSeturiInput,
-      durataSeturiInput: d.durataSeturiInput,
-      zileRest: d.zileRest,
-      clientNume: prev.clientNume || d.clientNume,
-      clientEmail: prev.clientEmail || d.clientEmail,
-      clientTel: prev.clientTel || d.clientTel,
-      ...(contractBeneficiaryIsFirma(ev)
-        ? { benFirma: String(prev.benFirma || "").trim() ? prev.benFirma : (d.benFirma || d.clientNume || "") }
-        : {}),
-    }));
+    setContractFields((prev) =>
+      normalizeFirmaContractFields(
+        normalizeContractNrFields({
+          ...prev,
+          valoare: d.valoare,
+          avansContract: d.avansContract,
+          restContract: d.restContract,
+          dataEv: d.dataEv,
+          locatie: d.locatie,
+          adresaEv: d.adresaEv,
+          durataTotal: d.durataTotal,
+          nrSeturiInput: d.nrSeturiInput,
+          durataSeturiInput: d.durataSeturiInput,
+          zileRest: d.zileRest,
+          clientNume: prev.clientNume || d.clientNume,
+          clientEmail: prev.clientEmail || d.clientEmail,
+          clientTel: prev.clientTel || d.clientTel,
+          ...(contractBeneficiaryIsFirma(ev)
+            ? { benFirma: String(prev.benFirma || "").trim() ? prev.benFirma : (d.benFirma || d.clientNume || "") }
+            : {}),
+        }),
+        ev
+      )
+    );
   }, [ev.fee, ev.dep, ev.rep, ev.repDur, ev.date, ev.venue, ev.city, ev.zileRest, ev.cn, ev.ce, ev.cp, ev.cat, ev.contractBen, JSON.stringify(ev.svcp||{}), JSON.stringify(ev.svc||{})]);
   const svcTot = isPriv ? Object.entries(ev.svcp||{}).reduce((s,[k,v])=>s+(ev.svc?.[k]?v:0),0) : 0;
   const tot = (ev.fee||0)+svcTot;

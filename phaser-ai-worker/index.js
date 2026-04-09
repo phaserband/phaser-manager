@@ -55,12 +55,13 @@ export default {
           "You are an expert at reading Romanian national ID cards (buletin / carte de identitate). " +
           "Reply ONLY with valid JSON, no markdown code fences, with exactly these keys: " +
           "clientNume (full legal name as printed, UPPERCASE), cnp (13 digits), " +
-          "ciSeria (exactly 2 letters), ciNr (serial digits only), jud (county), mun (city), str, nr2, ap (optional), " +
-          "domiciliu (one line: full address if str/nr split is uncertain). " +
+          "ciSeria (2 letters), ciNr (serial number digits), jud (județ / county as on card), " +
+          "localitate (ONE field: copy exactly what the card shows for place — municipiu OR oraș OR comună/sat OR sat name; do not split), " +
+          "adresaDomiciliu (ONE string: the full domiciliu line(s) as printed — street, number, block, stair, apartment, village details, etc.; keep it as on the card, do not force separate nr/ap). " +
           'Use empty string "" for unreadable or missing fields.';
 
         const userText =
-          "Read this Romanian identity document image and extract all visible fields. Output one JSON object with those keys only. No other text.";
+          "Extract identity fields. Output one JSON object with keys: clientNume, cnp, ciSeria, ciNr, jud, localitate, adresaDomiciliu. No other text.";
 
         const messages = [
           { role: "system", content: sys },
@@ -70,13 +71,31 @@ export default {
         const aiRes = await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
           messages,
           image: imageDataUrl,
-          max_tokens: 700,
+          max_tokens: 512,
         });
 
-        const text =
-          aiRes && typeof aiRes === "object"
-            ? String(aiRes.response ?? aiRes.result ?? aiRes.text ?? "").trim()
-            : String(aiRes || "").trim();
+        let text = "";
+        if (aiRes && typeof aiRes === "object") {
+          text = String(aiRes.response ?? aiRes.result ?? aiRes.text ?? "").trim();
+          if (!text && Array.isArray(aiRes.data)) {
+            const first = aiRes.data[0];
+            if (first && typeof first === "object") {
+              text = String(first.response ?? first.result ?? first.text ?? "").trim();
+            }
+          }
+        } else {
+          text = String(aiRes || "").trim();
+        }
+
+        if (!text) {
+          return new Response(
+            JSON.stringify({
+              error:
+                "Modelul vision nu a returnat text (timeout sau poză prea mare). Încearcă o poză mai mică/JPEG sau OpenAI în setări.",
+            }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
 
         return new Response(JSON.stringify({ raw: text }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
