@@ -732,10 +732,15 @@ const MEMBER_AUTH_EMAIL = {
 };
 const CONTACT_ADMIN_EMAIL = "contact@phaser.ro";
 const COLLABORATOR_PROFILES = [
-  { id: "colab_prezent", key: "prezent", n: "Prezent", emoji: "📦", pass: "prezent@phaser!" },
-  { id: "colab_levi", key: "levi", n: "Levi", emoji: "🛠️", pass: "levi@phaser!" },
-  { id: "colab_flavius", key: "flavius", n: "Flavius", emoji: "💡", pass: "flavius@phaser!" },
+  { id: "colab_prezent", key: "prezent", n: "Prezent", emoji: "📦" },
+  { id: "colab_levi", key: "levi", n: "Levi", emoji: "🛠️" },
+  { id: "colab_flavius", key: "flavius", n: "Flavius", emoji: "💡" },
 ];
+/** SHA-256 hex al unui string (Web Crypto API — disponibil în toate browserele moderne). */
+const sha256hex = async (str) => {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+};
 const COLLABORATOR_BY_ID = Object.fromEntries(COLLABORATOR_PROFILES.map(c => [c.id, c]));
 const COLLABORATOR_LOGIN_LABEL = {
   colab_prezent: "Colaborator · Prezent",
@@ -1593,6 +1598,20 @@ const getSbClient = () => {
     });
     return _sbClient;
   } catch(e) { return null; }
+};
+/**
+ * Încarcă hash-urile SHA-256 ale parolelor colaboratorilor din tabelul `collaborator_auth`.
+ * Apelat o singură dată la startup, înainte de login. Returnează { key: hash } sau {}.
+ * Dacă tabelul nu există încă (înainte de a rula SQL-ul), returnează {} și loginul cade.
+ */
+const loadColabHashes = async () => {
+  const sb = getSbClient();
+  if (!sb) return {};
+  try {
+    const { data, error } = await sb.from("collaborator_auth").select("key,password_hash");
+    if (error || !data) return {};
+    return Object.fromEntries(data.map(r => [r.key, r.password_hash]));
+  } catch (e) { return {}; }
 };
 /** La ștergere ofertă/eveniment: șterge din Storage paginile publice (offer-, contract-, fisa-). Returnează mesaj de eroare sau null. Necesită politică DELETE pe bucket — vezi supabase-fix-fisa-rls.sql */
 const deleteStoredHtmlPagesForEventIds = async (eventIds) => {
@@ -5222,6 +5241,54 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
   };
 
   const escHtmlTitle = (s) => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(r.error || new Error("Nu pot citi fișierul pentru upload."));
+    r.onloadend = () => {
+      const raw = String(r.result || "");
+      const b64 = raw.includes(",") ? raw.split(",")[1] : raw;
+      resolve(b64 || "");
+    };
+    r.readAsDataURL(blob);
+  });
+  const uploadContractPdfToDrive = async () => {
+    const sb = typeof getSbClient === "function" ? getSbClient() : null;
+    if (!sb) throw new Error("Lipsește conexiunea Supabase.");
+    let { data: { session } } = await sb.auth.getSession();
+    if (!session?.access_token) {
+      const refreshed = await sb.auth.refreshSession().catch(() => null);
+      session = refreshed?.data?.session || null;
+    }
+    if (!session?.access_token) throw new Error("Sesiune expirată. Reautentifică-te.");
+
+    let pdfBlob = null;
+    try { pdfBlob = await generatePdfViaWorker(getContractHtmlForWorker()); } catch (e) { pdfBlob = null; }
+    if (!pdfBlob) pdfBlob = await generateContractPdf();
+    const contentBase64 = await blobToBase64(pdfBlob);
+    const baseFn = `${String(SUPABASE_CFG.url || "").replace(/\/$/, "")}/functions/v1`;
+    const resp = await fetch(`${baseFn}/google-drive-upload-contract`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: SUPABASE_CFG.key,
+      },
+      body: JSON.stringify({
+        fileName: getPdfFilename("contract"),
+        mimeType: "application/pdf",
+        contentBase64,
+      }),
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const reason = String(body?.error || "").trim();
+      throw new Error(reason || `Drive upload failed (${resp.status})`);
+    }
+    return {
+      fileId: String(body?.fileId || ""),
+      webViewLink: String(body?.webViewLink || ""),
+    };
+  };
   const buildStandaloneOfferContractHtml = () => {
     const rawInner = tab==="contract" ? getContractHtmlForWorker() : getOfferHtmlForWorker();
     const docTitle = getOfferContractExportBasename(tab==="contract");
@@ -5256,6 +5323,29 @@ function OfferPreview({ ev, evStatus, onStatusChange, onOfferUpdate, th, mob, on
           ? { contractPublishedAt: Date.now(), contractSnapshot: buildContractSnapshot(ev, templates, contractFields) }
           : {}),
       });
+      if (prefix === "contract") {
+        try {
+          const drive = await uploadContractPdfToDrive();
+          if (drive?.fileId) {
+            syncOffer({
+              driveContractFileId: drive.fileId,
+              driveContractWebViewLink: drive.webViewLink || "",
+              driveContractSavedAt: Date.now(),
+            });
+            if (drive.webViewLink) showToast&&showToast("Contract salvat automat în Google Drive ✓");
+          }
+        } catch (driveErr) {
+          const m = String(driveErr?.message || "");
+          if (/insufficient|permission|scope/i.test(m)) {
+            showToast&&showToast("Contract publicat, dar Drive nu are permisiune. Reconectează Google Calendar și acceptă noile permisiuni.", "error", 7000);
+          } else if (/not_connected/i.test(m)) {
+            showToast&&showToast("Contract publicat, dar Google nu este conectat pe server.", "error", 6000);
+          } else {
+            showToast&&showToast("Contract publicat, dar salvarea în Drive a eșuat.", "error", 5000);
+          }
+          console.error("drive auto-upload failed", driveErr);
+        }
+      }
       verifyShareableProxyUrl(publicUrl).then((proxyOk) => {
         if (!proxyOk) {
           showToast&&showToast(
@@ -7967,6 +8057,8 @@ function App() {
   const [pinChangeNew, setPinChangeNew] = useState("");
   const [pinChangeConfirm, setPinChangeConfirm] = useState("");
   const [loginStep, setLoginStep] = useState("pick"); // "pick" | "signin"
+  const colabHashesRef = useRef({}); // { prezent: "sha256hex", levi: "...", flavius: "..." } — încărcat din Supabase la startup
+  useEffect(() => { loadColabHashes().then(h => { colabHashesRef.current = h; }); }, []);
   const [loginCategory, setLoginCategory] = useState(""); // "" | "admin" | "member" | "collaborator"
   const [loginPick, setLoginPick] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
@@ -8203,7 +8295,15 @@ function App() {
     if (!loginPick) { setAuthErr("Alege cine te loghezi din listă."); return; }
     if (COLLABORATOR_BY_ID[loginPick]) {
       const c = COLLABORATOR_BY_ID[loginPick];
-      if ((loginPw || "") !== c.pass) {
+      const storedHash = colabHashesRef.current[c.key];
+      if (!storedHash) {
+        setAuthErr("Parolele colaboratorilor nu sunt configurate în Supabase. Rulează supabase-collaborator-auth.sql în SQL Editor.");
+        return;
+      }
+      setAuthBusy(true);
+      const enteredHash = await sha256hex(loginPw || "");
+      setAuthBusy(false);
+      if (enteredHash !== storedHash) {
         setAuthErr("Parolă greșită.");
         return;
       }

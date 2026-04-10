@@ -5,7 +5,10 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { googleOAuthCallbackUrl, supabaseOrigin } from "../_shared/supabase_url.ts";
 import { encodeOAuthState } from "../_shared/state.ts";
 
-const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+const GCAL_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/drive.file",
+].join(" ");
 
 Deno.serve(async (req) => {
   const origin = req.headers.get("origin");
@@ -58,7 +61,7 @@ Deno.serve(async (req) => {
     client_id: clientId,
     redirect_uri: functionUrl,
     response_type: "code",
-    scope: GCAL_SCOPE,
+    scope: GCAL_SCOPES,
     access_type: "offline",
     prompt: "consent",
     state,

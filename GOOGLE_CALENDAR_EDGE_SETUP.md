@@ -50,6 +50,7 @@ supabase functions deploy google-calendar-oauth-callback
 supabase functions deploy google-calendar-access-token
 supabase functions deploy google-calendar-disconnect
 supabase functions deploy google-calendar-connection-status
+supabase functions deploy google-drive-upload-contract
 ```
 
 (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` sunt injectate automat în Edge.)
@@ -62,6 +63,21 @@ supabase functions deploy google-calendar-connection-status
 
 - La **Conectează Calendar**, ești trimis la Google; după acord, revii la `https://manager.phaser.ro/?gcal_oauth=ok`.
 - **Fiecare utilizator Supabase** are propriul rând în `google_calendar_credentials` — evenimentele merg în **Calendarul Google al contului cu care te autentifici la Google** (nu e un calendar „al trupei” partajat automat).
+- La publicarea contractului (`Link public` pe tab-ul Contract), aplicația încearcă upload automat PDF în Google Drive prin Edge Function.
+
+### Opțional: folder fix în Google Drive pentru contracte
+
+Poți seta un folder țintă prin secret:
+
+```bash
+supabase secrets set GOOGLE_DRIVE_CONTRACTS_FOLDER_ID="drive_folder_id"
+```
+
+Dacă nu e setat, fișierele se salvează în „My Drive” (rădăcină).
+
+### Important după update
+
+Scope-ul OAuth include acum și Drive (`drive.file`). Dacă ai conectat Google înainte, deconectează/reconectează ca să se aplice noile permisiuni.
 
 ## Rollback
 
