@@ -19,22 +19,7 @@
       return false;
     };
   </script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script>
-    (function check() {
-      if (document.readyState !== 'complete') { setTimeout(check, 50); return; }
-      if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
-        var r = document.getElementById('root');
-        if (r) r.innerHTML = '<div style="padding:24px;max-width:480px;margin:40px auto;font-family:system-ui;background:#1a1a1a;color:#fff;border-radius:12px"><h2 style="color:#ef4444">Scripturile nu s-au încărcat</h2><p style="margin:12px 0;line-height:1.6">Deschizi fișierul direct (file://). Unele browsere blochează încărcarea de pe CDN.</p><p style="margin:12px 0"><strong>Rezolvare:</strong> Rulează un server local în folderul proiectului:</p><pre style="background:#222;padding:12px;border-radius:6px;font-size:12px;overflow:auto">cd "/Users/raczradu/Downloads/Phaser Manager"\npython3 -m http.server 8080</pre><p style="margin:12px 0">Apoi deschide <a href="http://localhost:8080" style="color:#60a5fa">http://localhost:8080</a></p></div>';
-      }
-    })();
-  </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; height: 100%; overflow: hidden; }
@@ -134,7 +119,23 @@
 </head>
 <body>
   <div id="root"><div class="loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0a0a0c;color:#e5e5e5;font-family:system-ui;font-size:15px;font-weight:500;gap:12px;padding:24px"><span>Se încarcă Phaser Manager...</span><span style="font-size:11px;color:#888">Dacă rămâne negru, deschide http://localhost:8080</span></div></div>
-  <script type="text/babel" data-presets="env,react">
+  <!-- După #root: browserul poate desena UI-ul de încărcare înainte să descarce CDN-urile. React production + Babel doar preset react = mai puțin de transpilat (~fără preset-env). -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+    (function check() {
+      if (document.readyState !== 'complete') { setTimeout(check, 50); return; }
+      if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+        var r = document.getElementById('root');
+        if (r) r.innerHTML = '<div style="padding:24px;max-width:480px;margin:40px auto;font-family:system-ui;background:#1a1a1a;color:#fff;border-radius:12px"><h2 style="color:#ef4444">Scripturile nu s-au încărcat</h2><p style="margin:12px 0;line-height:1.6">Deschizi fișierul direct (file://). Unele browsere blochează încărcarea de pe CDN.</p><p style="margin:12px 0"><strong>Rezolvare:</strong> Rulează un server local în folderul proiectului:</p><pre style="background:#222;padding:12px;border-radius:6px;font-size:12px;overflow:auto">cd "/Users/raczradu/Downloads/Phaser Manager"\npython3 -m http.server 8080</pre><p style="margin:12px 0">Apoi deschide <a href="http://localhost:8080" style="color:#60a5fa">http://localhost:8080</a></p></div>';
+      }
+    })();
+  </script>
+  <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef, useId, useCallback } = React;
 
 /* Structură: HOOKS | CONSTANTS | STORAGE | ICONS | COMPONENTS | FEATURES | MAIN APP */
