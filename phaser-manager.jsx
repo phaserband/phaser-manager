@@ -48,6 +48,46 @@ const fEvDate = (ev) => {
 };
 const dU  = d => { if(!d) return 999; return Math.ceil((new Date(d+"T00:00:00")-new Date())/864e5); };
 
+// ═══ Calculează statistici anuale din evenimentele live din app ═══
+const TYPE_TO_CAT = {
+  "Concert":"concerte","Club":"concerte",
+  "Festival":"scena_mare",
+  "Nuntă":"nunti","Botez":"botezuri",
+  "Private Party":"privat","Corporate":"corporate",
+  "Altele":"extra"
+};
+function computeYearStats(evs, year) {
+  const yEvs = evs.filter(e=>e.st==="confirmat"&&e.date&&new Date(e.date).getFullYear()===year);
+  if(!yEvs.length) return null;
+  const cats={};
+  yEvs.forEach(e=>{ const k=TYPE_TO_CAT[e.type]||"extra"; cats[k]=(cats[k]||0)+1; });
+  const totalFee=yEvs.reduce((s,e)=>s+(e.fee||0),0);
+  const venit=MEMBERS.length?Math.round(totalFee/MEMBERS.length):undefined;
+  return { an:year, total:yEvs.length, ...cats, venit:venit||undefined, live:true };
+}
+
+// ═══ DATE ISTORICE EVENIMENTE 2007–2025 ═══
+const HISTORIC_DATA = [
+  { an:2007, total:17, concerte:12, festivaluri:3, privat:2 },
+  { an:2008, total:24, concerte:9,  festivaluri:7, privat:8 },
+  { an:2009, total:16, concerte:13, festivaluri:3 },
+  { an:2010, total:28, concerte:17, festivaluri:3, privat:8 },
+  { an:2011, total:50, concerte:31, festivaluri:3, privat:16 },
+  { an:2012, total:53, concerte:28, festivaluri:4, nunti:15, privat:6 },
+  { an:2014, total:37, concerte:12, nunti:22, botezuri:4, privat:3, venit:7285 },
+  { an:2015, total:61, concerte:19, nunti:30, privat:12, venit:11855 },
+  { an:2016, total:96, concerte:31, nunti:40, botezuri:7, privat:18, venit:17531 },
+  { an:2017, total:78, concerte:19, nunti:37, botezuri:4, privat:18, venit_min:6000, venit_max:8000 },
+  { an:2018, total:47, concerte:11, nunti:24, privat:12, venit:11790 },
+  { an:2019, total:48, concerte:16, nunti:26, botezuri:2, privat:4, venit:12557 },
+  { an:2020, total:10, concerte:7,  nunti:3,  venit:1420 },
+  { an:2021, total:22, concerte:4,  nunti:18, venit:7195 },
+  { an:2022, total:47, concerte:21, nunti:20, privat:6, venit:10610 },
+  { an:2023, total:47, concerte:9,  nunti:16, corporate:8, privat:1, scena_mare:13, venit:10622 },
+  { an:2024, total:47, concerte:12, nunti:17, corporate:7, extra:3,  scena_mare:8,  venit:14483 },
+  { an:2025, total:36, concerte:7,  nunti:16, corporate:5, extra:1,  scena_mare:7,  venit:12560 },
+];
+
 const MEMBERS = [
   {id:"m1",n:"Carina Dumitru",r:"Vocal"},
   {id:"m2",n:"Radu Racz",r:"Bass"},
@@ -1953,6 +1993,18 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [calM, setCalM]   = useState(new Date());
   const [toast, setToast] = useState({visible:false,message:""});
+  const [arhAn1, setArhAn1] = useState(2025);
+  const [arhAn2, setArhAn2] = useState(2024);
+  const [showArh, setShowArh] = useState(false);
+  const [finTab, setFinTab] = useState("curent");
+  const [rapAn, setRapAn] = useState(2025);
+  // Combină datele istorice hardcodate cu datele live din app pentru orice an nou
+  const allHistoric = useMemo(()=>{
+    const historicYears = new Set(HISTORIC_DATA.map(d=>d.an));
+    const liveYears = [...new Set(evs.filter(e=>e.st==="confirmat"&&e.date).map(e=>new Date(e.date).getFullYear()))].filter(y=>!historicYears.has(y));
+    const liveData = liveYears.map(y=>computeYearStats(evs,y)).filter(Boolean);
+    return [...HISTORIC_DATA,...liveData].sort((a,b)=>a.an-b.an);
+  },[evs]);
   const mob = useIsMobile();
   const th  = TH[theme];
   const p   = user ? PM[user.rl] : {};
@@ -2282,7 +2334,15 @@ export default function App() {
 
           {/* FINANȚE */}
           {tab==="finances"&&<div style={{animation:"su .3s ease"}}>
-            <h1 style={{fontSize:22,fontWeight:700,marginBottom:16}}>Finanțe</h1>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+              <h1 style={{fontSize:22,fontWeight:700}}>Finanțe</h1>
+              <div style={{display:"flex",gap:4,background:th.h,borderRadius:8,padding:3}}>
+                {[{id:"curent",l:"📈 Curent"},{id:"arhiva",l:"🗂 Arhivă"},{id:"rapoarte",l:"📊 Rapoarte"}].map(ft=>(
+                  <button key={ft.id} onClick={()=>setFinTab(ft.id)} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:finTab===ft.id?700:400,cursor:"pointer",background:finTab===ft.id?th.a:"transparent",color:finTab===ft.id?th.bg:th.tm,transition:"all .15s"}}>{ft.l}</button>
+                ))}
+              </div>
+            </div>
+            {finTab==="curent"&&<>
             <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
               {[{l:"Venituri confirmate",v:f$(stats.rev),ac:"#22c55e"},{l:"Profit net",v:f$(stats.net),ac:stats.net>=0?"#22c55e":"#ef4444"},{l:"În așteptare",v:f$(stats.pipe)},{l:"Avansuri restante",v:f$(stats.pd),ac:stats.pd>0?"#ef4444":"#22c55e"}].map((c,i)=>
                 <div key={i} style={sty.cd}><div style={sty.l}>{c.l}</div><div style={{fontSize:mob?16:20,fontWeight:700,marginTop:5,color:c.ac||th.t}}>{c.v}</div></div>
@@ -2319,6 +2379,337 @@ export default function App() {
                 </tr>
               )}</tbody></table>}
             </div>
+            </>}
+
+            {finTab==="arhiva"&&<>
+            {/* ═══ ARHIVĂ ISTORICĂ ═══ */}
+            <div style={sty.cd}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:showArh?16:0}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600}}>📊 Arhivă Istorică Evenimente</div>
+                  <div style={{fontSize:10,color:th.tm,marginTop:2}}>2007 – 2025 · {allHistoric.length} ani înregistrați</div>
+                </div>
+                <button onClick={()=>setShowArh(p=>!p)} style={{...sty.bg,fontSize:11,padding:"5px 12px"}}>{showArh?"▲ Ascunde":"▼ Deschide"}</button>
+              </div>
+
+              {showArh&&(()=>{
+                const catCols = ["concerte","nunti","botezuri","corporate","scena_mare","festivaluri","privat","extra"];
+                const catLabel = {concerte:"Concerte",nunti:"Nunți",botezuri:"Botezuri",corporate:"Corporate",scena_mare:"Scenă mare",festivaluri:"Festivaluri",privat:"Party privat",extra:"Extra"};
+                const fv = v => v!=null ? `€${v.toLocaleString("ro-RO")}` : "—";
+                const fd = (a,b,key) => {
+                  const va=a?.[key]||0, vb=b?.[key]||0;
+                  if(!vb) return null;
+                  const pct=Math.round(((va-vb)/vb)*100);
+                  return pct;
+                };
+                const Chip = ({pct,zero}) => {
+                  if(pct==null||zero) return <span style={{color:th.tm,fontSize:10}}>—</span>;
+                  const pos=pct>=0;
+                  return <span style={{fontSize:10,fontWeight:700,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}%</span>;
+                };
+
+                const an1d = allHistoric.find(d=>d.an===arhAn1);
+                const an2d = allHistoric.find(d=>d.an===arhAn2);
+                const aniiDisp = allHistoric.map(d=>d.an);
+
+                return <>
+                  {/* COMPARATOR */}
+                  <div style={{background:th.h,borderRadius:10,padding:"16px",marginBottom:16}}>
+                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:12}}>⚖️ Comparator ani</div>
+                    <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:11,color:th.tm}}>An A:</span>
+                        <select value={arhAn1} onChange={e=>setArhAn1(Number(e.target.value))} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:12,fontWeight:700}}>
+                          {aniiDisp.map(a=><option key={a} value={a}>{a}</option>)}
+                        </select>
+                      </div>
+                      <span style={{fontSize:16,color:th.tm}}>vs</span>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:11,color:th.tm}}>An B:</span>
+                        <select value={arhAn2} onChange={e=>setArhAn2(Number(e.target.value))} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:12,fontWeight:700}}>
+                          {aniiDisp.map(a=><option key={a} value={a}>{a}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    {an1d&&an2d&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                      {/* Total */}
+                      {[
+                        {l:"Total evenimente",k:"total",icon:"🎪"},
+                        {l:"Concerte",k:"concerte",icon:"🎸"},
+                        {l:"Nunți",k:"nunti",icon:"💍"},
+                        {l:"Corporate",k:"corporate",icon:"🏢"},
+                        {l:"Scenă mare",k:"scena_mare",icon:"🎤"},
+                        {l:"Party privat",k:"privat",icon:"🥂"},
+                      ].map(({l,k,icon})=>{
+                        const va=an1d[k]||0, vb=an2d[k]||0;
+                        const pct=vb?Math.round(((va-vb)/vb)*100):null;
+                        const pos=pct!=null&&pct>=0;
+                        return <div key={k} style={{padding:"10px 12px",borderRadius:8,background:th.bg,border:`1px solid ${th.b}`}}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:4}}>{icon} {l}</div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                            <span style={{fontSize:15,fontWeight:700}}>{va||"—"}</span>
+                            <span style={{fontSize:10,color:th.tm}}>vs {vb||"—"}</span>
+                          </div>
+                          {pct!=null&&<div style={{marginTop:4,fontSize:10,fontWeight:700,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}% față de {arhAn2}</div>}
+                        </div>;
+                      })}
+                    </div>}
+
+                    {an1d&&an2d&&(()=>{
+                      const v1=an1d.venit||(an1d.venit_min&&an1d.venit_max?Math.round((an1d.venit_min+an1d.venit_max)/2):null);
+                      const v2=an2d.venit||(an2d.venit_min&&an2d.venit_max?Math.round((an2d.venit_min+an2d.venit_max)/2):null);
+                      const pct=v1&&v2?Math.round(((v1-v2)/v2)*100):null;
+                      const pos=pct!=null&&pct>=0;
+                      return v1||v2?<div style={{marginTop:10,padding:"12px 14px",borderRadius:8,background:pos?"rgba(34,197,94,.08)":"rgba(239,68,68,.08)",border:`1px solid ${pos?"#22c55e":"#ef4444"}30`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:2}}>💰 Venit per membru</div>
+                          <div style={{display:"flex",gap:16,alignItems:"baseline"}}>
+                            <span style={{fontSize:16,fontWeight:700}}>{v1?fv(v1):"n/a"}</span>
+                            <span style={{fontSize:11,color:th.tm}}>vs {v2?fv(v2):"n/a"} în {arhAn2}</span>
+                          </div>
+                        </div>
+                        {pct!=null&&<span style={{fontSize:14,fontWeight:800,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}%</span>}
+                      </div>:null;
+                    })()}
+                  </div>
+
+                  {/* TABEL COMPLET */}
+                  <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:10}}>📋 Toate datele</div>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",fontSize:11}}>
+                      <thead>
+                        <tr style={{borderBottom:`2px solid ${th.b}`}}>
+                          <th style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>An</th>
+                          <th style={{padding:"7px 8px",textAlign:"center",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>Total</th>
+                          {catCols.map(c=><th key={c} style={{padding:"7px 8px",textAlign:"center",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{catLabel[c]}</th>)}
+                          <th style={{padding:"7px 8px",textAlign:"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>€/Membru</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...allHistoric].reverse().map((d,i)=>{
+                          const prev=allHistoric[allHistoric.indexOf(d)-1];
+                          const isHl=d.an===arhAn1||d.an===arhAn2;
+                          const vStr=d.venit?fv(d.venit):d.venit_min?`~${fv(d.venit_min)}–${fv(d.venit_max)}`:"—";
+                          return <tr key={d.an} style={{borderBottom:`1px solid ${th.bl}`,background:isHl?`${th.a}18`:"transparent"}}>
+                            <td style={{padding:"7px 8px",fontWeight:isHl?700:600,fontSize:isHl?13:11}}>{d.an}{isHl&&<span style={{fontSize:8,marginLeft:4,color:th.a,fontWeight:700}}>{d.an===arhAn1?"▶A":"▶B"}</span>}</td>
+                            <td style={{padding:"7px 8px",textAlign:"center",fontWeight:700}}>{d.total}</td>
+                            {catCols.map(c=><td key={c} style={{padding:"7px 8px",textAlign:"center",color:d[c]?th.t:th.b}}>{d[c]||"·"}</td>)}
+                            <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600,color:d.venit||d.venit_min?"#22c55e":th.tm,fontSize:10}}>{vStr}</td>
+                          </tr>;
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* TREND VIZUAL SIMPLU */}
+                  <div style={{marginTop:16}}>
+                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:10}}>📈 Trend total evenimente</div>
+                    <div style={{display:"flex",alignItems:"flex-end",gap:3,height:80}}>
+                      {allHistoric.map(d=>{
+                        const maxT=Math.max(...allHistoric.map(x=>x.total));
+                        const h=Math.round((d.total/maxT)*72);
+                        const isHl=d.an===arhAn1||d.an===arhAn2;
+                        return <div key={d.an} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <div title={`${d.an}: ${d.total} ev.`} style={{width:"100%",height:h,borderRadius:"3px 3px 0 0",background:isHl?th.a:th.b,transition:"height .3s",cursor:"default"}}/>
+                          <div style={{fontSize:8,color:th.tm,transform:"rotate(-45deg)",transformOrigin:"top center",whiteSpace:"nowrap"}}>{d.an}</div>
+                        </div>;
+                      })}
+                    </div>
+                  </div>
+                </>;
+              })()}
+            </div>
+            </>}
+
+            {/* ═══ RAPOARTE ═══ */}
+            {finTab==="rapoarte"&&(()=>{
+              const catLabel = {concerte:"Concerte",nunti:"Nunți",botezuri:"Botezuri",corporate:"Corporate",scena_mare:"Scenă mare",festivaluri:"Festivaluri",privat:"Party privat",extra:"Extra"};
+              const catColors = {concerte:"#6366f1",nunti:"#ec4899",botezuri:"#f59e0b",corporate:"#0ea5e9",scena_mare:"#8b5cf6",festivaluri:"#10b981",privat:"#f97316",extra:"#64748b"};
+              const catKeys = ["concerte","nunti","corporate","scena_mare","festivaluri","privat","botezuri","extra"];
+
+              // Regresia liniară
+              const linReg = (pts) => {
+                const n=pts.length; if(!n) return ()=>0;
+                const sx=pts.reduce((s,p)=>s+p.x,0), sy=pts.reduce((s,p)=>s+p.y,0);
+                const sxy=pts.reduce((s,p)=>s+p.x*p.y,0), sx2=pts.reduce((s,p)=>s+p.x*p.x,0);
+                const m=(n*sxy-sx*sy)/(n*sx2-sx*sx||1);
+                const b=(sy-m*sx)/n;
+                return x=>Math.max(0,Math.round(m*x+b));
+              };
+
+              // Date pentru predicții (exclud 2020 ca outlier COVID)
+              const dtFit = allHistoric.filter(d=>d.an!==2020&&d.an>=2014);
+              const predTotal = linReg(dtFit.map(d=>({x:d.an,y:d.total})));
+              const predVenit = linReg(dtFit.filter(d=>d.venit).map(d=>({x:d.an,y:d.venit})));
+              const predCat = k=>linReg(dtFit.filter(d=>d[k]).map(d=>({x:d.an,y:d[k]||0})));
+              const predYears = [2026,2027,2028];
+
+              // Raport anual
+              const rapD = allHistoric.find(d=>d.an===rapAn);
+              const prevYears=allHistoric.filter(x=>x.an<rapAn); const rapPrev=prevYears.length?allHistoric.find(d=>d.an===Math.max(...prevYears.map(x=>x.an))):null;
+              const fv = v => v!=null?`€${v.toLocaleString("ro-RO")}`:"—";
+              const pctChange = (a,b)=>b?Math.round(((a-b)/b)*100):null;
+
+              // SVG Bar chart
+              const SvgBars = ({data, color, maxV, height=60, width="100%"}) => {
+                const max=maxV||Math.max(...data.map(d=>d.v||0),1);
+                return <svg width={width} height={height+20} style={{overflow:"visible"}}>
+                  {data.map((d,i)=>{
+                    const bw=Math.floor(100/data.length);
+                    const bh=Math.round(((d.v||0)/max)*height);
+                    const x=i*(bw+1);
+                    return <g key={i}>
+                      <rect x={`${x}%`} y={height-bh} width={`${bw-1}%`} height={bh} fill={d.color||color||"#6366f1"} rx={2} opacity={d.dim?.8:1}/>
+                      {d.v>0&&<text x={`${x+bw/2}%`} y={height-bh-3} textAnchor="middle" fontSize={7} fill={th.tm}>{d.v}</text>}
+                      <text x={`${x+bw/2}%`} y={height+14} textAnchor="middle" fontSize={7} fill={th.tm} transform={`rotate(-30,${x+bw/2}%,${height+14})`}>{d.l}</text>
+                    </g>;
+                  })}
+                </svg>;
+              };
+
+              const maxTotal = Math.max(...allHistoric.map(d=>d.total), ...predYears.map(y=>predTotal(y)));
+
+              return <>
+                {/* SELECTOR AN RAPORT */}
+                <div style={{...sty.cd,marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                    <div style={{fontSize:13,fontWeight:600}}>📋 Raport anual detaliat</div>
+                    <select value={rapAn} onChange={e=>setRapAn(Number(e.target.value))} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:13,fontWeight:700}}>
+                      {[...allHistoric].reverse().map(d=><option key={d.an} value={d.an}>{d.an}</option>)}
+                    </select>
+                  </div>
+
+                  {rapD&&<div style={{marginTop:16}}>
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:16}}>
+                      {[
+                        {l:"Total evenimente",v:rapD.total,prev:rapPrev?.total,ic:"🎪"},
+                        {l:"Venit / membru",v:rapD.venit?fv(rapD.venit):rapD.venit_min?`~${fv(Math.round((rapD.venit_min+rapD.venit_max)/2))}`:"n/a",prev:null,ic:"💶",raw:rapD.venit,rawPrev:rapPrev?.venit},
+                        {l:"Nunți",v:rapD.nunti||0,prev:rapPrev?.nunti,ic:"💍"},
+                        {l:"Corporate",v:rapD.corporate||0,prev:rapPrev?.corporate,ic:"🏢"},
+                      ].map((c,i)=>{
+                        const pct=c.raw!=null&&c.rawPrev!=null?pctChange(c.raw,c.rawPrev):c.v!==null&&typeof c.v==="number"&&c.prev!=null?pctChange(c.v,c.prev):null;
+                        const pos=pct!=null&&pct>=0;
+                        return <div key={i} style={sty.cd}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:4}}>{c.ic} {c.l}</div>
+                          <div style={{fontSize:17,fontWeight:700}}>{typeof c.v==="number"?c.v:c.v}</div>
+                          {pct!=null&&<div style={{fontSize:10,fontWeight:700,marginTop:4,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}% vs {rapPrev?.an}</div>}
+                        </div>;
+                      })}
+                    </div>
+
+                    {/* Breakdown categorii */}
+                    <div style={{marginBottom:12}}>
+                      <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:10}}>Breakdown categorii</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                        {catKeys.filter(k=>rapD[k]).map(k=>(
+                          <div key={k} style={{padding:"6px 10px",borderRadius:6,background:catColors[k]+"20",border:`1px solid ${catColors[k]}40`,display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:16,fontWeight:700,color:catColors[k]}}>{rapD[k]}</span>
+                            <span style={{fontSize:11,color:th.t}}>{catLabel[k]}</span>
+                            {rapPrev&&rapPrev[k]!=null&&<span style={{fontSize:9,color:pctChange(rapD[k]||0,rapPrev[k]||0)>=0?"#22c55e":"#ef4444",fontWeight:700}}>({pctChange(rapD[k]||0,rapPrev[k]||0)>=0?"+":""}{pctChange(rapD[k]||0,rapPrev[k]||0)}%)</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Notă an */}
+                    {rapD.an===2020&&<div style={{padding:"10px 14px",borderRadius:8,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",fontSize:11,color:"#ef4444",marginTop:8}}>⚠️ 2020 — an COVID-19. Datele nu sunt reprezentative pentru trend-ul normal.</div>}
+                  </div>}
+                </div>
+
+                {/* GRAFIC EVOLUȚIE TOTALĂ */}
+                <div style={{...sty.cd,marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>📈 Evoluție total evenimente</div>
+                  <div style={{fontSize:10,color:th.tm,marginBottom:14}}>Date reale 2007–2025 + predicții 2026–2028 (regresie liniară, excluzând 2020)</div>
+                  <div style={{overflowX:"auto"}}>
+                    <div style={{minWidth:500}}>
+                      <SvgBars height={80} data={[
+                        ...allHistoric.map(d=>({l:String(d.an),v:d.total,color:d.an===2020?"#94a3b8":th.a})),
+                        ...predYears.map(y=>({l:`${y}*`,v:predTotal(y),color:"#6366f130",dim:true}))
+                      ]} maxV={maxTotal} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* PREDICȚII */}
+                <div style={{...sty.cd,marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>🔮 Predicții 2026 – 2028</div>
+                  <div style={{fontSize:10,color:th.tm,marginBottom:14}}>Bazat pe regresia liniară a datelor 2014–2025 (excl. 2020). Valorile sunt estimative.</div>
+                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10}}>
+                    {predYears.map(y=>{
+                      const tot=predTotal(y);
+                      const ven=predVenit(y);
+                      const prev=predYears.indexOf(y)===0?allHistoric[allHistoric.length-1]:null;
+                      const prevTot=predYears.indexOf(y)===0?allHistoric[allHistoric.length-1]?.total:predTotal(y-1);
+                      const prevVen=predYears.indexOf(y)===0?allHistoric[allHistoric.length-1]?.venit:predVenit(y-1);
+                      const pT=pctChange(tot,prevTot), pV=pctChange(ven,prevVen);
+                      return <div key={y} style={{...sty.cd,border:`2px solid ${th.a}40`,background:`${th.a}08`}}>
+                        <div style={{fontSize:16,fontWeight:800,color:th.a,marginBottom:8}}>{y}</div>
+                        <div style={{fontSize:11,color:th.tm,marginBottom:2}}>Total evenimente estimate</div>
+                        <div style={{fontSize:22,fontWeight:700,marginBottom:4}}>{tot}</div>
+                        {pT!=null&&<div style={{fontSize:10,fontWeight:700,color:pT>=0?"#22c55e":"#ef4444",marginBottom:10}}>{pT>=0?"+":""}{pT}% vs {y-1}</div>}
+                        <div style={{borderTop:`1px solid ${th.b}`,paddingTop:8,marginTop:4}}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:2}}>Venit estimat / membru</div>
+                          <div style={{fontSize:16,fontWeight:700,color:"#22c55e"}}>{fv(ven)}</div>
+                          {pV!=null&&<div style={{fontSize:10,fontWeight:700,color:pV>=0?"#22c55e":"#ef4444"}}>{pV>=0?"+":""}{pV}% vs {y-1}</div>}
+                        </div>
+                        <div style={{marginTop:10}}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Breakdown estimat:</div>
+                          {catKeys.slice(0,4).map(k=>{
+                            const pv=predCat(k)(y);
+                            return pv>0?<div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}>
+                              <span style={{color:catColors[k],fontWeight:600}}>{catLabel[k]}</span>
+                              <span style={{fontWeight:700}}>~{pv}</span>
+                            </div>:null;
+                          })}
+                        </div>
+                      </div>;
+                    })}
+                  </div>
+                  <div style={{marginTop:10,fontSize:9,color:th.tm,padding:"6px 10px",borderRadius:6,background:th.h}}>* Predicțiile sunt generate automat pe baza trendurilor istorice. Nu iau în calcul factori externi (recesiune, pandemie, schimbări de piață).</div>
+                </div>
+
+                {/* GRAFIC VENITURI */}
+                <div style={{...sty.cd,marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>💶 Evoluție venit per membru</div>
+                  <div style={{fontSize:10,color:th.tm,marginBottom:14}}>Ani cu date disponibile + predicții 2026–2028</div>
+                  <div style={{overflowX:"auto"}}>
+                    <div style={{minWidth:400}}>
+                      <SvgBars height={70} data={[
+                        ...allHistoric.filter(d=>d.venit||d.venit_min).map(d=>({
+                          l:String(d.an),
+                          v:d.venit||Math.round((d.venit_min+d.venit_max)/2),
+                          color:d.an===2020?"#94a3b8":"#22c55e"
+                        })),
+                        ...predYears.map(y=>({l:`${y}*`,v:predVenit(y),color:"#22c55e40",dim:true}))
+                      ]} maxV={Math.max(...allHistoric.filter(d=>d.venit).map(d=>d.venit),...predYears.map(y=>predVenit(y)))} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* TOP ANI */}
+                <div style={sty.cd}>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>🏆 Clasament ani după total evenimente</div>
+                  {[...allHistoric].sort((a,b)=>b.total-a.total).slice(0,5).map((d,i)=>{
+                    const w=Math.round((d.total/allHistoric[0]?.total||1)*100);
+                    const maxTot=Math.max(...allHistoric.map(x=>x.total));
+                    const pct=Math.round((d.total/maxTot)*100);
+                    return <div key={d.an} style={{marginBottom:10}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:14,fontWeight:800,color:i===0?"#f59e0b":i===1?"#94a3b8":i===2?"#cd7c2c":th.tm,width:20}}>{["🥇","🥈","🥉","4.","5."][i]}</span>
+                          <span style={{fontSize:13,fontWeight:700}}>{d.an}</span>
+                        </div>
+                        <span style={{fontSize:13,fontWeight:700}}>{d.total} ev.{d.venit?` · ${fv(d.venit)}/mb`:""}</span>
+                      </div>
+                      <div style={{height:6,borderRadius:3,background:th.h,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${pct}%`,background:i===0?"#f59e0b":th.a,borderRadius:3,transition:"width .5s"}}/>
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              </>;
+            })()}
           </div>}
 
           {/* PRESS KIT */}
