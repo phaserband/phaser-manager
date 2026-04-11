@@ -1,4 +1,4 @@
-# Phaser Manager — Deploy pe Netlify
+# Phaser Manager — Deploy pe Cloudflare Pages
 
 ## Pasul 1: Creează repo pe GitHub
 
@@ -23,20 +23,19 @@ git push -u origin main
 
 Înlocuiește `TE_USERNAME` cu username-ul tău GitHub și `phaser-manager` cu numele repo-ului dacă e diferit.
 
-## Pasul 3: Conectează Netlify la GitHub
+## Pasul 3: Conectează Cloudflare Pages la GitHub
 
-1. Mergi la [app.netlify.com](https://app.netlify.com)
-2. **Add new site** → **Import an existing project**
-3. **Connect to GitHub** → autorizează Netlify
-4. Alege repo-ul `phaser-manager`
-5. Setări build (deja corecte din netlify.toml):
-   - **Build command:** (gol)
-   - **Publish directory:** `.`
-6. **Deploy site**
+1. Mergi la [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages**
+2. Click **Create application** → **Pages** → **Connect to Git**
+3. Autorizează GitHub și alege repo-ul `phaser-manager`
+4. Setări build:
+   - **Build command:** (lasă gol)
+   - **Build output directory:** `/` (sau `.`)
+5. Click **Save and Deploy**
 
 ## Actualizări automate
 
-După ce e conectat, la fiecare `git push` Netlify face deploy automat:
+După ce e conectat, la fiecare `git push` Cloudflare Pages face deploy automat:
 
 ```bash
 git add .
@@ -44,6 +43,7 @@ git commit -m "Descriere modificări"
 git push
 ```
 
-## Varianta alternativă: Drag & Drop
+## Varianta alternativă: Upload direct
 
-Dacă nu vrei Git, poți trage folderul direct pe [app.netlify.com](https://app.netlify.com) — dar nu vei avea actualizări automate.
+Dacă nu vrei Git, poți uploada folderul direct din dashboard:
+**Workers & Pages** → proiectul tău → **Deployments** → **Upload assets**
