@@ -349,6 +349,7 @@ const REPORT_EXCLUDED_YEARS = new Set([2021]);
 const REQUEST_STATS_MIN_YEAR = 2022;
 const MONTHS_RO_SHORT = ["Ian","Feb","Mar","Apr","Mai","Iun","Iul","Aug","Sep","Oct","Noi","Dec"];
 const MONTHS_RO_FULL = ["ianuarie","februarie","martie","aprilie","mai","iunie","iulie","august","septembrie","octombrie","noiembrie","decembrie"];
+const REQUEST_STATS_SEED_EMBEDDED = {"confirmedTotal":122,"rejectedTotal":197,"total":319,"monthConfirmed":[14,0,12,0,0,12,0,0,0,15,12,0],"monthRejected":[31,23,0,0,0,16,0,0,0,23,19,0],"mostRequestedMonth":{"month":"ianuarie","count":45},"yearMostConfirmed":{"year":2023,"count":35},"yearMostRejected":{"year":2022,"count":60},"yearComparison":[{"year":2022,"confirmed":27,"rejected":60,"total":87,"rejectRate":69,"months":[13,7,10,4,9,6,3,3,4,6,13,9]},{"year":2023,"confirmed":35,"rejected":43,"total":78,"rejectRate":55.1,"months":[14,6,3,8,3,8,5,4,5,11,6,5]},{"year":2024,"confirmed":33,"rejected":42,"total":75,"rejectRate":56,"months":[10,7,4,3,2,2,5,12,10,11,8,1]},{"year":2025,"confirmed":27,"rejected":45,"total":72,"rejectRate":62.5,"months":[6,7,9,7,8,12,4,2,5,8,4,0]},{"year":2026,"confirmed":0,"rejected":7,"total":7,"rejectRate":100,"months":[2,5,0,0,0,0,0,0,0,0,0,0]}],"topOverall":[{"month":"ianuarie","count":45},{"month":"octombrie","count":38},{"month":"februarie","count":32},{"month":"noiembrie","count":31},{"month":"iunie","count":28}],"topConfirmed":[{"month":"octombrie","count":15},{"month":"ianuarie","count":14},{"month":"martie","count":12},{"month":"iunie","count":12},{"month":"noiembrie","count":12}],"topRejected":[{"month":"ianuarie","count":31},{"month":"februarie","count":23},{"month":"octombrie","count":23},{"month":"noiembrie","count":19},{"month":"iunie","count":16}],"peakMonthsPerYear":[{"year":2022,"count":13,"months":["ianuarie","noiembrie"]},{"year":2023,"count":14,"months":["ianuarie"]},{"year":2024,"count":12,"months":["august"]},{"year":2025,"count":12,"months":["iunie"]},{"year":2026,"count":5,"months":["februarie"]}]};
 
 const uid = () => Math.random().toString(36).substr(2,9);
 const f$  = n => new Intl.NumberFormat("ro",{maximumFractionDigits:0}).format(n||0)+" €";
@@ -8417,6 +8418,16 @@ function App() {
       const rejectRate = total ? Math.round((row.rejected/total)*1000)/10 : 0;
       return { year:y, confirmed:row.confirmed, rejected:row.rejected, total, rejectRate, months:row.months };
     });
+    const topN = (arr, n=5) => arr
+      .map((v,i)=>({month:MONTHS_RO_FULL[i],count:v}))
+      .sort((a,b)=>b.count-a.count)
+      .filter(x=>x.count>0)
+      .slice(0,n);
+    const peakMonthsPerYear = yearComparison.map(r=>{
+      const mx = Math.max(...r.months,0);
+      const months = mx>0 ? r.months.map((v,i)=>v===mx?MONTHS_RO_FULL[i]:null).filter(Boolean) : [];
+      return { year:r.year, count:mx, months };
+    });
     const monthMax = (arr) => {
       const max = Math.max(...arr, 0);
       if(!max) return null;
@@ -8437,10 +8448,14 @@ function App() {
       mostRequestedMonth: monthMax(monthOverall),
       yearMostConfirmed: yearMax("confirmed"),
       yearMostRejected: yearMax("rejected"),
-      yearComparison
+      yearComparison,
+      topOverall: topN(monthOverall,5),
+      topConfirmed: topN(monthConfirmed,5),
+      topRejected: topN(monthRejected,5),
+      peakMonthsPerYear
     };
   },[evs]);
-  const [reqStatsSeed, setReqStatsSeed] = useState(null);
+  const [reqStatsSeed, setReqStatsSeed] = useState(REQUEST_STATS_SEED_EMBEDDED);
   useEffect(()=>{
     let cancelled = false;
     const normalizeSeed = (j) => {
@@ -8493,7 +8508,11 @@ function App() {
       const yearMostConfirmed = j.yearMostConfirmed || peaks.year_most_confirmations || null;
       const yearMostRejected = j.yearMostRejected || peaks.year_most_rejections || null;
 
-      return { confirmedTotal, rejectedTotal, total, monthConfirmed, monthRejected, mostRequestedMonth, yearMostConfirmed, yearMostRejected, yearComparison };
+      const topOverall = Array.isArray(j.topOverall) ? j.topOverall : (Array.isArray(j.top5_months_overall) ? j.top5_months_overall : []);
+      const topConfirmed = Array.isArray(j.topConfirmed) ? j.topConfirmed : (Array.isArray(j.top5_months_confirmed) ? j.top5_months_confirmed : []);
+      const topRejected = Array.isArray(j.topRejected) ? j.topRejected : (Array.isArray(j.top5_months_rejected) ? j.top5_months_rejected : []);
+      const peakMonthsPerYear = Array.isArray(j.peakMonthsPerYear) ? j.peakMonthsPerYear : (Array.isArray(j.peak_months_per_year) ? j.peak_months_per_year.filter(x=>(Number(x?.year)||0)>=REQUEST_STATS_MIN_YEAR) : []);
+      return { confirmedTotal, rejectedTotal, total, monthConfirmed, monthRejected, mostRequestedMonth, yearMostConfirmed, yearMostRejected, yearComparison, topOverall, topConfirmed, topRejected, peakMonthsPerYear };
     };
     fetch("all-events-analysis.json", { cache:"no-store" })
       .then(r=>r.ok ? r.json() : null)
@@ -12283,6 +12302,48 @@ function App() {
                         </tr>)}
                       </tbody>
                     </table>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10}}>
+                    <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:8}}>Top luni (overall / confirmate / refuzate)</div>
+                      <table style={{width:"100%",fontSize:10}}>
+                        <thead>
+                          <tr style={{borderBottom:`1px solid ${th.b}`}}>
+                            {["Categorie","Top 1","Top 2","Top 3"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:h==="Categorie"?"left":"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            {k:"Overall",arr:statsReq.topOverall||[]},
+                            {k:"Confirmate",arr:statsReq.topConfirmed||[]},
+                            {k:"Refuzate",arr:statsReq.topRejected||[]},
+                          ].map(row=><tr key={row.k} style={{borderBottom:`1px solid ${th.bl}`}}>
+                            <td style={{padding:"5px 6px",fontWeight:700}}>{row.k}</td>
+                            {[0,1,2].map(i=>{
+                              const it=row.arr[i];
+                              return <td key={`${row.k}-${i}`} style={{padding:"5px 6px",textAlign:"right",color:it?th.t:th.tm}}>{it?`${it.month} (${it.count})`:"—"}</td>;
+                            })}
+                          </tr>)}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:8}}>Luna de vârf în fiecare an</div>
+                      <table style={{width:"100%",fontSize:10}}>
+                        <thead>
+                          <tr style={{borderBottom:`1px solid ${th.b}`}}>
+                            {["An","Luna/lunile de vârf","Cereri"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:h==="An"?"left":h==="Cereri"?"right":"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(statsReq.peakMonthsPerYear||[]).map(r=><tr key={`p-${r.year}`} style={{borderBottom:`1px solid ${th.bl}`}}>
+                            <td style={{padding:"5px 6px",fontWeight:700}}>{r.year}</td>
+                            <td style={{padding:"5px 6px"}}>{Array.isArray(r.months)?r.months.join(", "):"—"}</td>
+                            <td style={{padding:"5px 6px",textAlign:"right",fontWeight:700}}>{Number(r.count)||0}</td>
+                          </tr>)}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </>}
               </div>
