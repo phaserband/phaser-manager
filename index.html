@@ -8445,46 +8445,55 @@ function App() {
     let cancelled = false;
     const normalizeSeed = (j) => {
       if(!j || typeof j !== "object") return null;
-      const monthConfirmed = Array.isArray(j.monthConfirmed)
-        ? j.monthConfirmed.map(v=>Number(v)||0).slice(0,12)
-        : Array(12).fill(0);
-      const monthRejected = Array.isArray(j.monthRejected)
-        ? j.monthRejected.map(v=>Number(v)||0).slice(0,12)
-        : Array(12).fill(0);
-      const yearComparison = Array.isArray(j.yearComparison)
-        ? j.yearComparison.map(r=>({
-            year: Number(r.year)||0,
-            confirmed: Number(r.confirmed)||0,
-            rejected: Number(r.rejected)||0,
-            total: Number(r.total)||0,
-            rejectRate: Number(r.rejectRate)||0,
-            months: Array.isArray(r.months) ? r.months.map(v=>Number(v)||0).slice(0,12) : Array(12).fill(0)
-          })).filter(r=>r.year>=REQUEST_STATS_MIN_YEAR)
-        : [];
-      const totalFromRows = yearComparison.reduce((s,r)=>s+r.total,0);
-      const total = Number(j.total)||totalFromRows;
-      const monthMax = (arr) => {
-        const max = Math.max(...arr, 0);
-        if(!max) return null;
-        const idx = arr.findIndex(v=>v===max);
-        return { month: MONTHS_RO_FULL[idx], count:max };
+      const monthIdx = {ian:0,feb:1,mar:2,apr:3,mai:4,iun:5,iul:6,aug:7,sep:8,oct:9,noi:10,dec:11};
+      const monthNameToIdx = {
+        ianuarie:0,februarie:1,martie:2,aprilie:3,mai:4,iunie:5,iulie:6,august:7,septembrie:8,octombrie:9,noiembrie:10,decembrie:11
       };
-      const yearMax = (key) => {
-        if(!yearComparison.length) return null;
-        const best = [...yearComparison].sort((a,b)=>b[key]-a[key])[0];
-        return { year:best.year, count:best[key] };
+      const asMonthArrayFromTop = (rows) => {
+        const arr = Array(12).fill(0);
+        if(!Array.isArray(rows)) return arr;
+        rows.forEach(r=>{
+          const name = String(r?.month||"").toLowerCase().trim();
+          const idx = monthNameToIdx[name];
+          if(idx==null) return;
+          arr[idx] = Number(r?.count)||0;
+        });
+        return arr;
       };
-      return {
-        confirmedTotal: Number(j.confirmedTotal)||yearComparison.reduce((s,r)=>s+r.confirmed,0),
-        rejectedTotal: Number(j.rejectedTotal)||yearComparison.reduce((s,r)=>s+r.rejected,0),
-        total,
-        monthConfirmed,
-        monthRejected,
-        mostRequestedMonth: j.mostRequestedMonth || monthMax(monthConfirmed.map((v,i)=>v+monthRejected[i])),
-        yearMostConfirmed: j.yearMostConfirmed || yearMax("confirmed"),
-        yearMostRejected: j.yearMostRejected || yearMax("rejected"),
-        yearComparison
-      };
+      const monthsByYear = new Map();
+      const monthlyRows = Array.isArray(j.monthly_comparison_by_year) ? j.monthly_comparison_by_year : [];
+      monthlyRows.forEach(r=>{
+        const y = Number(r?.year)||0;
+        if(!y || y < REQUEST_STATS_MIN_YEAR) return;
+        const m = Array(12).fill(0);
+        Object.entries(monthIdx).forEach(([k,idx])=>{ m[idx] = Number(r?.[k])||0; });
+        monthsByYear.set(y, m);
+      });
+
+      const yearSrc = Array.isArray(j.yearComparison) ? j.yearComparison : (Array.isArray(j.year_comparison) ? j.year_comparison : []);
+      const yearComparison = yearSrc.map(r=>{
+        const year = Number(r?.year)||0;
+        const confirmed = Number(r?.confirmed)||0;
+        const rejected = Number(r?.rejected)||0;
+        const total = Number(r?.total)|| (confirmed + rejected);
+        const rr = Number(r?.rejectRate ?? r?.reject_rate);
+        const rejectRate = Number.isFinite(rr) ? rr : (total ? Math.round((rejected/total)*1000)/10 : 0);
+        return { year, confirmed, rejected, total, rejectRate, months: monthsByYear.get(year)||Array(12).fill(0) };
+      }).filter(r=>r.year>=REQUEST_STATS_MIN_YEAR);
+
+      const totals = j.totals || {};
+      const confirmedTotal = Number(j.confirmedTotal ?? totals.confirmed_total) || yearComparison.reduce((s,r)=>s+r.confirmed,0);
+      const rejectedTotal = Number(j.rejectedTotal ?? totals.rejected_total) || yearComparison.reduce((s,r)=>s+r.rejected,0);
+      const total = Number(j.total) || (confirmedTotal + rejectedTotal) || yearComparison.reduce((s,r)=>s+r.total,0);
+
+      const monthConfirmed = Array.isArray(j.monthConfirmed) ? j.monthConfirmed.map(v=>Number(v)||0).slice(0,12) : asMonthArrayFromTop(j.top5_months_confirmed);
+      const monthRejected = Array.isArray(j.monthRejected) ? j.monthRejected.map(v=>Number(v)||0).slice(0,12) : asMonthArrayFromTop(j.top5_months_rejected);
+      const peaks = j.peaks || {};
+      const mostRequestedMonth = j.mostRequestedMonth || peaks.most_requested_month_overall || null;
+      const yearMostConfirmed = j.yearMostConfirmed || peaks.year_most_confirmations || null;
+      const yearMostRejected = j.yearMostRejected || peaks.year_most_rejections || null;
+
+      return { confirmedTotal, rejectedTotal, total, monthConfirmed, monthRejected, mostRequestedMonth, yearMostConfirmed, yearMostRejected, yearComparison };
     };
     fetch("all-events-analysis.json", { cache:"no-store" })
       .then(r=>r.ok ? r.json() : null)
