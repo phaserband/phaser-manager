@@ -8361,6 +8361,9 @@ function App() {
   const [calM, setCalM]   = useState(new Date());
   const [arhAn1, setArhAn1] = useState(2025);
   const [arhAn2, setArhAn2] = useState(2024);
+  const [reqYearFilter, setReqYearFilter] = useState("all");
+  const [reqMonthFilter, setReqMonthFilter] = useState("all");
+  const [reqCompareYear, setReqCompareYear] = useState("all");
   const [showArh, setShowArh] = useState(false);
   const [finTab, setFinTab] = useState("curent");
   const [rapAn, setRapAn] = useState(2025);
@@ -8494,7 +8497,7 @@ function App() {
         const rr = Number(r?.rejectRate ?? r?.reject_rate);
         const rejectRate = Number.isFinite(rr) ? rr : (total ? Math.round((rejected/total)*1000)/10 : 0);
         return { year, confirmed, rejected, total, rejectRate, months: monthsByYear.get(year)||Array(12).fill(0) };
-      }).filter(r=>r.year>=REQUEST_STATS_MIN_YEAR);
+      }).filter(r=>r.year>=REQUEST_STATS_MIN_YEAR && r.year<2026);
 
       const totals = j.totals || {};
       const confirmedTotal = Number(j.confirmedTotal ?? totals.confirmed_total) || yearComparison.reduce((s,r)=>s+r.confirmed,0);
@@ -8511,7 +8514,7 @@ function App() {
       const topOverall = Array.isArray(j.topOverall) ? j.topOverall : (Array.isArray(j.top5_months_overall) ? j.top5_months_overall : []);
       const topConfirmed = Array.isArray(j.topConfirmed) ? j.topConfirmed : (Array.isArray(j.top5_months_confirmed) ? j.top5_months_confirmed : []);
       const topRejected = Array.isArray(j.topRejected) ? j.topRejected : (Array.isArray(j.top5_months_rejected) ? j.top5_months_rejected : []);
-      const peakMonthsPerYear = Array.isArray(j.peakMonthsPerYear) ? j.peakMonthsPerYear : (Array.isArray(j.peak_months_per_year) ? j.peak_months_per_year.filter(x=>(Number(x?.year)||0)>=REQUEST_STATS_MIN_YEAR) : []);
+      const peakMonthsPerYear = Array.isArray(j.peakMonthsPerYear) ? j.peakMonthsPerYear : (Array.isArray(j.peak_months_per_year) ? j.peak_months_per_year.filter(x=>{ const y=Number(x?.year)||0; return y>=REQUEST_STATS_MIN_YEAR && y<2026; }) : []);
       return { confirmedTotal, rejectedTotal, total, monthConfirmed, monthRejected, mostRequestedMonth, yearMostConfirmed, yearMostRejected, yearComparison, topOverall, topConfirmed, topRejected, peakMonthsPerYear };
     };
     fetch("all-events-analysis.json", { cache:"no-store" })
@@ -8524,6 +8527,73 @@ function App() {
       .catch(()=>{});
     return ()=>{ cancelled = true; };
   },[]);
+  const reqStatsCombined = useMemo(()=>{
+    const normalizeRows = (rows, source) => (Array.isArray(rows) ? rows : []).map(r=>({
+      year: Number(r?.year)||0,
+      confirmed: Number(r?.confirmed)||0,
+      rejected: Number(r?.rejected)||0,
+      total: Number(r?.total)||0,
+      rejectRate: Number(r?.rejectRate ?? r?.reject_rate)||0,
+      months: Array.isArray(r?.months) ? r.months.map(v=>Number(v)||0).slice(0,12) : Array(12).fill(0),
+      source
+    })).filter(r=>r.year>=REQUEST_STATS_MIN_YEAR && (source==="live" || r.year<2026));
+
+    const byYear = new Map();
+    normalizeRows(reqStatsSeed?.yearComparison, "seed").forEach(r=>byYear.set(r.year, r));
+    normalizeRows(reqStats?.yearComparison, "live").forEach(r=>byYear.set(r.year, r)); // live suprascrie seed
+    const yearComparison = [...byYear.values()].sort((a,b)=>a.year-b.year);
+
+    const monthConfirmed = Array(12).fill(0);
+    const monthRejected = Array(12).fill(0);
+    yearComparison.forEach(r=>{
+      if(r.months.every(v=>v===0)) return;
+      r.months.forEach((v, i)=>{
+        const shareC = r.total ? (r.confirmed / r.total) : 0;
+        const shareR = r.total ? (r.rejected / r.total) : 0;
+        monthConfirmed[i] += Math.round(v * shareC);
+        monthRejected[i] += Math.round(v * shareR);
+      });
+    });
+
+    const total = yearComparison.reduce((s,r)=>s+r.total,0);
+    const confirmedTotal = yearComparison.reduce((s,r)=>s+r.confirmed,0);
+    const rejectedTotal = yearComparison.reduce((s,r)=>s+r.rejected,0);
+    const topN = (arr, n=5) => arr.map((v,i)=>({month:MONTHS_RO_FULL[i],count:v})).sort((a,b)=>b.count-a.count).filter(x=>x.count>0).slice(0,n);
+    const mostRequestedMonth = (() => {
+      const arr = monthConfirmed.map((v,i)=>v+monthRejected[i]);
+      const mx = Math.max(...arr, 0);
+      if(!mx) return null;
+      const idx = arr.findIndex(v=>v===mx);
+      return { month:MONTHS_RO_FULL[idx], count:mx };
+    })();
+    const yearMostConfirmed = yearComparison.length ? [...yearComparison].sort((a,b)=>b.confirmed-a.confirmed)[0] : null;
+    const yearMostRejected = yearComparison.length ? [...yearComparison].sort((a,b)=>b.rejected-a.rejected)[0] : null;
+    const peakMonthsPerYear = yearComparison.map(r=>{
+      const mx=Math.max(...r.months,0);
+      const months=mx>0?r.months.map((v,i)=>v===mx?MONTHS_RO_FULL[i]:null).filter(Boolean):[];
+      return { year:r.year, count:mx, months };
+    });
+    return {
+      total,
+      confirmedTotal,
+      rejectedTotal,
+      monthConfirmed,
+      monthRejected,
+      mostRequestedMonth,
+      yearMostConfirmed: yearMostConfirmed ? { year:yearMostConfirmed.year, count:yearMostConfirmed.confirmed } : null,
+      yearMostRejected: yearMostRejected ? { year:yearMostRejected.year, count:yearMostRejected.rejected } : null,
+      yearComparison,
+      topOverall: topN(monthConfirmed.map((v,i)=>v+monthRejected[i]),5),
+      topConfirmed: topN(monthConfirmed,5),
+      topRejected: topN(monthRejected,5),
+      peakMonthsPerYear
+    };
+  },[reqStats, reqStatsSeed]);
+  useEffect(()=>{
+    const years = reqStatsCombined.yearComparison.map(r=>String(r.year));
+    if(reqYearFilter!=="all" && !years.includes(String(reqYearFilter))) setReqYearFilter("all");
+    if(reqCompareYear!=="all" && !years.includes(String(reqCompareYear))) setReqCompareYear("all");
+  },[reqStatsCombined, reqYearFilter, reqCompareYear]);
   const [calSidebarDate, setCalSidebarDate] = useState(null);
   const [calDragEvId, setCalDragEvId] = useState(null);
   const [calDropDate, setCalDropDate] = useState(null);
@@ -12227,11 +12297,26 @@ function App() {
             const an1d=allHistoricForReports.find(d=>d.an===arhAn1);
             const an2d=allHistoricForReports.find(d=>d.an===arhAn2);
             const aniiDisp=allHistoricForReports.map(d=>d.an);
-            const statsReq = reqStats.total ? reqStats : (reqStatsSeed || reqStats);
+            const statsReq = reqStatsCombined;
             const reqMonthMax = Math.max(...statsReq.monthConfirmed, ...statsReq.monthRejected, 1);
+            const reqYears = statsReq.yearComparison.map(r=>r.year);
+            const reqYearFocus = reqYearFilter==="all" ? null : Number(reqYearFilter);
+            const reqMonthFocus = reqMonthFilter==="all" ? null : Number(reqMonthFilter);
+            const reqRowsShown = reqYearFocus ? statsReq.yearComparison.filter(r=>r.year===reqYearFocus) : statsReq.yearComparison;
+            const reqRowsForMonth = reqRowsShown.map(r=>{
+              const monthTotal = reqMonthFocus==null ? r.total : (r.months?.[reqMonthFocus]||0);
+              const share = r.total ? Math.round((monthTotal/r.total)*100) : 0;
+              return { ...r, monthTotal, share };
+            });
+            const reqTotalsShown = reqRowsForMonth.reduce((s,r)=>s+r.monthTotal,0);
+            const reqBestYear = [...statsReq.yearComparison].sort((a,b)=>b.total-a.total)[0];
+            const reqWorstYear = [...statsReq.yearComparison].sort((a,b)=>a.total-b.total)[0];
+            const reqCompareYearVal = reqCompareYear==="all" ? (reqYears.includes((reqYearFocus||0)-1) ? (reqYearFocus-1) : null) : Number(reqCompareYear);
+            const reqYearA = reqYearFocus ? statsReq.yearComparison.find(r=>r.year===reqYearFocus) : null;
+            const reqYearB = reqCompareYearVal ? statsReq.yearComparison.find(r=>r.year===reqCompareYearVal) : null;
             return <div style={{animation:"su .3s ease"}}>
               <h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Statistici</h1>
-              <p style={{fontSize:11,color:th.tm,marginBottom:16}}>Arhivă completă 2007–prezent (fără 2021) · cereri 2022–prezent</p>
+              <p style={{fontSize:11,color:th.tm,marginBottom:16}}>Arhivă completă 2007–prezent · cereri 2022–prezent</p>
 
               {/* Cereri confirmate/refuzate */}
               <div style={{...sty.cd,marginBottom:12}}>
@@ -12239,11 +12324,34 @@ function App() {
                   <div style={{fontSize:13,fontWeight:600}}>📊 Cereri confirmate vs refuzate</div>
                   <div style={{fontSize:10,color:th.tm}}>după data cererii (`cr`) · interval 2022–prezent</div>
                 </div>
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:8,marginBottom:12}}>
+                  <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:4}}>Filtru an</div>
+                    <select value={reqYearFilter} onChange={e=>setReqYearFilter(e.target.value)} style={{...sty.i,padding:8,fontSize:12}}>
+                      <option value="all">Toți anii</option>
+                      {reqYears.map(y=><option key={`ryf-${y}`} value={String(y)}>{y}</option>)}
+                    </select>
+                  </div>
+                  <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:4}}>Filtru lună</div>
+                    <select value={reqMonthFilter} onChange={e=>setReqMonthFilter(e.target.value)} style={{...sty.i,padding:8,fontSize:12}}>
+                      <option value="all">Toate lunile</option>
+                      {MONTHS_RO_SHORT.map((m,i)=><option key={`rmf-${m}`} value={String(i)}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:4}}>Comparație an A vs B</div>
+                    <select value={reqCompareYear} onChange={e=>setReqCompareYear(e.target.value)} style={{...sty.i,padding:8,fontSize:12}}>
+                      <option value="all">Auto (anul anterior)</option>
+                      {reqYears.map(y=><option key={`rcy-${y}`} value={String(y)}>{y}</option>)}
+                    </select>
+                  </div>
+                </div>
                 {!statsReq.total&&<div style={{padding:18,textAlign:"center",fontSize:12,color:th.tm}}>Nu există încă suficiente cereri confirmate/refuzate pentru raport.</div>}
                 {!!statsReq.total&&<>
                   <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:12}}>
                     {[
-                      {l:"Cereri analizate",v:statsReq.total,ac:th.t},
+                      {l:reqMonthFocus==null?"Cereri în filtrul selectat":"Cereri în luna filtrată",v:reqTotalsShown,ac:th.t},
                       {l:"Luna cu cele mai multe cereri",v:statsReq.mostRequestedMonth?`${statsReq.mostRequestedMonth.month} (${statsReq.mostRequestedMonth.count})`:"—",ac:"#6366f1"},
                       {l:"An cu cele mai multe confirmări",v:statsReq.yearMostConfirmed?`${statsReq.yearMostConfirmed.year} (${statsReq.yearMostConfirmed.count})`:"—",ac:"#22c55e"},
                       {l:"An cu cele mai multe refuzuri",v:statsReq.yearMostRejected?`${statsReq.yearMostRejected.year} (${statsReq.yearMostRejected.count})`:"—",ac:"#ef4444"},
@@ -12251,6 +12359,20 @@ function App() {
                       <div style={{fontSize:10,color:th.tm,marginBottom:5}}>{c.l}</div>
                       <div style={{fontSize:mob?14:16,fontWeight:700,color:c.ac}}>{c.v}</div>
                     </div>)}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:8,marginBottom:12}}>
+                    <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:2}}>An cu cele mai multe cereri</div>
+                      <div style={{fontSize:16,fontWeight:700}}>{reqBestYear?`${reqBestYear.year} (${reqBestYear.total})`:"—"}</div>
+                    </div>
+                    <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:2}}>An cu cele mai puține cereri</div>
+                      <div style={{fontSize:16,fontWeight:700}}>{reqWorstYear?`${reqWorstYear.year} (${reqWorstYear.total})`:"—"}</div>
+                    </div>
+                    <div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:2}}>Medie cereri / an</div>
+                      <div style={{fontSize:16,fontWeight:700}}>{statsReq.yearComparison.length?Math.round(statsReq.total/statsReq.yearComparison.length):0}</div>
+                    </div>
                   </div>
 
                   <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
@@ -12289,20 +12411,44 @@ function App() {
                     <table style={{width:"100%",fontSize:11}}>
                       <thead>
                         <tr style={{borderBottom:`1px solid ${th.b}`}}>
-                          {["An","Confirmate","Refuzate","Total","Rată refuz"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:h==="An"?"left":"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}
+                          {["An","Confirmate","Refuzate",reqMonthFocus==null?"Total":"Total luna",reqMonthFocus==null?"Rată refuz":"Pondere în an"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:h==="An"?"left":"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
-                        {statsReq.yearComparison.map(row=><tr key={row.year} style={{borderBottom:`1px solid ${th.bl}`}}>
+                        {reqRowsForMonth.map(row=><tr key={row.year} style={{borderBottom:`1px solid ${th.bl}`}}>
                           <td style={{padding:"6px 8px",fontWeight:700}}>{row.year}</td>
                           <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#22c55e"}}>{row.confirmed}</td>
                           <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#ef4444"}}>{row.rejected}</td>
-                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{row.total}</td>
-                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:row.rejectRate>=60?"#ef4444":"#22c55e"}}>{row.rejectRate}%</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{row.monthTotal}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:reqMonthFocus==null?(row.rejectRate>=60?"#ef4444":"#22c55e"):th.t}}>{reqMonthFocus==null?`${row.rejectRate}%`:`${row.share}%`}</td>
                         </tr>)}
                       </tbody>
                     </table>
                   </div>
+                  {reqYearA&&reqYearB&&<div style={{padding:"10px 12px",borderRadius:8,background:th.h,border:`1px solid ${th.b}`,marginBottom:10}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:4}}>Compari anul {reqYearA.year} cu {reqYearB.year}</div>
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:8}}>
+                      <div style={{fontSize:12,fontWeight:600}}>Total: <span style={{color:(reqYearA.total-reqYearB.total)>=0?"#22c55e":"#ef4444"}}>{(reqYearA.total-reqYearB.total)>=0?"+":""}{reqYearA.total-reqYearB.total}</span></div>
+                      <div style={{fontSize:12,fontWeight:600}}>Confirmate: <span style={{color:(reqYearA.confirmed-reqYearB.confirmed)>=0?"#22c55e":"#ef4444"}}>{(reqYearA.confirmed-reqYearB.confirmed)>=0?"+":""}{reqYearA.confirmed-reqYearB.confirmed}</span></div>
+                      <div style={{fontSize:12,fontWeight:600}}>Refuzate: <span style={{color:(reqYearA.rejected-reqYearB.rejected)<=0?"#22c55e":"#ef4444"}}>{(reqYearA.rejected-reqYearB.rejected)>=0?"+":""}{reqYearA.rejected-reqYearB.rejected}</span></div>
+                    </div>
+                  </div>}
+                  {reqYearA&&<div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`,marginBottom:10}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:8}}>Distribuție lunară în {reqYearA.year}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(12,1fr)",gap:4,alignItems:"end",height:76}}>
+                      {MONTHS_RO_SHORT.map((m,i)=>{
+                        const v=reqYearA.months?.[i]||0;
+                        const maxY=Math.max(...(reqYearA.months||[1]),1);
+                        const h=Math.max(3,Math.round((v/maxY)*56));
+                        const hl = reqMonthFocus===i;
+                        return <div key={`yd-${m}`} title={`${m}: ${v}`} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <div style={{fontSize:8,color:th.tm}}>{v||""}</div>
+                          <div style={{width:"100%",height:h,borderRadius:"3px 3px 0 0",background:hl?th.a:"#6366f1"}}/>
+                          <div style={{fontSize:7,color:hl?th.a:th.tm,transform:"rotate(-35deg)",transformOrigin:"top center"}}>{m}</div>
+                        </div>;
+                      })}
+                    </div>
+                  </div>}
                   <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10}}>
                     <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
                       <div style={{fontSize:10,color:th.tm,marginBottom:8}}>Top luni (overall / confirmate / refuzate)</div>
