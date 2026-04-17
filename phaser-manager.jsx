@@ -39,6 +39,81 @@ const REQUEST_STATS_EXCLUDED_YEARS = new Set([2021, 2026]);
 const MONTHS_RO_SHORT = ["Ian","Feb","Mar","Apr","Mai","Iun","Iul","Aug","Sep","Oct","Noi","Dec"];
 const MONTHS_RO_FULL = ["ianuarie","februarie","martie","aprilie","mai","iunie","iulie","august","septembrie","octombrie","noiembrie","decembrie"];
 
+/** Statistici cereri (confirmate/respins) după data cererii; filtre opționale pe an și lună. */
+function computeRequestStats(evs, opts = {}) {
+  const filterYear = opts.filterYear != null ? Number(opts.filterYear) : null;
+  const filterMonth = opts.filterMonth != null ? Number(opts.filterMonth) : null;
+  const parseDate = (raw) => {
+    if (!raw) return null;
+    if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
+    const str = String(raw);
+    const d = new Date(str.includes("T") ? str : `${str}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const monthOverall = Array(12).fill(0);
+  const monthConfirmed = Array(12).fill(0);
+  const monthRejected = Array(12).fill(0);
+  const byYear = {};
+  let confirmedTotal = 0;
+  let rejectedTotal = 0;
+  evs.forEach((ev) => {
+    if (!["confirmat", "respins"].includes(ev.st)) return;
+    const d = parseDate(ev.cr);
+    if (!d) return;
+    const y = d.getFullYear();
+    if (REQUEST_STATS_EXCLUDED_YEARS.has(y)) return;
+    const m = d.getMonth();
+    if (filterYear != null && y !== filterYear) return;
+    if (filterMonth != null && m !== filterMonth) return;
+    if (!byYear[y]) byYear[y] = { confirmed: 0, rejected: 0, months: Array(12).fill(0) };
+    byYear[y].months[m] += 1;
+    monthOverall[m] += 1;
+    if (ev.st === "confirmat") {
+      byYear[y].confirmed += 1;
+      monthConfirmed[m] += 1;
+      confirmedTotal += 1;
+    } else {
+      byYear[y].rejected += 1;
+      monthRejected[m] += 1;
+      rejectedTotal += 1;
+    }
+  });
+  const years = Object.keys(byYear)
+    .map(Number)
+    .sort((a, b) => a - b);
+  const yearComparison = years.map((y) => {
+    const row = byYear[y];
+    const total = row.confirmed + row.rejected;
+    const rejectRate = total ? Math.round((row.rejected / total) * 1000) / 10 : 0;
+    return { year: y, confirmed: row.confirmed, rejected: row.rejected, total, rejectRate, months: row.months };
+  });
+  const monthMax = (arr) => {
+    const max = Math.max(...arr, 0);
+    if (!max) return null;
+    const idx = arr.findIndex((v) => v === max);
+    return { month: MONTHS_RO_FULL[idx], count: max };
+  };
+  const yearMax = (key) => {
+    if (!yearComparison.length) return null;
+    const best = [...yearComparison].sort((a, b) => b[key] - a[key])[0];
+    return { year: best.year, count: best[key] };
+  };
+  return {
+    confirmedTotal,
+    rejectedTotal,
+    total: confirmedTotal + rejectedTotal,
+    monthOverall,
+    monthConfirmed,
+    monthRejected,
+    mostRequestedMonth: monthMax(monthOverall),
+    mostRequestedMonthConfirmed: monthMax(monthConfirmed),
+    mostRequestedMonthRejected: monthMax(monthRejected),
+    yearMostConfirmed: yearMax("confirmed"),
+    yearMostRejected: yearMax("rejected"),
+    yearComparison,
+  };
+}
+
 const uid = () => Math.random().toString(36).substr(2,9);
 const f$  = n => new Intl.NumberFormat("ro",{maximumFractionDigits:0}).format(n||0)+" €";
 const fD  = d => { if(!d) return "—"; return new Date(d+"T00:00:00").toLocaleDateString("ro",{day:"numeric",month:"short",year:"numeric"}); };
@@ -1999,9 +2074,23 @@ export default function App() {
   const [toast, setToast] = useState({visible:false,message:""});
   const [arhAn1, setArhAn1] = useState(2025);
   const [arhAn2, setArhAn2] = useState(2024);
-  const [showArh, setShowArh] = useState(false);
   const [finTab, setFinTab] = useState("curent");
   const [rapAn, setRapAn] = useState(2025);
+  const [statsSubTab, setStatsSubTab] = useState("cereri");
+  const [reqYearFilter, setReqYearFilter] = useState(null);
+  const [reqMonthFilter, setReqMonthFilter] = useState(null);
+  const [reqShowCompare, setReqShowCompare] = useState(false);
+  const [reqCompareB, setReqCompareB] = useState("auto");
+  const [reqShowOverallPanel, setReqShowOverallPanel] = useState(false);
+  const [reqShowPredictions, setReqShowPredictions] = useState(false);
+  const [evShowComparator, setEvShowComparator] = useState(false);
+  const [evShowOverallPanel, setEvShowOverallPanel] = useState(false);
+  const [evShowPredictions, setEvShowPredictions] = useState(false);
+  const [finShowComparator, setFinShowComparator] = useState(false);
+  const [finShowOverallPanel, setFinShowOverallPanel] = useState(false);
+  const [finShowPredictions, setFinShowPredictions] = useState(false);
+  const [evChartShowPredictions, setEvChartShowPredictions] = useState(false);
+  const [finChartShowPredictions, setFinChartShowPredictions] = useState(false);
   // Combină datele istorice hardcodate cu datele live din app pentru orice an nou
   const allHistoric = useMemo(()=>{
     const historicYears = new Set(HISTORIC_DATA.map(d=>d.an));
@@ -2013,78 +2102,11 @@ export default function App() {
     ()=>allHistoric.filter(d=>!REPORT_EXCLUDED_YEARS.has(d.an)),
     [allHistoric]
   );
-  const reqStats = useMemo(()=>{
-    const parseDate = (raw) => {
-      if(!raw) return null;
-      if(raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
-      const str = String(raw);
-      const d = new Date(str.includes("T") ? str : `${str}T00:00:00`);
-      return Number.isNaN(d.getTime()) ? null : d;
-    };
-
-    const monthOverall = Array(12).fill(0);
-    const monthConfirmed = Array(12).fill(0);
-    const monthRejected = Array(12).fill(0);
-    const byYear = {};
-    let confirmedTotal = 0;
-    let rejectedTotal = 0;
-
-    evs.forEach(ev=>{
-      if(!["confirmat","respins"].includes(ev.st)) return;
-      const d = parseDate(ev.cr);
-      if(!d) return;
-      const y = d.getFullYear();
-      if(REQUEST_STATS_EXCLUDED_YEARS.has(y)) return;
-      const m = d.getMonth();
-      if(!byYear[y]) byYear[y] = {confirmed:0,rejected:0,months:Array(12).fill(0)};
-      byYear[y].months[m] += 1;
-      monthOverall[m] += 1;
-      if(ev.st==="confirmat"){
-        byYear[y].confirmed += 1;
-        monthConfirmed[m] += 1;
-        confirmedTotal += 1;
-      } else {
-        byYear[y].rejected += 1;
-        monthRejected[m] += 1;
-        rejectedTotal += 1;
-      }
-    });
-
-    const years = Object.keys(byYear).map(Number).sort((a,b)=>a-b);
-    const yearComparison = years.map(y=>{
-      const row = byYear[y];
-      const total = row.confirmed + row.rejected;
-      const rejectRate = total ? Math.round((row.rejected/total)*1000)/10 : 0;
-      return {year:y, confirmed:row.confirmed, rejected:row.rejected, total, rejectRate, months:row.months};
-    });
-
-    const monthMax = (arr) => {
-      const max = Math.max(...arr, 0);
-      if(!max) return null;
-      const idx = arr.findIndex(v=>v===max);
-      return {month:MONTHS_RO_FULL[idx], count:max};
-    };
-    const yearMax = (key) => {
-      if(!yearComparison.length) return null;
-      const best = [...yearComparison].sort((a,b)=>b[key]-a[key])[0];
-      return {year:best.year, count:best[key]};
-    };
-
-    return {
-      confirmedTotal,
-      rejectedTotal,
-      total: confirmedTotal + rejectedTotal,
-      monthOverall,
-      monthConfirmed,
-      monthRejected,
-      mostRequestedMonth: monthMax(monthOverall),
-      mostRequestedMonthConfirmed: monthMax(monthConfirmed),
-      mostRequestedMonthRejected: monthMax(monthRejected),
-      yearMostConfirmed: yearMax("confirmed"),
-      yearMostRejected: yearMax("rejected"),
-      yearComparison
-    };
-  },[evs]);
+  const reqStatsGlobal = useMemo(() => computeRequestStats(evs, {}), [evs]);
+  const reqStatsView = useMemo(
+    () => computeRequestStats(evs, { filterYear: reqYearFilter, filterMonth: reqMonthFilter }),
+    [evs, reqYearFilter, reqMonthFilter]
+  );
   const mob = useIsMobile();
   const th  = TH[theme];
   const p   = user ? PM[user.rl] : {};
@@ -2417,7 +2439,7 @@ export default function App() {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
               <h1 style={{fontSize:22,fontWeight:700}}>Finanțe</h1>
               <div style={{display:"flex",gap:4,background:th.h,borderRadius:8,padding:3}}>
-                {[{id:"curent",l:"📈 Curent"},{id:"arhiva",l:"🗂 Arhivă"},{id:"rapoarte",l:"📊 Rapoarte"}].map(ft=>(
+                {[{id:"curent",l:"📈 Curent"},{id:"statistici",l:"📊 Statistici"}].map(ft=>(
                   <button key={ft.id} onClick={()=>setFinTab(ft.id)} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:11,fontWeight:finTab===ft.id?700:400,cursor:"pointer",background:finTab===ft.id?th.a:"transparent",color:finTab===ft.id?th.bg:th.tm,transition:"all .15s"}}>{ft.l}</button>
                 ))}
               </div>
@@ -2461,149 +2483,8 @@ export default function App() {
             </div>
             </>}
 
-            {finTab==="arhiva"&&<>
-            {/* ═══ ARHIVĂ ISTORICĂ ═══ */}
-            <div style={sty.cd}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:showArh?16:0}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:600}}>📊 Arhivă Istorică Evenimente</div>
-                  <div style={{fontSize:10,color:th.tm,marginTop:2}}>2007 – prezent · {allHistoricForReports.length} ani înregistrați (fără 2021)</div>
-                </div>
-                <button onClick={()=>setShowArh(p=>!p)} style={{...sty.bg,fontSize:11,padding:"5px 12px"}}>{showArh?"▲ Ascunde":"▼ Deschide"}</button>
-              </div>
-
-              {showArh&&(()=>{
-                const catCols = ["concerte","nunti","botezuri","corporate","scena_mare","festivaluri","privat","extra"];
-                const catLabel = {concerte:"Concerte",nunti:"Nunți",botezuri:"Botezuri",corporate:"Corporate",scena_mare:"Scenă mare",festivaluri:"Festivaluri",privat:"Party privat",extra:"Extra"};
-                const fv = v => v!=null ? `€${v.toLocaleString("ro-RO")}` : "—";
-                const fd = (a,b,key) => {
-                  const va=a?.[key]||0, vb=b?.[key]||0;
-                  if(!vb) return null;
-                  const pct=Math.round(((va-vb)/vb)*100);
-                  return pct;
-                };
-                const Chip = ({pct,zero}) => {
-                  if(pct==null||zero) return <span style={{color:th.tm,fontSize:10}}>—</span>;
-                  const pos=pct>=0;
-                  return <span style={{fontSize:10,fontWeight:700,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}%</span>;
-                };
-
-                const an1d = allHistoricForReports.find(d=>d.an===arhAn1);
-                const an2d = allHistoricForReports.find(d=>d.an===arhAn2);
-                const aniiDisp = allHistoricForReports.map(d=>d.an);
-
-                return <>
-                  {/* COMPARATOR */}
-                  <div style={{background:th.h,borderRadius:10,padding:"16px",marginBottom:16}}>
-                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:12}}>⚖️ Comparator ani</div>
-                    <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:11,color:th.tm}}>An A:</span>
-                        <select value={arhAn1} onChange={e=>setArhAn1(Number(e.target.value))} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:12,fontWeight:700}}>
-                          {aniiDisp.map(a=><option key={a} value={a}>{a}</option>)}
-                        </select>
-                      </div>
-                      <span style={{fontSize:16,color:th.tm}}>vs</span>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:11,color:th.tm}}>An B:</span>
-                        <select value={arhAn2} onChange={e=>setArhAn2(Number(e.target.value))} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:12,fontWeight:700}}>
-                          {aniiDisp.map(a=><option key={a} value={a}>{a}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    {an1d&&an2d&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-                      {/* Total */}
-                      {[
-                        {l:"Total evenimente",k:"total",icon:"🎪"},
-                        {l:"Concerte",k:"concerte",icon:"🎸"},
-                        {l:"Nunți",k:"nunti",icon:"💍"},
-                        {l:"Corporate",k:"corporate",icon:"🏢"},
-                        {l:"Scenă mare",k:"scena_mare",icon:"🎤"},
-                        {l:"Party privat",k:"privat",icon:"🥂"},
-                      ].map(({l,k,icon})=>{
-                        const va=an1d[k]||0, vb=an2d[k]||0;
-                        const pct=vb?Math.round(((va-vb)/vb)*100):null;
-                        const pos=pct!=null&&pct>=0;
-                        return <div key={k} style={{padding:"10px 12px",borderRadius:8,background:th.bg,border:`1px solid ${th.b}`}}>
-                          <div style={{fontSize:10,color:th.tm,marginBottom:4}}>{icon} {l}</div>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                            <span style={{fontSize:15,fontWeight:700}}>{va||"—"}</span>
-                            <span style={{fontSize:10,color:th.tm}}>vs {vb||"—"}</span>
-                          </div>
-                          {pct!=null&&<div style={{marginTop:4,fontSize:10,fontWeight:700,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}% față de {arhAn2}</div>}
-                        </div>;
-                      })}
-                    </div>}
-
-                    {an1d&&an2d&&(()=>{
-                      const v1=an1d.venit||(an1d.venit_min&&an1d.venit_max?Math.round((an1d.venit_min+an1d.venit_max)/2):null);
-                      const v2=an2d.venit||(an2d.venit_min&&an2d.venit_max?Math.round((an2d.venit_min+an2d.venit_max)/2):null);
-                      const pct=v1&&v2?Math.round(((v1-v2)/v2)*100):null;
-                      const pos=pct!=null&&pct>=0;
-                      return v1||v2?<div style={{marginTop:10,padding:"12px 14px",borderRadius:8,background:pos?"rgba(34,197,94,.08)":"rgba(239,68,68,.08)",border:`1px solid ${pos?"#22c55e":"#ef4444"}30`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <div>
-                          <div style={{fontSize:10,color:th.tm,marginBottom:2}}>💰 Venit per membru</div>
-                          <div style={{display:"flex",gap:16,alignItems:"baseline"}}>
-                            <span style={{fontSize:16,fontWeight:700}}>{v1?fv(v1):"n/a"}</span>
-                            <span style={{fontSize:11,color:th.tm}}>vs {v2?fv(v2):"n/a"} în {arhAn2}</span>
-                          </div>
-                        </div>
-                        {pct!=null&&<span style={{fontSize:14,fontWeight:800,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}%</span>}
-                      </div>:null;
-                    })()}
-                  </div>
-
-                  {/* TABEL COMPLET */}
-                  <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:10}}>📋 Toate datele</div>
-                  <div style={{overflowX:"auto"}}>
-                    <table style={{width:"100%",fontSize:11}}>
-                      <thead>
-                        <tr style={{borderBottom:`2px solid ${th.b}`}}>
-                          <th style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>An</th>
-                          <th style={{padding:"7px 8px",textAlign:"center",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>Total</th>
-                          {catCols.map(c=><th key={c} style={{padding:"7px 8px",textAlign:"center",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{catLabel[c]}</th>)}
-                          <th style={{padding:"7px 8px",textAlign:"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>€/Membru</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...allHistoricForReports].reverse().map((d,i)=>{
-                          const prev=allHistoricForReports[allHistoricForReports.indexOf(d)-1];
-                          const isHl=d.an===arhAn1||d.an===arhAn2;
-                          const vStr=d.venit?fv(d.venit):d.venit_min?`~${fv(d.venit_min)}–${fv(d.venit_max)}`:"—";
-                          return <tr key={d.an} style={{borderBottom:`1px solid ${th.bl}`,background:isHl?`${th.a}18`:"transparent"}}>
-                            <td style={{padding:"7px 8px",fontWeight:isHl?700:600,fontSize:isHl?13:11}}>{d.an}{isHl&&<span style={{fontSize:8,marginLeft:4,color:th.a,fontWeight:700}}>{d.an===arhAn1?"▶A":"▶B"}</span>}</td>
-                            <td style={{padding:"7px 8px",textAlign:"center",fontWeight:700}}>{d.total}</td>
-                            {catCols.map(c=><td key={c} style={{padding:"7px 8px",textAlign:"center",color:d[c]?th.t:th.b}}>{d[c]||"·"}</td>)}
-                            <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600,color:d.venit||d.venit_min?"#22c55e":th.tm,fontSize:10}}>{vStr}</td>
-                          </tr>;
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* TREND VIZUAL SIMPLU */}
-                  <div style={{marginTop:16}}>
-                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:10}}>📈 Trend total evenimente</div>
-                    <div style={{display:"flex",alignItems:"flex-end",gap:3,height:80}}>
-                      {allHistoricForReports.map(d=>{
-                        const maxT=Math.max(...allHistoricForReports.map(x=>x.total));
-                        const h=Math.round((d.total/maxT)*72);
-                        const isHl=d.an===arhAn1||d.an===arhAn2;
-                        return <div key={d.an} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                          <div title={`${d.an}: ${d.total} ev.`} style={{width:"100%",height:h,borderRadius:"3px 3px 0 0",background:isHl?th.a:th.b,transition:"height .3s",cursor:"default"}}/>
-                          <div style={{fontSize:8,color:th.tm,transform:"rotate(-45deg)",transformOrigin:"top center",whiteSpace:"nowrap"}}>{d.an}</div>
-                        </div>;
-                      })}
-                    </div>
-                  </div>
-                </>;
-              })()}
-            </div>
-            </>}
-
-            {/* ═══ RAPOARTE ═══ */}
-            {finTab==="rapoarte"&&(()=>{
+            {/* ═══ STATISTICI (cereri · evenimente · finanțe) ═══ */}
+            {finTab==="statistici"&&(()=>{
               const catLabel = {concerte:"Concerte",nunti:"Nunți",botezuri:"Botezuri",corporate:"Corporate",scena_mare:"Scenă mare",festivaluri:"Festivaluri",privat:"Party privat",extra:"Extra"};
               const catColors = {concerte:"#6366f1",nunti:"#ec4899",botezuri:"#f59e0b",corporate:"#0ea5e9",scena_mare:"#8b5cf6",festivaluri:"#10b981",privat:"#f97316",extra:"#64748b"};
               const catKeys = ["concerte","nunti","corporate","scena_mare","festivaluri","privat","botezuri","extra"];
@@ -2649,117 +2530,203 @@ export default function App() {
                 </svg>;
               };
 
-              const maxTotal = Math.max(...allHistoricForReports.map(d=>d.total), ...predYears.map(y=>predTotal(y)));
-              const reqMonthMax = Math.max(...reqStats.monthConfirmed, ...reqStats.monthRejected, 1);
+              const maxTotalEvChart = Math.max(...allHistoricForReports.map(d=>d.total), ...(evChartShowPredictions ? predYears.map(y=>predTotal(y)) : []), 1);
+              const maxVenitChart = Math.max(1, ...allHistoricForReports.filter(d=>d.venit).map(d=>d.venit), ...(finChartShowPredictions ? predYears.map(y=>predVenit(y)) : []));
+              const reqMonthMaxG = Math.max(...reqStatsGlobal.monthConfirmed, ...reqStatsGlobal.monthRejected, 1);
+              const reqMonthMaxV = Math.max(...reqStatsView.monthConfirmed, ...reqStatsView.monthRejected, 1);
+              const catColsArh = ["concerte","nunti","botezuri","corporate","scena_mare","festivaluri","privat","extra"];
+              const aniiDisp = allHistoricForReports.map(d=>d.an);
+              const an1d = allHistoricForReports.find(d=>d.an===arhAn1);
+              const an2d = allHistoricForReports.find(d=>d.an===arhAn2);
+              const reqYrs = reqStatsGlobal.yearComparison.map(r=>r.year).sort((a,b)=>a-b);
+              const prevReqYear = (y)=>{ const ix=reqYrs.indexOf(y); return ix>0?reqYrs[ix-1]:null; };
+              const compBResolved = reqYearFilter!=null ? (reqCompareB==="auto" ? (prevReqYear(reqYearFilter) ?? reqYearFilter-1) : Number(reqCompareB)) : null;
+              const rowReqA = reqYearFilter!=null ? reqStatsGlobal.yearComparison.find(r=>r.year===reqYearFilter) : null;
+              const rowReqB = compBResolved!=null ? reqStatsGlobal.yearComparison.find(r=>r.year===compBResolved) : null;
+              const predReqPts = reqStatsGlobal.yearComparison.map(r=>({x:r.year,y:r.total}));
+              const predReq = predReqPts.length>=2 ? linReg(predReqPts) : ()=>0;
+              const lastReqY = predReqPts.length ? Math.max(...predReqPts.map(p=>p.x)) : new Date().getFullYear();
+              const predReqYearsShort = [lastReqY+1,lastReqY+2,lastReqY+3];
 
               return <>
-                {/* RAPORT CERERI (CONFIRMATE VS REFUZATE) */}
-                <div style={{...sty.cd,marginBottom:12}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
-                    <div style={{fontSize:13,fontWeight:600}}>📊 Statistici cereri (confirmate / refuzate)</div>
-                    <div style={{fontSize:10,color:th.tm}}>după data cererii · fără 2021 și 2026</div>
+                <div style={{marginBottom:16}}>
+                  <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px"}}>Statistici</h1>
+                  <p style={{color:th.tm,fontSize:12,marginTop:4}}>Evenimente istorice 2007–prezent · cereri după dată cerere (excl. 2021 și 2026)</p>
+                  <div style={{display:"flex",gap:4,background:th.h,borderRadius:8,padding:3,marginTop:12,flexWrap:"wrap"}}>
+                    {[{id:"cereri",l:"Cereri"},{id:"evenimente",l:"Evenimente"},{id:"finante",l:"Finanțe"}].map(ft=>(
+                      <button key={ft.id} type="button" onClick={()=>setStatsSubTab(ft.id)} style={{padding:"6px 14px",borderRadius:6,border:"none",fontSize:12,fontWeight:statsSubTab===ft.id?700:500,cursor:"pointer",background:statsSubTab===ft.id?th.a:"transparent",color:statsSubTab===ft.id?th.bg:th.tm}}>{ft.l}</button>
+                    ))}
                   </div>
-                  {!reqStats.total&&<div style={{padding:18,textAlign:"center",fontSize:12,color:th.tm}}>Nu există încă suficiente cereri confirmate/refuzate pentru raport.</div>}
-                  {!!reqStats.total&&<>
+                </div>
+
+                {statsSubTab==="cereri"&&<div style={{...sty.cd,marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Cereri confirmate vs refuzate</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"flex-end",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:4,fontWeight:600}}>Filtru an</div>
+                      <select value={reqYearFilter ?? ""} onChange={e=>{ const v=e.target.value; setReqYearFilter(v?Number(v):null); }} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:13,fontWeight:600}}>
+                        <option value="">Toți anii</option>
+                        {reqYrs.map(y=><option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:4,fontWeight:600}}>Filtru lună</div>
+                      <select value={reqMonthFilter ?? ""} onChange={e=>{ const v=e.target.value; setReqMonthFilter(v!==""?Number(v):null); }} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:13,fontWeight:600}}>
+                        <option value="">Toate lunile</option>
+                        {MONTHS_RO_FULL.map((m,i)=><option key={m} value={i}>{m}</option>)}
+                      </select>
+                    </div>
+                    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:th.ts}}>
+                      <input type="checkbox" checked={reqShowCompare} onChange={e=>setReqShowCompare(e.target.checked)} />
+                      Comparație între ani
+                    </label>
+                    {reqShowCompare&&reqYearFilter!=null&&<div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:10,color:th.tm}}>vs</span>
+                      <select value={reqCompareB} onChange={e=>setReqCompareB(e.target.value)} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:12}}>
+                        <option value="auto">Auto (anul anterior în date)</option>
+                        {reqYrs.filter(y=>y!==reqYearFilter).map(y=><option key={y} value={String(y)}>{y}</option>)}
+                      </select>
+                    </div>}
+                  </div>
+
+                  {!reqStatsView.total&&<div style={{padding:18,textAlign:"center",fontSize:12,color:th.tm}}>Nu există cereri în filtrul selectat.</div>}
+                  {!!reqStatsView.total&&<>
                     <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:12}}>
                       {[
-                        {l:"Cereri analizate",v:reqStats.total,ac:th.t},
-                        {l:"Luna cu cele mai multe cereri",v:reqStats.mostRequestedMonth?`${reqStats.mostRequestedMonth.month} (${reqStats.mostRequestedMonth.count})`:"—",ac:"#6366f1"},
-                        {l:"An cu cele mai multe confirmări",v:reqStats.yearMostConfirmed?`${reqStats.yearMostConfirmed.year} (${reqStats.yearMostConfirmed.count})`:"—",ac:"#22c55e"},
-                        {l:"An cu cele mai multe refuzuri",v:reqStats.yearMostRejected?`${reqStats.yearMostRejected.year} (${reqStats.yearMostRejected.count})`:"—",ac:"#ef4444"},
+                        {l:"Cereri în filtrul selectat",v:reqStatsView.total,ac:th.t},
+                        {l:"Confirmate",v:reqStatsView.confirmedTotal,ac:"#22c55e"},
+                        {l:"Refuzate",v:reqStatsView.rejectedTotal,ac:"#ef4444"},
+                        {l:"Rată refuz",v:`${reqStatsView.total?Math.round((reqStatsView.rejectedTotal/reqStatsView.total)*1000)/10:0}%`,ac:th.ts},
                       ].map((c,i)=><div key={i} style={{...sty.cd,padding:12}}>
                         <div style={{fontSize:10,color:th.tm,marginBottom:5}}>{c.l}</div>
                         <div style={{fontSize:mob?14:16,fontWeight:700,color:c.ac}}>{c.v}</div>
                       </div>)}
                     </div>
-
                     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
                       <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
-                        <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Cereri confirmate pe luni (toți anii)</div>
-                        <SvgBars
-                          height={56}
-                          maxV={reqMonthMax}
-                          data={MONTHS_RO_SHORT.map((m,i)=>({l:m,v:reqStats.monthConfirmed[i],color:"#22c55e"}))}
-                        />
+                        <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Confirmate pe luni {reqYearFilter?`(${reqYearFilter})`:"(filtru curent)"}</div>
+                        <SvgBars height={56} maxV={reqMonthMaxV} data={MONTHS_RO_SHORT.map((m,i)=>({l:m,v:reqStatsView.monthConfirmed[i],color:"#22c55e"}))} />
                       </div>
                       <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
-                        <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Cereri refuzate pe luni (toți anii)</div>
-                        <SvgBars
-                          height={56}
-                          maxV={reqMonthMax}
-                          data={MONTHS_RO_SHORT.map((m,i)=>({l:m,v:reqStats.monthRejected[i],color:"#ef4444"}))}
-                        />
+                        <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Refuzate pe luni {reqYearFilter?`(${reqYearFilter})`:"(filtru curent)"}</div>
+                        <SvgBars height={56} maxV={reqMonthMaxV} data={MONTHS_RO_SHORT.map((m,i)=>({l:m,v:reqStatsView.monthRejected[i],color:"#ef4444"}))} />
                       </div>
                     </div>
-
-                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:8}}>Comparație între ani</div>
-                    <div style={{overflowX:"auto",marginBottom:12}}>
-                      <table style={{width:"100%",fontSize:11}}>
-                        <thead>
-                          <tr style={{borderBottom:`1px solid ${th.b}`}}>
-                            {["An","Confirmate","Refuzate","Total","Rată refuz"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:h==="An"?"left":"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {reqStats.yearComparison.map(row=><tr key={row.year} style={{borderBottom:`1px solid ${th.bl}`}}>
-                            <td style={{padding:"6px 8px",fontWeight:700}}>{row.year}</td>
-                            <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#22c55e"}}>{row.confirmed}</td>
-                            <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#ef4444"}}>{row.rejected}</td>
-                            <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{row.total}</td>
-                            <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:row.rejectRate>=60?"#ef4444":"#22c55e"}}>{row.rejectRate}%</td>
-                          </tr>)}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:8}}>Luni în cadrul aceluiași an</div>
-                    <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",fontSize:10}}>
-                        <thead>
-                          <tr style={{borderBottom:`1px solid ${th.b}`}}>
-                            <th style={{padding:"6px 8px",textAlign:"left",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>An</th>
-                            {MONTHS_RO_SHORT.map(m=><th key={m} style={{padding:"6px 8px",textAlign:"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{m}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {reqStats.yearComparison.map(row=><tr key={`m-${row.year}`} style={{borderBottom:`1px solid ${th.bl}`}}>
-                            <td style={{padding:"6px 8px",fontWeight:700}}>{row.year}</td>
-                            {row.months.map((v,i)=><td key={`${row.year}-${i}`} style={{padding:"6px 8px",textAlign:"right",color:v?th.t:th.tm,fontWeight:v?600:400}}>{v||"·"}</td>)}
-                          </tr>)}
-                        </tbody>
-                      </table>
-                    </div>
                   </>}
-                </div>
 
-                {/* SELECTOR AN RAPORT */}
-                <div style={{...sty.cd,marginBottom:12}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-                    <div style={{fontSize:13,fontWeight:600}}>📋 Raport anual detaliat</div>
+                  {reqShowCompare&&<div style={{marginTop:8,marginBottom:12}}>
+                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:8}}>Comparație (activată manual)</div>
+                    {reqYearFilter!=null&&rowReqA&&rowReqB?<div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",fontSize:11}}><thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
+                        {["An","Confirmate","Refuzate","Total","Rată refuz"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:h==="An"?"left":"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}
+                      </tr></thead><tbody>
+                        {[rowReqA,rowReqB].map(row=>row&&<tr key={row.year} style={{borderBottom:`1px solid ${th.bl}`}}>
+                          <td style={{padding:"6px 8px",fontWeight:700}}>{row.year}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#22c55e"}}>{row.confirmed}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#ef4444"}}>{row.rejected}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{row.total}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{row.rejectRate}%</td>
+                        </tr>)}
+                      </tbody></table>
+                      {rowReqA&&rowReqB&&<div style={{marginTop:10,padding:10,borderRadius:8,background:th.h,fontSize:11}}>
+                        <span style={{fontWeight:700}}>Δ față de {rowReqB.year}:</span>{" "}
+                        total {rowReqA.total-rowReqB.total>=0?"+":""}{rowReqA.total-rowReqB.total}, confirmate {rowReqA.confirmed-rowReqB.confirmed>=0?"+":""}{rowReqA.confirmed-rowReqB.confirmed}, refuzate {rowReqA.rejected-rowReqB.rejected>=0?"+":""}{rowReqA.rejected-rowReqB.rejected}
+                      </div>}
+                    </div>:<div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",fontSize:11}}><thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
+                        {["An","Confirmate","Refuzate","Total","Rată refuz"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:h==="An"?"left":"right",fontSize:9,color:th.tm,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}
+                      </tr></thead><tbody>
+                        {reqStatsGlobal.yearComparison.map(row=><tr key={row.year} style={{borderBottom:`1px solid ${th.bl}`}}>
+                          <td style={{padding:"6px 8px",fontWeight:700}}>{row.year}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#22c55e"}}>{row.confirmed}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:"#ef4444"}}>{row.rejected}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{row.total}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{row.rejectRate}%</td>
+                        </tr>)}
+                      </tbody></table>
+                    </div>}
+                  </div>}
+
+                  <div style={{marginTop:10}}>
+                    <button type="button" onClick={()=>setReqShowOverallPanel(p=>!p)} style={{...sty.bg,width:"100%",justifyContent:"space-between",fontSize:12,padding:"10px 12px"}}>
+                      <span>{reqShowOverallPanel?"▼":"▶"} Rezumat global (toți anii / totale)</span>
+                      <span style={{fontSize:10,color:th.tm}}>{reqShowOverallPanel?"ascunde":"deschide"}</span>
+                    </button>
+                    {reqShowOverallPanel&&!!reqStatsGlobal.total&&<div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${th.b}`}}>
+                      <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:12}}>
+                        {[
+                          {l:"Cereri totale (toți anii)",v:reqStatsGlobal.total,ac:th.t},
+                          {l:"Luna cu cele mai multe cereri",v:reqStatsGlobal.mostRequestedMonth?`${reqStatsGlobal.mostRequestedMonth.month} (${reqStatsGlobal.mostRequestedMonth.count})`:"—",ac:"#6366f1"},
+                          {l:"An cu cele mai multe confirmări",v:reqStatsGlobal.yearMostConfirmed?`${reqStatsGlobal.yearMostConfirmed.year} (${reqStatsGlobal.yearMostConfirmed.count})`:"—",ac:"#22c55e"},
+                          {l:"An cu cele mai multe refuzuri",v:reqStatsGlobal.yearMostRejected?`${reqStatsGlobal.yearMostRejected.year} (${reqStatsGlobal.yearMostRejected.count})`:"—",ac:"#ef4444"},
+                        ].map((c,i)=><div key={i} style={{...sty.cd,padding:12}}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:5}}>{c.l}</div>
+                          <div style={{fontSize:mob?14:16,fontWeight:700,color:c.ac}}>{c.v}</div>
+                        </div>)}
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+                        <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Confirmate pe luni (toți anii)</div>
+                          <SvgBars height={56} maxV={reqMonthMaxG} data={MONTHS_RO_SHORT.map((m,i)=>({l:m,v:reqStatsGlobal.monthConfirmed[i],color:"#22c55e"}))} />
+                        </div>
+                        <div style={{padding:10,borderRadius:8,background:th.h,border:`1px solid ${th.b}`}}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Refuzate pe luni (toți anii)</div>
+                          <SvgBars height={56} maxV={reqMonthMaxG} data={MONTHS_RO_SHORT.map((m,i)=>({l:m,v:reqStatsGlobal.monthRejected[i],color:"#ef4444"}))} />
+                        </div>
+                      </div>
+                      <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:6}}>Luni pe an (toate datele)</div>
+                      <div style={{overflowX:"auto"}}>
+                        <table style={{width:"100%",fontSize:10}}><thead><tr style={{borderBottom:`1px solid ${th.b}`}}>
+                          <th style={{padding:"6px 8px",textAlign:"left",fontSize:9,color:th.tm}}>An</th>
+                          {MONTHS_RO_SHORT.map(m=><th key={m} style={{padding:"6px 8px",textAlign:"right",fontSize:9,color:th.tm}}>{m}</th>)}
+                        </tr></thead><tbody>
+                          {reqStatsGlobal.yearComparison.map(row=><tr key={`g-${row.year}`} style={{borderBottom:`1px solid ${th.bl}`}}>
+                            <td style={{padding:"6px 8px",fontWeight:700}}>{row.year}</td>
+                            {row.months.map((v,i)=><td key={`${row.year}-g-${i}`} style={{padding:"6px 8px",textAlign:"right",color:v?th.t:th.tm}}>{v||"·"}</td>)}
+                          </tr>)}
+                        </tbody></table>
+                      </div>
+                    </div>}
+                  </div>
+
+                  <div style={{marginTop:12}}>
+                    <button type="button" onClick={()=>setReqShowPredictions(p=>!p)} style={{...sty.bg,width:"100%",justifyContent:"space-between",fontSize:12,padding:"10px 12px"}}>
+                      <span>{reqShowPredictions?"▼":"▶"} Predicții cereri (estimativ)</span>
+                    </button>
+                    {reqShowPredictions&&predReqPts.length>=2&&<div style={{marginTop:12,padding:12,borderRadius:8,background:th.h,fontSize:12}}>
+                      <div style={{fontSize:10,color:th.tm,marginBottom:8}}>Regresie liniară pe total cereri/an</div>
+                      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:8}}>
+                        {predReqYearsShort.map(y=><div key={y} style={{...sty.cd,padding:10}}>
+                          <div style={{fontWeight:800,color:th.a}}>{y}*</div>
+                          <div style={{fontSize:18,fontWeight:700}}>{predReq(y)}</div>
+                          <div style={{fontSize:9,color:th.tm}}>total cereri estimate</div>
+                        </div>)}
+                      </div>
+                    </div>}
+                  </div>
+                </div>}
+
+                {statsSubTab==="evenimente"&&<div style={{...sty.cd,marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}>
+                    <div style={{fontSize:13,fontWeight:600}}>Evenimente istorice</div>
                     <select value={rapAn} onChange={e=>setRapAn(Number(e.target.value))} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:13,fontWeight:700}}>
                       {[...allHistoricForReports].reverse().map(d=><option key={d.an} value={d.an}>{d.an}</option>)}
                     </select>
                   </div>
-
-                  {rapD&&<div style={{marginTop:16}}>
-                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:16}}>
+                  {rapD&&<div style={{marginTop:4}}>
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(3,1fr)",gap:8,marginBottom:14}}>
                       {[
-                        {l:"Total evenimente",v:rapD.total,prev:rapPrev?.total,ic:"🎪"},
-                        {l:"Venit / membru",v:rapD.venit?fv(rapD.venit):rapD.venit_min?`~${fv(Math.round((rapD.venit_min+rapD.venit_max)/2))}`:"n/a",prev:null,ic:"💶",raw:rapD.venit,rawPrev:rapPrev?.venit},
-                        {l:"Nunți",v:rapD.nunti||0,prev:rapPrev?.nunti,ic:"💍"},
-                        {l:"Corporate",v:rapD.corporate||0,prev:rapPrev?.corporate,ic:"🏢"},
-                      ].map((c,i)=>{
-                        const pct=c.raw!=null&&c.rawPrev!=null?pctChange(c.raw,c.rawPrev):c.v!==null&&typeof c.v==="number"&&c.prev!=null?pctChange(c.v,c.prev):null;
-                        const pos=pct!=null&&pct>=0;
-                        return <div key={i} style={sty.cd}>
-                          <div style={{fontSize:10,color:th.tm,marginBottom:4}}>{c.ic} {c.l}</div>
-                          <div style={{fontSize:17,fontWeight:700}}>{typeof c.v==="number"?c.v:c.v}</div>
-                          {pct!=null&&<div style={{fontSize:10,fontWeight:700,marginTop:4,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}% vs {rapPrev?.an}</div>}
-                        </div>;
-                      })}
+                        {l:"Total evenimente",v:rapD.total,ic:"🎪"},
+                        {l:"Concerte",v:rapD.concerte||0,ic:"🎸"},
+                        {l:"Nunți",v:rapD.nunti||0,ic:"💍"},
+                        {l:"Corporate",v:rapD.corporate||0,ic:"🏢"},
+                        {l:"Scenă mare",v:rapD.scena_mare||0,ic:"🎤"},
+                        {l:"Party privat",v:rapD.privat||0,ic:"🥂"},
+                      ].map((c,i)=><div key={i} style={sty.cd}>
+                        <div style={{fontSize:10,color:th.tm,marginBottom:4}}>{c.ic} {c.l}</div>
+                        <div style={{fontSize:17,fontWeight:700}}>{c.v}</div>
+                      </div>)}
                     </div>
-
-                    {/* Breakdown categorii */}
                     <div style={{marginBottom:12}}>
                       <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:th.tm,marginBottom:10}}>Breakdown categorii</div>
                       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
@@ -2767,74 +2734,157 @@ export default function App() {
                           <div key={k} style={{padding:"6px 10px",borderRadius:6,background:catColors[k]+"20",border:`1px solid ${catColors[k]}40`,display:"flex",alignItems:"center",gap:6}}>
                             <span style={{fontSize:16,fontWeight:700,color:catColors[k]}}>{rapD[k]}</span>
                             <span style={{fontSize:11,color:th.t}}>{catLabel[k]}</span>
-                            {rapPrev&&rapPrev[k]!=null&&<span style={{fontSize:9,color:pctChange(rapD[k]||0,rapPrev[k]||0)>=0?"#22c55e":"#ef4444",fontWeight:700}}>({pctChange(rapD[k]||0,rapPrev[k]||0)>=0?"+":""}{pctChange(rapD[k]||0,rapPrev[k]||0)}%)</span>}
                           </div>
                         ))}
                       </div>
                     </div>
-
-                    {/* Notă an */}
-                    {rapD.an===2020&&<div style={{padding:"10px 14px",borderRadius:8,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",fontSize:11,color:"#ef4444",marginTop:8}}>⚠️ 2020 — an COVID-19. Datele nu sunt reprezentative pentru trend-ul normal.</div>}
+                    {rapD.an===2020&&<div style={{padding:"10px 14px",borderRadius:8,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",fontSize:11,color:"#ef4444",marginBottom:10}}>⚠️ 2020 — an COVID-19. Datele nu sunt reprezentative.</div>}
                   </div>}
-                </div>
 
-                {/* GRAFIC EVOLUȚIE TOTALĂ */}
-                <div style={{...sty.cd,marginBottom:12}}>
-                  <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>📈 Evoluție total evenimente</div>
-                  <div style={{fontSize:10,color:th.tm,marginBottom:14}}>Date reale istorice + predicții {predYears[0]}–{predYears[predYears.length-1]} (regresie liniară, excluzând 2020)</div>
-                  <div style={{overflowX:"auto"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:th.ts,marginBottom:10}}>
+                    <input type="checkbox" checked={evShowComparator} onChange={e=>setEvShowComparator(e.target.checked)} />
+                    Comparator ani (evenimente)
+                  </label>
+                  {evShowComparator&&<div style={{background:th.h,borderRadius:10,padding:"16px",marginBottom:14}}>
+                    <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:11,color:th.tm}}>An A</span>
+                        <select value={arhAn1} onChange={e=>setArhAn1(Number(e.target.value))} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:12,fontWeight:700}}>
+                          {aniiDisp.map(a=><option key={a} value={a}>{a}</option>)}
+                        </select>
+                      </div>
+                      <span style={{fontSize:14,color:th.tm}}>vs</span>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:11,color:th.tm}}>An B</span>
+                        <select value={arhAn2} onChange={e=>setArhAn2(Number(e.target.value))} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:12,fontWeight:700}}>
+                          {aniiDisp.map(a=><option key={a} value={a}>{a}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    {an1d&&an2d&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                      {[
+                        {l:"Total evenimente",k:"total",icon:"🎪"},
+                        {l:"Concerte",k:"concerte",icon:"🎸"},
+                        {l:"Nunți",k:"nunti",icon:"💍"},
+                        {l:"Corporate",k:"corporate",icon:"🏢"},
+                        {l:"Scenă mare",k:"scena_mare",icon:"🎤"},
+                        {l:"Party privat",k:"privat",icon:"🥂"},
+                      ].map(({l,k,icon})=>{
+                        const va=an1d[k]||0, vb=an2d[k]||0;
+                        const pct=vb?Math.round(((va-vb)/vb)*100):null;
+                        const pos=pct!=null&&pct>=0;
+                        return <div key={k} style={{padding:"10px 12px",borderRadius:8,background:th.bg,border:`1px solid ${th.b}`}}>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:4}}>{icon} {l}</div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                            <span style={{fontSize:15,fontWeight:700}}>{va||"—"}</span>
+                            <span style={{fontSize:10,color:th.tm}}>vs {vb||"—"}</span>
+                          </div>
+                          {pct!=null&&<div style={{marginTop:4,fontSize:10,fontWeight:700,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}% față de {arhAn2}</div>}
+                        </div>;
+                      })}
+                    </div>}
+                  </div>}
+
+                  <div style={{marginBottom:10}}>
+                    <button type="button" onClick={()=>setEvChartShowPredictions(p=>!p)} style={{...sty.bg,fontSize:11,padding:"6px 10px",marginRight:8}}>{evChartShowPredictions?"Ascunde":"Arată"} predicții în grafic</button>
+                  </div>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Evoluție total evenimente</div>
+                  <div style={{fontSize:10,color:th.tm,marginBottom:10}}>Istoric {evChartShowPredictions?`+ predicții ${predYears[0]}–${predYears[predYears.length-1]}`:"(predicțiile sunt ascunse)"}</div>
+                  <div style={{overflowX:"auto",marginBottom:14}}>
                     <div style={{minWidth:500}}>
                       <SvgBars height={80} data={[
                         ...allHistoricForReports.map(d=>({l:String(d.an),v:d.total,color:d.an===2020?"#94a3b8":th.a})),
-                        ...predYears.map(y=>({l:`${y}*`,v:predTotal(y),color:"#6366f130",dim:true}))
-                      ]} maxV={maxTotal} />
+                        ...(evChartShowPredictions?predYears.map(y=>({l:`${y}*`,v:predTotal(y),color:"#6366f130",dim:true})):[])
+                      ]} maxV={maxTotalEvChart} />
                     </div>
                   </div>
-                </div>
 
-                {/* PREDICȚII */}
-                <div style={{...sty.cd,marginBottom:12}}>
-                  <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>🔮 Predicții {predYears[0]} – {predYears[predYears.length-1]}</div>
-                  <div style={{fontSize:10,color:th.tm,marginBottom:14}}>Bazat pe regresia liniară a datelor 2014–prezent (excl. 2020). Valorile sunt estimative.</div>
-                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10}}>
-                    {predYears.map(y=>{
-                      const tot=predTotal(y);
-                      const ven=predVenit(y);
-                      const prev=predYears.indexOf(y)===0?allHistoricForReports[allHistoricForReports.length-1]:null;
-                      const prevTot=predYears.indexOf(y)===0?allHistoricForReports[allHistoricForReports.length-1]?.total:predTotal(y-1);
-                      const prevVen=predYears.indexOf(y)===0?allHistoricForReports[allHistoricForReports.length-1]?.venit:predVenit(y-1);
-                      const pT=pctChange(tot,prevTot), pV=pctChange(ven,prevVen);
-                      return <div key={y} style={{...sty.cd,border:`2px solid ${th.a}40`,background:`${th.a}08`}}>
-                        <div style={{fontSize:16,fontWeight:800,color:th.a,marginBottom:8}}>{y}</div>
-                        <div style={{fontSize:11,color:th.tm,marginBottom:2}}>Total evenimente estimate</div>
-                        <div style={{fontSize:22,fontWeight:700,marginBottom:4}}>{tot}</div>
-                        {pT!=null&&<div style={{fontSize:10,fontWeight:700,color:pT>=0?"#22c55e":"#ef4444",marginBottom:10}}>{pT>=0?"+":""}{pT}% vs {y-1}</div>}
-                        <div style={{borderTop:`1px solid ${th.b}`,paddingTop:8,marginTop:4}}>
-                          <div style={{fontSize:10,color:th.tm,marginBottom:2}}>Venit estimat / membru</div>
-                          <div style={{fontSize:16,fontWeight:700,color:"#22c55e"}}>{fv(ven)}</div>
-                          {pV!=null&&<div style={{fontSize:10,fontWeight:700,color:pV>=0?"#22c55e":"#ef4444"}}>{pV>=0?"+":""}{pV}% vs {y-1}</div>}
-                        </div>
-                        <div style={{marginTop:10}}>
-                          <div style={{fontSize:10,color:th.tm,marginBottom:6}}>Breakdown estimat:</div>
-                          {catKeys.slice(0,4).map(k=>{
-                            const pv=predCat(k)(y);
-                            return pv>0?<div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}>
-                              <span style={{color:catColors[k],fontWeight:600}}>{catLabel[k]}</span>
-                              <span style={{fontWeight:700}}>~{pv}</span>
-                            </div>:null;
-                          })}
-                        </div>
-                      </div>;
-                    })}
+                  <button type="button" onClick={()=>setEvShowOverallPanel(p=>!p)} style={{...sty.bg,width:"100%",justifyContent:"space-between",fontSize:12,padding:"10px 12px",marginBottom:10}}>
+                    <span>{evShowOverallPanel?"▼":"▶"} Arhivă completă (tipuri / ani)</span>
+                  </button>
+                  {evShowOverallPanel&&<div style={{overflowX:"auto",marginBottom:12}}>
+                    <div style={{fontSize:11,fontWeight:700,color:th.tm,marginBottom:8}}>Toate datele — fără coloana financiară (e la Finanțe)</div>
+                    <table style={{width:"100%",fontSize:11}}>
+                      <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
+                        <th style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:th.tm}}>An</th>
+                        <th style={{padding:"7px 8px",textAlign:"center",fontSize:9,color:th.tm}}>Total</th>
+                        {catColsArh.map(c=><th key={c} style={{padding:"7px 8px",textAlign:"center",fontSize:9,color:th.tm,whiteSpace:"nowrap"}}>{catLabel[c]}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {[...allHistoricForReports].reverse().map(d=>(
+                          <tr key={d.an} style={{borderBottom:`1px solid ${th.bl}`}}>
+                            <td style={{padding:"7px 8px",fontWeight:600}}>{d.an}</td>
+                            <td style={{padding:"7px 8px",textAlign:"center",fontWeight:700}}>{d.total}</td>
+                            {catColsArh.map(c=><td key={c} style={{padding:"7px 8px",textAlign:"center",color:d[c]?th.t:th.b}}>{d[c]||"·"}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>}
+
+                  <button type="button" onClick={()=>setEvShowPredictions(p=>!p)} style={{...sty.bg,width:"100%",justifyContent:"space-between",fontSize:12,padding:"10px 12px"}}>
+                    <span>{evShowPredictions?"▼":"▶"} Predicții evenimente (total)</span>
+                  </button>
+                  {evShowPredictions&&<div style={{marginTop:12,padding:12,borderRadius:8,background:th.h}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:10}}>Regresie liniară 2014+ (excl. 2020)</div>
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10}}>
+                      {predYears.map(y=>{
+                        const tot=predTotal(y);
+                        return <div key={y} style={{...sty.cd,border:`2px solid ${th.a}40`}}>
+                          <div style={{fontSize:15,fontWeight:800,color:th.a}}>{y}</div>
+                          <div style={{fontSize:20,fontWeight:700}}>{tot}</div>
+                          <div style={{fontSize:10,color:th.tm}}>total evenimente est.</div>
+                        </div>;
+                      })}
+                    </div>
+                  </div>}
+                </div>}
+
+                {statsSubTab==="finante"&&<div style={{...sty.cd,marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}>
+                    <div style={{fontSize:13,fontWeight:600}}>Venit per membru (istoric)</div>
+                    <select value={rapAn} onChange={e=>setRapAn(Number(e.target.value))} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${th.b}`,background:th.bg,color:th.t,fontSize:13,fontWeight:700}}>
+                      {[...allHistoricForReports].reverse().map(d=><option key={d.an} value={d.an}>Detaliu {d.an}</option>)}
+                    </select>
                   </div>
-                  <div style={{marginTop:10,fontSize:9,color:th.tm,padding:"6px 10px",borderRadius:6,background:th.h}}>* Predicțiile sunt generate automat pe baza trendurilor istorice. Nu iau în calcul factori externi (recesiune, pandemie, schimbări de piață).</div>
-                </div>
+                  {rapD&&<div style={{marginBottom:14,padding:12,borderRadius:8,background:th.h}}>
+                    <div style={{fontSize:10,color:th.tm}}>An {rapAn}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:"#22c55e"}}>{rapD.venit?fv(rapD.venit):rapD.venit_min?`~${fv(rapD.venit_min)}–${fv(rapD.venit_max)}`:"—"}</div>
+                    <div style={{fontSize:11,color:th.tm}}>€ / membru (din arhivă)</div>
+                  </div>}
 
-                {/* GRAFIC VENITURI */}
-                <div style={{...sty.cd,marginBottom:12}}>
-                  <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>💶 Evoluție venit per membru</div>
-                  <div style={{fontSize:10,color:th.tm,marginBottom:14}}>Ani cu date disponibile + predicții {predYears[0]}–{predYears[predYears.length-1]}</div>
-                  <div style={{overflowX:"auto"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:th.ts,marginBottom:10}}>
+                    <input type="checkbox" checked={finShowComparator} onChange={e=>setFinShowComparator(e.target.checked)} />
+                    Comparator venit (doi ani)
+                  </label>
+                  {finShowComparator&&an1d&&an2d&&(()=>{
+                    const v1=an1d.venit||(an1d.venit_min&&an1d.venit_max?Math.round((an1d.venit_min+an1d.venit_max)/2):null);
+                    const v2=an2d.venit||(an2d.venit_min&&an2d.venit_max?Math.round((an2d.venit_min+an2d.venit_max)/2):null);
+                    const pct=v1&&v2?Math.round(((v1-v2)/v2)*100):null;
+                    const pos=pct!=null&&pct>=0;
+                    return <div style={{marginBottom:14,padding:"12px 14px",borderRadius:8,background:pos?"rgba(34,197,94,.08)":"rgba(239,68,68,.08)",border:`1px solid ${pos?"#22c55e":"#ef4444"}30`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                        <div>
+                          <div style={{fontSize:10,color:th.tm,marginBottom:2}}>Venit per membru</div>
+                          <div style={{display:"flex",gap:16,alignItems:"baseline",flexWrap:"wrap"}}>
+                            <span style={{fontSize:16,fontWeight:700}}>{v1?fv(v1):"n/a"}</span>
+                            <span style={{fontSize:11,color:th.tm}}>vs {v2?fv(v2):"n/a"} ({arhAn2})</span>
+                          </div>
+                        </div>
+                        {pct!=null&&<span style={{fontSize:14,fontWeight:800,color:pos?"#22c55e":"#ef4444"}}>{pos?"+":""}{pct}%</span>}
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                          <select value={arhAn1} onChange={e=>setArhAn1(Number(e.target.value))} style={{padding:"4px 6px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,fontSize:11}}>{aniiDisp.map(a=><option key={`a-${a}`} value={a}>{a}</option>)}</select>
+                          <select value={arhAn2} onChange={e=>setArhAn2(Number(e.target.value))} style={{padding:"4px 6px",borderRadius:6,border:`1px solid ${th.b}`,background:th.bg,fontSize:11}}>{aniiDisp.map(a=><option key={`b-${a}`} value={a}>{a}</option>)}</select>
+                        </div>
+                      </div>
+                    </div>;
+                  })()}
+
+                  <div style={{marginBottom:10}}>
+                    <button type="button" onClick={()=>setFinChartShowPredictions(p=>!p)} style={{...sty.bg,fontSize:11,padding:"6px 10px"}}>{finChartShowPredictions?"Ascunde":"Arată"} predicții în graficul veniturilor</button>
+                  </div>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Evoluție venit per membru</div>
+                  <div style={{overflowX:"auto",marginBottom:14}}>
                     <div style={{minWidth:400}}>
                       <SvgBars height={70} data={[
                         ...allHistoricForReports.filter(d=>d.venit||d.venit_min).map(d=>({
@@ -2842,33 +2892,65 @@ export default function App() {
                           v:d.venit||Math.round((d.venit_min+d.venit_max)/2),
                           color:d.an===2020?"#94a3b8":"#22c55e"
                         })),
-                        ...predYears.map(y=>({l:`${y}*`,v:predVenit(y),color:"#22c55e40",dim:true}))
-                      ]} maxV={Math.max(...allHistoricForReports.filter(d=>d.venit).map(d=>d.venit),...predYears.map(y=>predVenit(y)))} />
+                        ...(finChartShowPredictions?predYears.map(y=>({l:`${y}*`,v:predVenit(y),color:"#22c55e40",dim:true})):[])
+                      ]} maxV={maxVenitChart} />
                     </div>
                   </div>
-                </div>
 
-                {/* TOP ANI */}
-                <div style={sty.cd}>
-                  <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>🏆 Clasament ani după total evenimente</div>
-                  {[...allHistoricForReports].sort((a,b)=>b.total-a.total).slice(0,5).map((d,i)=>{
-                    const w=Math.round((d.total/allHistoricForReports[0]?.total||1)*100);
-                    const maxTot=Math.max(...allHistoricForReports.map(x=>x.total));
-                    const pct=Math.round((d.total/maxTot)*100);
-                    return <div key={d.an} style={{marginBottom:10}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          <span style={{fontSize:14,fontWeight:800,color:i===0?"#f59e0b":i===1?"#94a3b8":i===2?"#cd7c2c":th.tm,width:20}}>{["🥇","🥈","🥉","4.","5."][i]}</span>
+                  <button type="button" onClick={()=>setFinShowOverallPanel(p=>!p)} style={{...sty.bg,width:"100%",justifyContent:"space-between",fontSize:12,padding:"10px 12px",marginBottom:10}}>
+                    <span>{finShowOverallPanel?"▼":"▶"} Rezumat global finanțe (tabel €/membru + clasament)</span>
+                  </button>
+                  {finShowOverallPanel&&<div>
+                    <div style={{overflowX:"auto",marginBottom:12}}>
+                      <table style={{width:"100%",fontSize:11}}>
+                        <thead><tr style={{borderBottom:`2px solid ${th.b}`}}>
+                          <th style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:th.tm}}>An</th>
+                          <th style={{padding:"7px 8px",textAlign:"right",fontSize:9,color:th.tm}}>€/Membru</th>
+                        </tr></thead>
+                        <tbody>
+                          {[...allHistoricForReports].reverse().map(d=>{
+                            const vStr=d.venit?fv(d.venit):d.venit_min?`~${fv(d.venit_min)}–${fv(d.venit_max)}`:"—";
+                            return <tr key={`v-${d.an}`} style={{borderBottom:`1px solid ${th.bl}`}}>
+                              <td style={{padding:"7px 8px",fontWeight:600}}>{d.an}</td>
+                              <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600,color:d.venit||d.venit_min?"#22c55e":th.tm}}>{vStr}</td>
+                            </tr>;
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Clasament ani după total evenimente</div>
+                    {[...allHistoricForReports].sort((a,b)=>b.total-a.total).slice(0,5).map((d,i)=>{
+                      const maxTot=Math.max(...allHistoricForReports.map(x=>x.total));
+                      const pct=Math.round((d.total/maxTot)*100);
+                      return <div key={`rank-${d.an}`} style={{marginBottom:10}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                           <span style={{fontSize:13,fontWeight:700}}>{d.an}</span>
+                          <span style={{fontSize:13,fontWeight:700}}>{d.total} ev.{d.venit?` · ${fv(d.venit)}/mb`:""}</span>
                         </div>
-                        <span style={{fontSize:13,fontWeight:700}}>{d.total} ev.{d.venit?` · ${fv(d.venit)}/mb`:""}</span>
-                      </div>
-                      <div style={{height:6,borderRadius:3,background:th.h,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${pct}%`,background:i===0?"#f59e0b":th.a,borderRadius:3,transition:"width .5s"}}/>
-                      </div>
-                    </div>;
-                  })}
-                </div>
+                        <div style={{height:6,borderRadius:3,background:th.h,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pct}%`,background:i===0?"#f59e0b":th.a,borderRadius:3}}/>
+                        </div>
+                      </div>;
+                    })}
+                  </div>}
+
+                  <button type="button" onClick={()=>setFinShowPredictions(p=>!p)} style={{...sty.bg,width:"100%",justifyContent:"space-between",fontSize:12,padding:"10px 12px"}}>
+                    <span>{finShowPredictions?"▼":"▶"} Predicții finanțe (venit/membru)</span>
+                  </button>
+                  {finShowPredictions&&<div style={{marginTop:12,padding:12,borderRadius:8,background:th.h}}>
+                    <div style={{fontSize:10,color:th.tm,marginBottom:10}}>Estimativ · regresie liniară</div>
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10}}>
+                      {predYears.map(y=>{
+                        const ven=predVenit(y);
+                        return <div key={`fp-${y}`} style={{...sty.cd,border:`2px solid ${th.a}40`}}>
+                          <div style={{fontSize:15,fontWeight:800,color:th.a}}>{y}</div>
+                          <div style={{fontSize:18,fontWeight:700,color:"#22c55e"}}>{fv(ven)}</div>
+                          <div style={{fontSize:10,color:th.tm}}>€/membru estimat</div>
+                        </div>;
+                      })}
+                    </div>
+                  </div>}
+                </div>}
               </>;
             })()}
           </div>}
