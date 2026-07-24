@@ -122,11 +122,19 @@
   <!-- După #root: browserul poate desena UI-ul de încărcare înainte să descarce CDN-urile. React production + Babel doar preset react = mai puțin de transpilat (~fără preset-env). -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Babel 8+ default = automatic JSX (import { jsx }) → crash pe text/babel non-module. Pin 7 + preset classic. -->
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.28.5/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
   <script>
+    (function () {
+      if (typeof Babel !== 'undefined' && Babel.registerPreset && Babel.availablePresets && Babel.availablePresets.react) {
+        Babel.registerPreset('react-classic', {
+          presets: [[Babel.availablePresets.react, { runtime: 'classic' }]]
+        });
+      }
+    })();
     (function check() {
       if (document.readyState !== 'complete') { setTimeout(check, 50); return; }
       if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
@@ -135,7 +143,7 @@
       }
     })();
   </script>
-  <script type="text/babel" data-presets="react">
+  <script type="text/babel" data-presets="react-classic">
 const { useState, useEffect, useMemo, useRef, useId, useCallback } = React;
 
 /* Structură: HOOKS | CONSTANTS | STORAGE | ICONS | COMPONENTS | FEATURES | MAIN APP */
