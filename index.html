@@ -8301,7 +8301,7 @@ function App() {
   const [pwNew, setPwNew] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
   const [pwSaveBusy, setPwSaveBusy] = useState(false);
-  const [contulSub, setContulSub] = useState("activitate"); // "activitate" | "setari" — subsecțiuni în Contul meu
+  const [contulSub, setContulSub] = useState("setari"); // "activitate" | "setari" — subsecțiuni în Contul meu
   const [sbMode, setSbMode] = useState("full");
   const [tab, setTab]     = useState("acasa");
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -10370,7 +10370,7 @@ function App() {
     {id:"calendar", Ic:IcCal,   l:"Calendar", ml:"Cal."},
     ...(p.f?[{id:"finances", Ic:IcMoney, l:"Finanțe", ml:"Fin."}]:[]),
     {id:"statistici", Ic:IcChart, l:"Statistici", ml:"Stats"},
-    ...(user?.memberId?[{id:"contul", Ic:IcUser, l:"Contul meu", ml:"Cont", badge: unreadNotifCount}]:[]),
+    ...((user?.memberId || user?.rl === "admin")?[{id:"contul", Ic:IcUser, l:"Contul meu", ml:"Cont", badge: unreadNotifCount}]:[]),
   ];
   const mobileBaseNavIds = ["acasa", "events", "offers", "calendar"];
   const mobilePrimaryNav = useMemo(() => {
@@ -11683,8 +11683,8 @@ function App() {
             })()}
           </div>}
 
-          {/* CONTUL MEU — doar pentru membri */}
-          {tab==="contul"&&user?.memberId&&<div style={{animation:"su .3s ease",maxWidth:420}}>
+          {/* CONTUL MEU — membri și administrator */}
+          {tab==="contul"&&(user?.memberId || user?.rl === "admin")&&<div style={{animation:"su .3s ease",maxWidth:420}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
               <h1 style={{fontSize:22,fontWeight:700}}>Contul meu</h1>
               <button onClick={()=>setTourStep(0)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 16px",borderRadius:10,border:"1px solid #f59e0b",background:"rgba(245,158,11,.08)",color:"#f59e0b",fontWeight:700,fontSize:13,cursor:"pointer"}}>
