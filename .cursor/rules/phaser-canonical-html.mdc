@@ -1,10 +1,13 @@
 ---
-description: Phaser Manager — aplicația livrată e index.html (React în pagină), nu fișiere auxiliare.
+description: Phaser Manager — sursa canonică este src/index.html; index.html și assets/app.*.min.js sunt generate.
 alwaysApply: true
 ---
 
-# Punct de intrare canonic
+# Sursa și publicarea Phaser Manager
 
-- Modificările de UI, tab-uri, Statistici, state `useState` legat de ecran și logica JSX din zona aplicației trebuie făcute în **`index.html`** (componenta principală e definită acolo).
-- **`phaser-manager.jsx`** nu e sursa de adevăr pentru build-ul pe care îl deschizi din `index.html`; nu-l edita pentru aceste schimbări decât dacă utilizatorul cere explicit acel fișier.
-- Fișierele **JSON** (ex. date seed / analiză) sunt date, nu shell-ul aplicației — nu înlocui editarea `index.html` cu editarea JSON-ului pentru comportament UI.
+- Editează UI-ul și logica React în **src/index.html**. Este sursa canonică a aplicației, mutată aici pentru precompilare și încărcare rapidă.
+- **index.html** din rădăcină și **assets/app.*.min.js** sunt fișiere generate. Nu le edita manual.
+- După schimbări rulează `npm run build`, apoi `npm run build:check`. Include sursa și fișierele generate în același commit. Cloudflare publică rădăcina fără un build suplimentar.
+- **phaser-manager.jsx** este un fișier auxiliar vechi, nu sursa aplicației.
+- JSON-urile cu date istorice nu înlocuiesc logica UI.
+- Bibliotecile din `assets/vendor` au versiuni fixe; nu suprascrie un fișier versionat cu o altă versiune, deoarece are cache immutable.

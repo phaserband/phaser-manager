@@ -47,3 +47,18 @@ git push
 
 Dacă nu vrei Git, poți uploada folderul direct din dashboard:
 **Workers & Pages** → proiectul tău → **Deployments** → **Upload assets**
+
+## Încărcare optimizată (septembrie 2026)
+
+Sursa editabilă a fost mutată în `src/index.html`. `index.html` din rădăcină este acum pagina mică generată pentru producție.
+
+1. `npm ci`
+2. Editează `src/index.html`.
+3. `npm run build` și `npm run build:check`.
+4. Include sursa, `index.html` și noul `assets/app.<hash>.min.js` în commit, apoi publică prin push.
+
+Setările Cloudflare rămân aceleași: build gol, director publicat rădăcina. Nu trebuie schimbat contul sau proiectul de găzduire. Nu șterge fișierele app cu hash mai vechi în același deploy: paginile deschise și cache-urile le pot solicita încă.
+
+React 18.3.1 și Supabase 2.116.0 sunt servite local din `assets/vendor`, la versiunile existente la optimizare. Bibliotecile PDF existente (html2pdf 0.10.1, jsPDF 2.5.1) se încarcă la export. Loaderul reutilizează încărcările în curs și permite reîncercare după eroare.
+
+`_headers` cere revalidarea paginii HTML și cache lung pentru fișierele cu versiune/hash. Surse: https://esbuild.github.io/api/#transform și https://developers.cloudflare.com/pages/configuration/headers/.

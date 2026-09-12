@@ -1,5 +1,11 @@
 {
   "devDependencies": {
+    "esbuild": "0.28.2",
     "supabase": "^2.85.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:check": "node scripts/build.mjs --check",
+    "test:loading": "node --test tests/loading.test.cjs"
   }
 }
