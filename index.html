@@ -115,7 +115,14 @@
         touch-action: pan-y;
       }
     }
-  </style>
+
+/* Phaser home — approved design */
+.pm-home{max-width:1280px;margin:auto;padding-top:12px;--muted:#a8a8b1;--border:#303034;--panel:#171719;--accent:#d8edb1;color:#f6f6f4}.pm-home button{font-family:inherit;cursor:pointer}.pm-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:30px}.pm-eyebrow{font-size:10px;font-weight:650;letter-spacing:1.8px;color:var(--muted)}.pm-heading h1{font-size:32px;font-weight:600;letter-spacing:-1.2px;margin:8px 0}.pm-heading p{font-size:14px;color:var(--muted);line-height:1.6}.pm-primary,.pm-secondary{border:0;padding:12px 17px;border-radius:9px;background:var(--accent);color:#1c2514;display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:650;white-space:nowrap}.pm-secondary{background:#27292a;color:#fafafa;border:1px solid #404044}.pm-home-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px}.pm-card,.pm-next{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:23px;min-width:0}.pm-next{background:linear-gradient(135deg,#21261e,#171a17 65%);border-color:#414c37}.pm-section-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:22px}.pm-section-top h2{font-size:15px;font-weight:600;letter-spacing:-.2px}.pm-link{border:0;background:transparent;color:#bfc2b8;font-size:12px;padding:5px 0;white-space:nowrap}.pm-event-title{display:flex;gap:20px;align-items:center;margin:28px 0}.pm-date{display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px solid #596447;border-radius:12px;width:72px;min-width:72px;height:84px;color:var(--accent)}.pm-date strong{font-size:30px;font-weight:500}.pm-date span{font-size:12px;text-transform:uppercase}.pm-status{font-size:11px;color:#d4e8b5}.pm-event-title h2{font-size:27px;letter-spacing:-.7px;margin:6px 0}.pm-event-title p{font-size:13px;color:#b9bfb0}.pm-timing{display:grid;grid-template-columns:repeat(3,1fr);padding:18px 0;border-top:1px solid #363d31;border-bottom:1px solid #363d31;gap:12px}.pm-timing div{display:flex;flex-direction:column;gap:8px}.pm-timing span{font-size:12px;color:#b9bfb0}.pm-timing strong{font-size:20px;font-weight:550;font-variant-numeric:tabular-nums}.pm-event-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:20px}.pm-event-bottom>span{font-size:12px;color:#b9bfb0}.pm-count{background:#2b2b2f;padding:3px 7px;border-radius:6px;font-size:11px;margin-left:5px;color:#bcbcc4}.pm-request{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid #303034;padding:19px 0;color:#f5f5f5}.pm-request:last-child{border-bottom:0}.pm-request div,.pm-task div,.pm-later-event div{display:flex;flex-direction:column;gap:7px;flex:1}.pm-request strong,.pm-task strong,.pm-later-event strong{font-size:13px;font-weight:550}.pm-request div span,.pm-task div span,.pm-later-event div span{font-size:12px;color:var(--muted)}.pm-request-status{font-size:10px;color:#e3cca1;background:#322c22;padding:6px 8px;border-radius:5px;white-space:nowrap}.pm-task{display:flex;align-items:center;gap:13px;padding:13px 0;border-bottom:1px solid #303034}.pm-task input{width:17px;height:17px;accent-color:#d8edb1;cursor:pointer}.pm-task-add{display:flex;gap:10px;align-items:center;margin-top:16px;color:#a8a8b1}.pm-task-add input{flex:1;min-width:0;background:transparent;border:0;padding:10px 0;color:white;font-size:13px}.pm-task-add input:focus{outline:none}.pm-later-event{display:flex;align-items:center;gap:14px;background:transparent;border:0;border-bottom:1px solid #303034;color:inherit;width:100%;text-align:left;padding:16px 0}.pm-mini-date{font-size:11px;width:74px;color:#cecec8}.pm-shortcuts{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}.pm-shortcuts button{border:1px solid #3a3a3f;background:none;color:#c8c8d0;border-radius:7px;padding:9px 11px;font-size:11px}.pm-small-empty{color:var(--muted);font-size:13px;padding:20px 0;line-height:1.6}.pm-empty{padding:20px 0}.pm-empty h2{font-size:23px;line-height:1.4}.pm-empty p{color:var(--muted);font-size:13px;line-height:1.6;margin:14px 0 22px}
+@media(max-width:1050px){.pm-home-grid{grid-template-columns:1fr}.pm-tasks{grid-row:2}.pm-heading h1{font-size:28px}.pm-event-title{margin:20px 0}.pm-section-top{margin-bottom:12px}}@media(max-width:600px){.pm-home{padding-top:0}.pm-heading{align-items:flex-start;margin-bottom:20px;gap:12px}.pm-heading h1{font-size:26px}.pm-heading p{font-size:12px;max-width:220px}.pm-heading>.pm-primary{font-size:0;padding:12px}.pm-heading>.pm-primary svg{width:18px}.pm-card,.pm-next{padding:18px;border-radius:13px}.pm-home-grid{gap:14px}.pm-section-top .pm-eyebrow{font-size:9px;letter-spacing:1.2px}.pm-section-top .pm-link{font-size:10px}.pm-event-title h2{font-size:24px}.pm-event-title{gap:14px}.pm-event-bottom>.pm-primary{font-size:12px;padding:11px}.pm-request-status{font-size:9px}.pm-timing strong{font-size:21px}}
+
+.pm-event-full-date{margin-top:5px!important;font-size:11px!important}.pm-home button:focus-visible,.pm-home input:focus-visible{outline:2px solid #bad386!important;outline-offset:4px}.pm-timing strong{overflow-wrap:anywhere}.pm-home[data-theme="light"]{--muted:#626269;--border:#d8dadd;--panel:#fff;--accent:#d8edb1;color:#202321}.pm-home[data-theme="light"] .pm-next{background:linear-gradient(135deg,#edf2e6,#f8faf5);border-color:#b5c4a4}.pm-home[data-theme="light"] .pm-link{color:#536047}.pm-home[data-theme="light"] .pm-event-title p,.pm-home[data-theme="light"] .pm-event-bottom>span,.pm-home[data-theme="light"] .pm-timing span{color:#596450}.pm-home[data-theme="light"] .pm-status{color:#426221}.pm-home[data-theme="light"] .pm-date{color:#426221;border-color:#b2c29e}.pm-home[data-theme="light"] .pm-timing{border-color:#cdd7c1}.pm-home[data-theme="light"] .pm-count{background:#eceeed;color:#51565a}.pm-home[data-theme="light"] .pm-request{color:#202321;border-color:#e2e3e5}.pm-home[data-theme="light"] .pm-request-status{color:#775216;background:#f6ecd7}.pm-home[data-theme="light"] .pm-task,.pm-home[data-theme="light"] .pm-later-event{border-color:#e2e3e5}.pm-home[data-theme="light"] .pm-task-add input{color:#202321}.pm-home[data-theme="light"] .pm-mini-date{color:#626269}.pm-home[data-theme="light"] .pm-shortcuts button{color:#515b48;border-color:#d2d8ce}.pm-home[data-theme="light"] .pm-secondary{background:#edf0e8;color:#30392a;border-color:#cbd4c0}
+
+</style>
 </head>
 <body>
   <div id="root"><div class="loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0a0a0c;color:#e5e5e5;font-family:system-ui;font-size:15px;font-weight:500;gap:12px;padding:24px"><span>Se încarcă Phaser Manager...</span><span style="font-size:11px;color:#888">Dacă rămâne negru, deschide http://localhost:8080</span></div></div>
@@ -326,7 +333,7 @@ const gTheme = () => {
 
 const TH = {
   light: { bg:"#f5f5f5",c:"#ffffff",h:"#f0f0f0",i:"#ffffff",b:"#e0e0e0",bl:"#ebebeb",t:"#111111",ts:"#444444",tm:"#888888",sb:"#e8e8e8",sbb:"#d4d4d4",sbt:"#444444",sba:"#111111",a:"#111111",ab:"rgba(0,0,0,.07)",ov:"rgba(0,0,0,.55)" },
-  dark:  { bg:"#09090b",c:"#141414",h:"#1c1c1c",i:"#1a1a1a",b:"#27272a",bl:"#1f1f1f",t:"#fafafa",ts:"#a1a1aa",tm:"#52525b",sb:"#0a0a0c",sbb:"#1a1a1a",sbt:"#a1a1aa",sba:"#fafafa",a:"#fafafa",ab:"rgba(255,255,255,.06)",ov:"rgba(0,0,0,.75)" }
+  dark:  { bg:"#09090b",c:"#141414",h:"#1c1c1c",i:"#1a1a1a",b:"#27272a",bl:"#1f1f1f",t:"#fafafa",ts:"#a1a1aa",tm:"#a1a1aa",sb:"#0a0a0c",sbb:"#1a1a1a",sbt:"#a1a1aa",sba:"#fafafa",a:"#fafafa",ab:"rgba(255,255,255,.06)",ov:"rgba(0,0,0,.75)" }
 };
 
 const ST = {
@@ -7917,8 +7924,7 @@ const TOUR_STEPS = [
   { id:"docs",     target:"[data-tour='nav-docs']",     tab:"docs",     title:"📁 Docs (șabloane)", desc:"Șabloane globale pentru oferte: Contract — trei modele (Privat PF, Privat firmă, Public); pe eveniment, alegerea PF/firmă trage modelul corect. Rider tehnic, Tarifare & split (prețuri, split %, bonusuri, logistică; Salvează setări poate actualiza evenimente neîncasate), Playlist (coperte, PDF, link public), Media, Press Kit public. Contractul se îngheață după trimitere sau la evenimente trecute." },
   { id:"finances", target:"[data-tour='nav-finances']", tab:"finances", title:"💰 Finanțe & plăți către membri", desc:"Vedere trupă: cheltuieli din evenimente, import CSV bancă, cheltuieli manuale, costuri fixe anuale, profit net. Important: intră pe fiecare membru — parte cântat, bonus rol, Social Media (lei), plătit ție (bifă admin) vs neprimit, separat de «clientul a plătit restul». Split, bonusuri și logistică pe gig: în Eveniment → tab Membri." },
   { id:"contul",   target:"[data-tour='nav-contul']",   tab:"contul",   title:"👤 Contul meu", desc:"Activitate: profil (footer la oferte când ești delegat), rezumate task-uri, gig-uri, notificări. Setări & backup: parolă Supabase, PIN la deschidere, revocare «Salvează în browser», backup manual și restaurare din istoric zilnic. În sidebar, sub meniu: Google Calendar — evenimente confirmate în Google cu link la ofertă/fișă. De aici repornești și Tur aplicație." },
-  { id:"ai-assist",target:"[data-tour='nav-ai-assist']",tab:null,       title:"🤖 Asistent AI", desc:"Întrebări în română peste datele tale: evenimente, finanțe, task-uri, căutări (ex. următoarele gig-uri, pipeline). Rezultate rapide; pentru sume și decizii verifică mereu Cereri, Finanțe sau fișa evenimentului." },
-  { id:"done",     target:null,             tab:null,        title:"Ești gata! 🚀", desc:"Reluare tur: Contul meu → Tur aplicație. Google Calendar și Asistent AI rămân în sidebar. Succes cu Phaser!" },
+  { id:"done",     target:null,             tab:null,        title:"Ești gata! 🚀", desc:"Reluare tur: Contul meu → Tur aplicație. Google Calendar rămâne în sidebar. Succes cu Phaser!" },
 ];
 
 function TourOverlay({ steps, step, setStep, setTab }) {
@@ -10614,13 +10620,7 @@ function App() {
           </button>)}
         </nav>
 
-        <div style={{padding:"8px 12px 0",borderTop:`1px solid ${th.sbb}`}}>
-          <button type="button" data-tour="nav-ai-assist" onClick={()=>setAiChatOpen(true)} title={sbMode==="mini"?"Asistent AI":undefined}
-            style={{display:"flex",alignItems:"center",gap:8,padding:sbMode==="full"?"8px 14px":"8px 0",justifyContent:sbMode==="mini"?"center":"flex-start",borderRadius:8,border:"none",background:"rgba(124,58,237,.12)",color:"#c4b5fd",fontSize:11,cursor:"pointer",width:"100%",transition:"all .2s"}}>
-            <span style={{fontSize:15}} aria-hidden>🤖</span>
-            {sbMode==="full"&&<span>Asistent AI</span>}
-          </button>
-        </div>
+
 
         {/* Theme toggle — Day / Night / Auto */}
         <div style={{padding:"10px 12px 0",borderTop:`1px solid ${th.sbb}`}}>
@@ -10705,10 +10705,7 @@ function App() {
                 {it.badge>0&&<span style={{background:"#f59e0b",color:"#111",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 7px"}}>{it.badge}</span>}
               </button>
             ))}
-            <button type="button" onClick={()=>{ setMobileMoreOpen(false); setAiChatOpen(true); }} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 10px",borderRadius:10,border:"none",background:"rgba(124,58,237,.12)",color:"#c4b5fd",cursor:"pointer",fontSize:14,marginTop:4}}>
-              <span style={{fontSize:18}} aria-hidden>🤖</span>
-              <span style={{flex:1,textAlign:"left",fontWeight:600}}>Asistent AI</span>
-            </button>
+
             <button onClick={()=>{ setMobileMoreOpen(false); doAuthLogout(); }} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 10px",borderRadius:10,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer",fontSize:14,marginTop:4}}>
               <IcOut s={18}/>
               <span>Ieșire</span>
@@ -10763,8 +10760,37 @@ function App() {
             {globalSearch.trim()&&globalSearchResults.evs.length===0&&globalSearchResults.tasks.length===0&&!globalSearchResults.parsedDate&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,padding:16,background:th.c,borderRadius:10,border:`1px solid ${th.b}`,boxShadow:"0 8px 24px rgba(0,0,0,.15)",zIndex:200,fontSize:13,color:th.tm}}>Niciun rezultat</div>}
           </div>
 
+          {/* ACASĂ — design aprobat; colaboratorii păstrează ecranul dedicat. */}
+{tab==="acasa"&&!isCollaborator&&<div className="pm-home" data-theme={effectiveTheme}>
+  <div className="pm-heading"><div><div className="pm-eyebrow">PHASER · SPAȚIUL TRUPEI</div><h1>Totul, la un loc.</h1><p>Următoarea cântare și lucrurile de pus la punct.</p></div>{!!p.c&&<button className="pm-primary" onClick={()=>openModal("pickCerere",null)}><IcPlus s={16}/> Cerere nouă</button>}</div>
+  <div className="pm-home-grid">
+    <section className="pm-next">
+      <div className="pm-section-top"><span className="pm-eyebrow">URMĂTORUL EVENIMENT</span><button className="pm-link" onClick={()=>setTab("events")}>Toate evenimentele ↗</button></div>
+      {viitoare[0]?(()=>{const e=viitoare[0];return <>
+        <div className="pm-event-title"><div className="pm-date"><strong>{getEventDateKind(e)==='day'&&e.date?new Date(e.date+'T12:00:00').getDate():'—'}</strong><span>{getEventDateKind(e)==='day'&&e.date?new Date(e.date+'T12:00:00').toLocaleDateString('ro-RO',{month:'short'}):'Dată'}</span></div><div><span className="pm-status">● Confirmat</span><h2>{e.type||"Eveniment"}</h2><p>{[e.venue,e.city].filter(Boolean).join(" · ")||"Locație de completat"}</p><p className="pm-event-full-date">{fEvDate(e)}</p></div></div>
+        <div className="pm-timing">{[{l:'Load in',v:e.li},{l:'Soundcheck',v:e.sc},{l:'Show start',v:e.ss}].map(x=><div key={x.l}><span>{x.l}</span><strong>{x.v?formatDisplayDateTime(x.v,eventTimingAnchorDate(e)):'De completat'}</strong></div>)}</div>
+        <div className="pm-event-bottom"><span>{e.rep||1} seturi · {e.repDur||45} min / set</span><button className="pm-primary" onClick={()=>openModal('detail',e.id)}>Deschide fișa <IcChevR s={16}/></button></div>
+      </>})():<div className="pm-empty"><h2>Loc pentru următoarea cântare.</h2><p>Evenimentele confirmate apar aici, cu programul la îndemână.</p>{!!p.c&&<button className="pm-secondary" onClick={()=>openModal('pickEvent',null)}>Adaugă un eveniment</button>}</div>}
+    </section>
+    <section className="pm-card pm-requests"><div className="pm-section-top"><h2>Cereri în lucru <span className="pm-count">{pendingCount}</span></h2><button className="pm-link" onClick={()=>setTab('offers')}>Vezi toate ↗</button></div>
+      {evs.filter(e=>['cerere','oferta','asteptare','plata_avans'].includes(e.st)).sort((a,b)=>evSortKey(a)-evSortKey(b)).slice(0,3).map(e=><button key={e.id} className="pm-request" onClick={()=>openModal('detail',e.id)}><div><strong>{e.type}</strong><span>{fEvDate(e)} · {e.city||e.venue}</span></div><span className="pm-request-status">{e.st==='asteptare'?'Așteaptă contract':e.st==='plata_avans'?'Așteaptă avans':e.st==='oferta'?'Ofertă trimisă':'Cerere nouă'}</span></button>)}
+      {!pendingCount&&<p className="pm-small-empty">Nicio cerere în lucru. Totul la zi.</p>}
+    </section>
+    <section className="pm-card pm-tasks"><div className="pm-section-top"><h2>De făcut <span className="pm-count">{tasks.filter(t=>!t.done).length}</span></h2><button className="pm-link" onClick={()=>setTab('tasks')}>Toate taskurile ↗</button></div>
+      {tasks.filter(t=>!t.done).slice(0,4).map(t=><div className="pm-task" key={t.id}><input type="checkbox" checked={!!t.done} aria-label={'Finalizează '+t.text} onChange={()=>setTasks(p=>applyDoneWithRepeat(p,t.id,true))}/><div><strong>{t.text}</strong><span>{t.due?fD(t.due):'Fără termen'}{t.assignedTo?' · '+(MEMBERS.find(m=>m.id===t.assignedTo)?.short||'Trupă'):''}</span></div><button className="pm-link" aria-label={'Deschide '+t.text} onClick={()=>{setTaskCalendarFocusId(t.id);setTab('tasks');}}>↗</button></div>)}
+      {!tasks.some(t=>!t.done)&&<p className="pm-small-empty">Nimic de rezolvat acum.</p>}
+      <form className="pm-task-add" onSubmit={e=>{e.preventDefault();const input=e.currentTarget.elements.namedItem('task');if(input.value.trim()){const text=input.value.trim();setTasks(p=>[...p,fullTask(text)]);input.value='';}}}><IcPlus s={16}/><input name="task" aria-label="Task nou" placeholder="Adaugă un task…" autoComplete="off"/><button className="pm-link" type="submit">Adaugă</button></form>
+    </section>
+    <section className="pm-card pm-later"><div className="pm-section-top"><h2>Mai departe în calendar</h2><button className="pm-link" onClick={()=>setTab('calendar')}>Calendar ↗</button></div>
+      {viitoare.slice(1,4).map(e=><button className="pm-later-event" key={e.id} onClick={()=>openModal('detail',e.id)}><span className="pm-mini-date">{fEvDate(e)}</span><div><strong>{e.type}</strong><span>{e.venue} · {e.city}</span></div><IcChevR s={16}/></button>)}
+      {viitoare.length<2&&<p className="pm-small-empty">Nu sunt alte evenimente confirmate.</p>}
+      <div className="pm-shortcuts"><button onClick={()=>setTab('music')}>Repertoriu ↗</button><button onClick={()=>setTab('docs')}>Documente ↗</button>{!!p.f&&<button onClick={()=>setTab('finances')}>Finanțe ↗</button>}</div>
+    </section>
+  </div>
+</div>}
+
           {/* ACASĂ */}
-          {tab==="acasa"&&<div style={{animation:"su .3s ease"}}>
+          {tab==="acasa"&&isCollaborator&&<div style={{animation:"su .3s ease"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
               <div>
                 <h1 style={{fontSize:mob?18:22,fontWeight:700,letterSpacing:"-0.5px"}}>Acasă</h1>
@@ -14099,7 +14125,6 @@ function App() {
           setEvs((p)=>p.map((e)=>String(e.id)!==String(evId)?e:{...e,...patch}));
         }}
       />
-      <AIChatWidget open={aiChatOpen} onOpenChange={setAiChatOpen} th={th} evs={evs} tasks={tasks} mob={mob} aiSettings={aiSettings} setAiSettings={setAiSettings}/>
       <Toast message={toast.message} visible={toast.visible} variant={toast.variant}/>
     </div>
   );
